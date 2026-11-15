@@ -248,7 +248,14 @@ VOID FreeCommon(struct LayoutData *ld, struct AslBase_intern *AslBase)
             if (ld->ld_AppWindow)
                 RemoveAppWindow(ld->ld_AppWindow);
             if (ld->ld_AppMsgPort)
+            {
+                struct Message *msg;
+
+                /* Messages left after the requester ended */
+                while ((msg = GetMsg(ld->ld_AppMsgPort)))
+                    ReplyMsg(msg);
                 DeleteMsgPort(ld->ld_AppMsgPort);
+            }
 
             if (ld->ld_IntReq->ir_Flags & IF_POPPEDTOFRONT)
             {
@@ -517,7 +524,8 @@ BOOL HandleEvents(struct LayoutData *ld, struct AslReqInfo *reqinfo, struct AslB
 
         if (sigmask & winmask)
         {
-        while ((imsg = (struct IntuiMessage *)GetMsg(winport)))
+        /* A later message would overwrite the ending result */
+        while (!terminated && (imsg = (struct IntuiMessage *)GetMsg(winport)))
         {
             if ((imsg->IDCMPWindow == ld->ld_Window) ||
                 (imsg->IDCMPWindow == ld->ld_Window2))
@@ -568,7 +576,7 @@ BOOL HandleEvents(struct LayoutData *ld, struct AslReqInfo *reqinfo, struct AslB
         } /* while ((imsg = (struct IntuiMessage *)GetMsg(winport))) */
         }
 
-        while ((ld->ld_AppMsgPort) && (ld->ld_AppMsg = (struct AppMessage *) GetMsg(ld->ld_AppMsgPort)))
+        while (!terminated && (ld->ld_AppMsgPort) && (ld->ld_AppMsg = (struct AppMessage *) GetMsg(ld->ld_AppMsgPort)))
         {
             ld->ld_Command = LDCMD_HANDLEAPPWINDOW;
             success = CallHookPkt( &(reqinfo->GadgetryHook), ld, ASLB(AslBase));

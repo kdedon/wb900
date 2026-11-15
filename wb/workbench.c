@@ -117,6 +117,10 @@ static void showchecks(struct WBWin *ww)
 		return;
 	icons = ItemAddress(wbmenus, FULLMENUNUM(1, 3, NOSUB));
 	all = ItemAddress(wbmenus, FULLMENUNUM(1, 4, NOSUB));
+	/* ClearMenuStrip() waits while a menu is up */
+	if (!(all->Flags & CHECKED) == !ww->ww_ShowAll &&
+	    !(icons->Flags & CHECKED) == !!ww->ww_ShowAll)
+		return;
 	FOREACHWIN(w)
 		ClearMenuStrip(w->ww_Win);
 	icons->Flags &= ~CHECKED;

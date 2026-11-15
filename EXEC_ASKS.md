@@ -22,7 +22,7 @@ Opened 2026-11-14. Status reported by exec816-0f the same day. Exec work is a pl
 | 13 | `<devices/inputevent.h>`: `IECLASS_NEWMOUSE` (0x16), AROS's class for wheel events (`NM_WHEEL_*` codes in `ie_Code`) | **Landed** 9a6e75b2: IECLASS_NEWMOUSE 0x16, <devices/newmouse.h> NM_WHEEL_* 0x7A-0x7D (match AROS RAWKEY_NM_*) | done |
 | 14 | `FreeSignal(-1)` for a port's `mp_SigBit` of -1: `DeleteMsgPort` passes the UBYTE as 255, and `FreeSignal` panics "reserved bit". AmigaOS takes the low byte, so a port whose signal was given away (`mp_SigBit = -1`, as amiga.lib's `TimeDelay` and AROS code do) can be deleted | **Landed** 9a6e75b2: FreeSignal ignores 0xFF, as Exec V37+ | done |
 | 15 | `mkdisk.py`: a larger exec partition (an option such as `--exec=BLOCKS`): it is fixed at 1024 blocks (512 KB) | **Landed** 9a6e75b2: exec partition sized from contents; `--exec=BLOCKS` overrides | done |
-| 16 | Faster `ObtainSemaphore`/`ReleaseSemaphore` and `Forbid`/`Permit` (below) | open | — |
+| 16 | Faster `ObtainSemaphore`/`ReleaseSemaphore` and `Forbid`/`Permit` (below) | **Landed** 56d2a734: uncontended Obtain/Release about 2,200 to 650-770 clocks; Forbid/Permit 573 to 429 | done |
 | 17 | `<dos/dosextens.h>`: the NDK ST_* entry types | **Landed** cc58d673 | done |
 | 18 | `mkdisk.py --mkdir=PATH` | **Landed** cc58d673 | done |
 | 19 | Free the name `console.device` for the window console (below) | open | — |
@@ -30,6 +30,9 @@ Opened 2026-11-14. Status reported by exec816-0f the same day. Exec work is a pl
 | 21 | `NewShell WINDOW`: open the window once (below) | open | — |
 | 22 | dos.library: `DateToStr`, `CompareDates` and `SplitName`, with `<dos/datetime.h>` and `MAXFILENAMELENGTH` (below) | open | — |
 | 23 | A Shell command's default stack: 1600 B is too small for intuition programs (below) | open | — |
+| 24 | ramlib's low-memory handler walks freed list nodes (below) | open | — |
+| 25 | console.device: read the console ring (below) | open | — |
+| 26 | ExecBase: idle time, for a CPU load (below) | open | — |
 
 ### 16. Semaphore and Forbid cost
 
@@ -66,6 +69,48 @@ Asked for: the three calls at AmigaDOS's LVOs (−744 DateToStr, −738 CompareD
 `CLISTACK` gives each Shell command 1600 bytes. More and Edit use 2.6-3.0 KB, as most intuition and gadtools programs will, so `SYS:Utilities/More file` from a Shell overflows: AN_StackProbe, then a trap that stops the machine. With `Stack 4096` first they run. Repro: tests/more.c without its `Stack 4096`.
 
 Asked for: a 4096-byte default (AmigaOS uses 4000), or a stack size taken from the program file.
+
+### 24. ramlib's low-memory handler and nested expunges
+
+`rlmemh` keeps `n = r->r_Next`, then calls `r`'s Expunge. An Expunge that closes another library (asl closes gadtools, graphics its driver) runs the patched `CloseLibrary`; when that library has `LIBF_DELEXP` and goes, `rlgone` frees its `rlseg`. If that `rlseg` was `n`, the walk continues through freed memory: `Deallocate: block is free` or a segment trap. This is the trap in `OpenLibrary("asl.library")` reported from a Shell: a 62 KB hunk load ran the handler.
+
+Repro (wb900 tests/expunge.c, after the loop; `lowmem()` allocates `AvailMem + 128 KB`):
+
+```
+lowmem();                          /* asl and gadtools gone */
+gt = OpenLibrary("gadtools.library", 0L);
+asl = OpenLibrary("asl.library", 0L);   /* rlsegs: asl, gadtools */
+lowmem();                          /* both LIBF_DELEXP */
+OpenLibrary("asl.library", 0L);    /* clears asl's flag */
+CloseLibrary(asl); CloseLibrary(asl); CloseLibrary(gt);
+lowmem();                          /* asl's Expunge frees gadtools' rlseg */
+```
+
+Asked for: restart the walk at `rlsegs` after each unload. Tried in a copy of dos/ramlib.c; the repro then passes:
+
+```
+for (r = rlsegs; r != NULL; ) {
+	seg = (BPTR)(*rloldrem)(r->r_Lib);
+	if (seg != NULL) {
+		rlgone(seg);
+		done = MEM_ALL_DONE;
+		r = rlsegs;
+	} else
+		r = r->r_Next;
+}
+```
+
+### 25. Reading the console ring
+
+LogView would show the boot log and the console output since graphics took the display. `devices/console.c` keeps the last 1 KB of console output in `bootlog`, but no call reads it: `CMD_READ` returns typed characters.
+
+Asked for: a console.device command (say `CD_READLOG`, `CMD_NONSTD + 18`) that copies the ring, oldest byte first, into `io_Data` up to `io_Length` and sets `io_Actual`; without a wrap, from the first byte. Meanwhile LogView shows files.
+
+### 26. Idle time
+
+SysMon would show the CPU load. Amiga Exec counts it in `ExecBase->IdleCount` and `DispCount`; Exec900's ExecBase has neither, and the idle Task is not on `TaskReady` or `TaskWait`, so a program cannot measure it.
+
+Asked for: `IdleCount`, incremented by the idle Task's loop or by the tick when it interrupts the idle Task, and `DispCount`, at the end of ExecBase. Meanwhile SysMon shows no load.
 
 ### 10. Keyboard raw codes
 

@@ -72,7 +72,7 @@ DEVS	= input console
 console_DEVNAME = wincon
 TESTS	= $(basename $(notdir $(wildcard $(TOP)/tests/*.c)))
 # The tests that open intuition.library
-ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin asl more edit
+ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin asl more edit expunge
 # The demos also made as NAME-1x.bin, in the Workbench 1.x style
 STYLED	= wbdemo wbinter gtdemo wbboot
 
@@ -187,7 +187,7 @@ $(OUT)/progs/%: $(OBJ)/startup.o $(OBJ)/t_%.o $(OBJ)/amiga.o $(OBJ)/portio.o $(O
 	$(LD) -r -o $(OBJ)/p_$*.r $^
 	$(MKHUNK) --entry=start $@ $(OBJ)/p_$*.r
 # The tests that link amiga.lib
-ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin asl
+ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin asl expunge
 $(patsubst %,$(OUT)/progs/%,$(ALIBTESTS)): $(ALIB)
 # amiga.lib's commodities calls
 CXLIB	= $(patsubst $(TOP)/lib/%.c,$(OBJ)/lib/%.o,$(wildcard $(TOP)/lib/cx/*.c))
@@ -221,9 +221,14 @@ $(OUT)/util/$(1): $(OBJ)/startup.o $$($(1)_OBJS) $(OBJ)/amiga.o $(OBJ)/progabs.o
 	@mkdir -p $(OUT)/util
 	$(MKHUNK) --split --entry=start $$@ $$^
 endef
-UTILS	= More Edit
+UTILS	= More Edit Calculator Clock KeyShow SysMon LogView
 $(eval $(call UTIL,More,more))
 $(eval $(call UTIL,Edit,edit))
+$(eval $(call UTIL,Calculator,calculator))
+$(eval $(call UTIL,Clock,clock))
+$(eval $(call UTIL,KeyShow,keyshow))
+$(eval $(call UTIL,SysMon,sysmon))
+$(eval $(call UTIL,LogView,logview))
 # Workbench, which tests/wbboot.c starts
 WBSRC	= $(patsubst %,$(TOP)/wb/%.c,workbench drawer selftest)
 $(OUT)/progs/wbboot $(OUT)/progs/shellwin: $(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC))
@@ -241,9 +246,15 @@ Notes_INFO = --type=project --art=builtin:project --tool=SYS:Utilities/More \
 	--stack=6144
 ReadMe_INFO = $(Notes_INFO)
 Utilities_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
-	--window=220,190,300,100
+	--window=160,180,440,130
 More_INFO = --type=tool --art=builtin:tool --stack=6144
 Edit_INFO = --type=tool --art=builtin:tool --stack=6144
+Calculator_INFO = --type=tool --art=$(TOP)/wb/calculator/calculator.txt --stack=4096
+Clock_INFO = --type=tool --art=$(TOP)/wb/clock/clock.txt --stack=3072
+KeyShow_INFO = --type=tool --art=$(TOP)/wb/keyshow/keyshow.txt --stack=3072
+SysMon_INFO = --type=tool --art=$(TOP)/wb/sysmon/sysmon.txt --stack=4096
+LogView_INFO = --type=tool --art=$(TOP)/wb/logview/logview.txt --stack=4096
+$(patsubst %,$(OUT)/wb/%.info,Calculator Clock KeyShow SysMon LogView): $(wildcard $(TOP)/wb/*/*.txt)
 Tools_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
 	--window=180,150,300,100
 Commodities_INFO = --type=drawer --art=builtin:drawer \
@@ -299,6 +310,11 @@ more_PUT = $(UTILPUT) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg
 $(OUT)/more.bin: $(UTILDEPS)
 edit_PUT = $(more_PUT)
 $(OUT)/edit.bin: $(UTILDEPS)
+# The other utilities' tests, on More's disk
+TOOLTESTS = calculator clock keyshow sysmon logview
+ITESTS	+= $(TOOLTESTS)
+$(foreach t,$(TOOLTESTS),$(eval $(t)_PUT = $$(more_PUT)))
+$(patsubst %,$(OUT)/%.bin,$(TOOLTESTS)): $(UTILDEPS)
 # The commodities' test: the tools, with a quick Blanker
 cxtools_PUT = $(CXPUT) --put=Tools/Commodities/Blanker.info=$(OUT)/wb/BlankerTest.info \
 	$(foreach t,$(filter-out Blanker,$(CXTOOLS)),--put=Tools/Commodities/$(t).info=$(OUT)/wb/$(t).info)

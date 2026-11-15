@@ -149,6 +149,23 @@ static BOOL pixels(struct WBWin *ww, struct WBIcon *in, UWORD comp)
 	return TRUE;
 }
 
+/*
+ * Workbench may wait in ClearMenuStrip() while a menu is up, so wait
+ * until the menu handler waits for input, not for a lock or a window.
+ */
+static void menuwait(void)
+{
+	struct Task *t;
+
+	do {
+		Delay(2);
+		Forbid();
+		t = FindTask("Intuition menu handler");
+		Permit();
+	} while (t != NULL && (t->tc_State != TS_WAIT ||
+	    (t->tc_SigWait & (SIGF_SINGLE | SIGF_INTUITION))));
+}
+
 /* A menu item picked with the right button */
 static void pick(WORD menu, WORD item)
 {
@@ -164,12 +181,12 @@ static void pick(WORD menu, WORD item)
 	x = m->LeftEdge + 4;
 	mouse(x, 2);
 	event(IECLASS_RAWMOUSE, IECODE_RBUTTON, x, 2);
-	settle();
+	menuwait();
 	x = m->LeftEdge + it->LeftEdge + it->Width / 2;
 	y = s->BarHeight + 1 + it->TopEdge + it->Height / 2;
 	mouse(x, y);
 	mouse(x + 1, y);
-	settle();
+	menuwait();
 	event(IECLASS_RAWMOUSE, IECODE_RBUTTON | IECODE_UP_PREFIX, x + 1, y);
 	settle();
 }
@@ -281,8 +298,6 @@ static void script(void)
 		Signal(t, SIGBREAKF_CTRL_C);
 		check(waittask("More", TRUE) == NULL, "More ended");
 	}
-	/* Workbench redraws what More's window covered */
-	settle();
 
 	/* Window: Show All Files, then Clean Up */
 	pick(1, 4);
