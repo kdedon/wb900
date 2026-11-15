@@ -863,7 +863,7 @@ static APTR coninit(APTR zero, APTR seg, APTR sysbase)
         if ((dl = MakeDosEntry(names[i], (LONG)DLT_DEVICE)) == NULL)
             return NULL;
         dl->dol_misc.dol_handler.dol_Handler = conname;
-        dl->dol_misc.dol_handler.dol_StackSize = 1024;
+        dl->dol_misc.dol_handler.dol_StackSize = 768;
         dl->dol_misc.dol_handler.dol_Priority = CONTASK_PRIORITY;
         dl->dol_misc.dol_handler.dol_Startup = i;
         dl->dol_misc.dol_handler.dol_SegList = (BPTR)seg;

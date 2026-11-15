@@ -77,8 +77,8 @@ LockLayerRom(l)(struct Layer *) void @Graphics_72
 UnlockLayerRom(l)(struct Layer *) void @Graphics_73
 SyncSBitMap(l)(struct Layer *) void @Graphics_74
 CopySBitMap(l)(struct Layer *) void @Graphics_75
-OwnBlitter()()
-DisownBlitter()()
+OwnBlitter()() void @Graphics_76
+DisownBlitter()() void @Graphics_77
 InitTmpRas(tmpras,buffer,size)(a0,a1,d0)
 AskFont(rp,textAttr)(struct RastPort *,struct TextAttr *) void @Graphics_79
 AddFont(textFont)(a1)

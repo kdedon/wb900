@@ -273,9 +273,11 @@ static BOOL askstring(CONST_STRPTR title, STRPTR buf, WORD len)
 
 /*** Commands ***/
 
+/* The commands keep their paths static, off the stack their requesters use */
+
 static void execute(void)
 {
-	char cmd[PATHLEN];
+	static char cmd[PATHLEN];
 	struct TagItem t[3];
 	BPTR out;
 
@@ -359,7 +361,7 @@ static void info(struct WBWin *ww, struct WBIcon *in)
 {
 	struct FileInfoBlock *fib = AllocDosObject(DOS_FIB, NULL);
 	struct DiskObject *d = in->in_Obj;
-	char path[PATHLEN];
+	static char path[PATHLEN];
 	ULONG args[5];
 	BPTR lock;
 
@@ -400,7 +402,7 @@ static BOOL renameobj(STRPTR path, STRPTR name)
 
 static void wbrename(struct WBWin *ww, struct WBIcon *in)
 {
-	char path[PATHLEN], name[NAMELEN];
+	static char path[PATHLEN], name[NAMELEN];
 
 	if (ww == root) {
 		DisplayBeep(scr);
@@ -416,7 +418,7 @@ static void wbrename(struct WBWin *ww, struct WBIcon *in)
 
 static void wbdelete(struct WBWin *ww, struct WBIcon *in)
 {
-	char path[PATHLEN];
+	static char path[PATHLEN];
 	ULONG args[1];
 
 	args[0] = (IPTR)in->in_Name;

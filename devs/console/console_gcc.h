@@ -28,7 +28,7 @@ struct ConsoleBase;
  * window is refreshed or scrolled back, and all task stacks share one
  * small pool.
  */
-#define COTASK_STACKSIZE 2048
+#define COTASK_STACKSIZE 1792
 #define COTASK_PRIORITY  10
 
 

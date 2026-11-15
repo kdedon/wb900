@@ -9,7 +9,7 @@
 | CPU | Z8001 segmented + Z8010 MMU, 6 MHz stock, 10/12/48 MHz turbo on MiSTer | c900-c0 |
 | RAM | 512 KB / 1 MB motherboard; optional 2–16 MB RAM card (invented); ~957 KB free under Exec900 on 1 MB | c900-c0, exec816-0f |
 | Segments | No object or code hunk may cross 64 KB; pointer arithmetic is 16-bit offset only | exec816-0f |
-| Stacks | One shared pool: 32 KB on 1 MB, 63 KB above (EXEC_ASKS 5b); DOS+shell uses ~8.5 KB | exec816-0f |
+| Stacks | One shared pool: 32 KB on 1 MB, 63 KB above (EXEC_ASKS 5b); Workbench disks ask 48 KB (§5a); DOS+shell uses ~8.5 KB | exec816-0f |
 | Compiler | Mark Williams C: K&R, 16-bit int, 15-char externals; prototypes, `//`, mixed declarations and long switch added (COMPILER_ASKS), long names via `-VLNAME` (EXEC_ASKS 4) | exec816-0f |
 | ABI | Stack args, caller pops, result r1/rr0; Amiga LVO jump tables (6-byte JP); non-exec libs take base as hidden first arg | exec816-0f |
 | Display | HR card: 128 KB VRAM CPU-mapped at 0x3E0000; jumper-selected 1024x800 or 1024x1024 1bpp (128 B stride), or 640x400 4bpp chunky RGBI (320 B stride, fixed CGA palette). No blitter, HW cursor or vblank IRQ | kernel3 |
@@ -81,21 +81,57 @@ Measured (B; "stack" is the most a task used of its allocation):
 | utility.library | 8,066 | 440 | 1,423 code lines | |
 | graphics.library | 59,032 | 4,074 | | was 54,828 + 3,802 before pens, VideoControl and View calls |
 | layers.library | 29,882 | 422 | hyperlayers, no composited layers | deepest test call ~1.1 KB stack |
-| intuition.library | 201,412 in 4 hunks (54,786, 62,380, 64,290, 19,956) | 3,644 | ~38.8k lines with autodocs; toolchain 337f2b6 | without monitorclass, CGX/HIDD, screen notification, screen buffers, IPrefs, alerts, group/model/fillrect/itext/barlabel; with decorators. Input task 2,580 of 4,096 (was 1,536); menu task 1,209 of 2,048 |
-| gadtools.library | 63,626 | 1,970 | all of it, 8.3k lines | input task 2,571 of 4,096; menu task 2,045, so its stack is now 3,072 |
+| intuition.library | 201,412 in 4 hunks (54,786, 62,380, 64,290, 19,956) | 3,644 | ~38.8k lines with autodocs; toolchain 337f2b6 | without monitorclass, CGX/HIDD, screen notification, screen buffers, IPrefs, alerts, group/model/fillrect/itext/barlabel; with decorators. input task and menu task in §5a |
+| gadtools.library | 63,626 | 1,970 | all of it, 8.3k lines | menu task 1,893 (§5a) |
 | icon.library | ~21 K | ~2 K | classic .info only | |
-| workbench.library | 16 K | 0.4 K | | handler 882 of 1,536 |
-| Workbench | 28 K | | | ~2.6 K of 3.5 K in the self test |
-| asl.library | 126,800 in 3 hunks (52,964, 60,662, 13,174) | 3,488 | all but locale, prefs, truecolour images; 16.1k lines | caller needs ~3.8 K (tests/asl 3,822) |
-| commodities.library | 9,960 | 1,950 | | handlers run on the input task: 2,751 of 4,096 in tests/cxtools; three allocs and frees per event per broker |
+| workbench.library | 16 K | 0.4 K | | handler 886 of 1,280 |
+| Workbench | 28 K | | | 2,626 of 3,072 |
+| asl.library | 126,800 in 3 hunks (52,964, 60,662, 13,174) | 3,488 | all but locale, prefs, truecolour images; 16.1k lines | caller needs ~3.4 K (tests/asl 3,360) |
+| commodities.library | 9,960 | 1,950 | | handlers run on the input task: 2,652 of 3,840 in tests/cxtools; three allocs and frees per event per broker |
 | NoCapsLock, AutoPoint, ClickToFront, Blanker, DepthMenu | 2.5, 3.1, 3.3, 4.3, 6.6 K | | | 850–1,300 of 2,048 each |
-| More | 18.6 K | 1.7 K + 6.0 K bss | | ~3.0 K with asl's requester open; icon asks 6 K; files ≤ 65,520 B (one segment) |
+| More | 18.6 K | 1.7 K + 6.0 K bss | | 2,869 with asl's requester open; icon 4,096; files ≤ 65,520 B (one segment) |
 | Edit (JanoEditor) | 72.7 K in 2 hunks (62.0, 10.6) | 4.1 K | | as More |
-| Calculator | 8.3 K | 0.6 K | | 2,283; icon 4,096 |
-| Clock | 6.2 K | 0.6 K | | 1,243; icon 3,072 |
-| KeyShow | 6.0 K | 0.9 K + 2.2 K bss | | 1,314; icon 3,072 |
-| SysMon | 6.3 K | 0.8 K + 4.6 K bss | | 2,567; icon 4,096 |
-| LogView | 5.0 K | 0.4 K | | 2,533; icon 4,096 |
+| Calculator | 8.3 K | 0.6 K | | 2,209; icon 2,816 |
+| Clock | 6.2 K | 0.6 K | | 1,192; icon 2,048 |
+| KeyShow | 6.0 K | 0.9 K + 2.2 K bss | | 1,282; icon 2,048 |
+| SysMon | 6.3 K | 0.8 K + 4.6 K bss | | 2,539; icon 3,072 |
+| LogView | 5.0 K | 0.4 K | | 2,532; icon 3,072 |
+
+
+### 5a. Stack budget
+
+Every task stack comes from one pool. Each stack is its measured peak (the emulator tests, `C:StackUse`'s count) plus 384 B, rounded up to 256 B: 256 B of interrupt headroom and 128 B of slack. Workbench raises a tool's icon stack to its 2,048 B default.
+
+| Task | Peak | Was | Now | Deepest path |
+|---|---:|---:|---:|---|
+| input.device | 3,336 | 4,096 | 3,840 | a window resize redrawing the frame's gadgets |
+| Intuition menu handler | 1,893 | 3,072 | 2,304 | menu text; submenus draw no deeper |
+| Workbench | 2,626 | 3,584 | 3,072 | OpenScreen; its requesters peak lower |
+| Workbench Handler | 886 | 1,536 | 1,280 | LoadSeg and CreateNewProc |
+| CON: window process | 3,354 | 4,096 | 3,840 | opening the Workbench screen itself |
+| console.device task | 1,336 | 2,048 | 1,792 | refresh |
+| con-handler | 328 | 1,024 | 768 | |
+| More, Edit (icons; Notes, ReadMe) | 2,869 | 6,144 | 4,096 | asl's Parent: 3,360 from a shallow caller |
+| Calc | 2,209 | 4,096 | 2,816 | |
+| Clock, KeyShow | 1,282 | 3,072 | 2,048 | |
+| SysMon, LogView | 2,539 | 4,096 | 3,072 | |
+| commodities | 1,314 | 2,048 | 2,048 | |
+
+Cuts: asl's Parent and Add go through one path buffer instead of two and its pattern buffer is pooled (asl from 3,874 to 3,360); gadtools' text gadget keeps its text buffer off the frame and label drawing (SysMon −168, More −195); Workbench's scans and commands keep their paths static.
+
+The pool on 1 MB, in bytes, with two v7fs-handlers (long-name disks):
+
+| | 32 KB segment | 48 KB segment |
+|---|---:|---:|
+| Pool after the interrupt stack | 26,880 | 43,264 |
+| ramlib, 2 × v7fs-handler, ram-handler, con-handler | 6,400 | 6,400 |
+| input.device, Workbench, its handler, menu task | 10,496 | 10,496 |
+| Shell: CON: window, console.device task, Shell process | 7,680 | 7,680 |
+| Left for tools | 2,304 | 18,688 |
+| Clock, SysMon, More | 9,216 | 9,216 |
+| A Shell command (4,000) and spare | does not fit | 5,472 spare |
+
+So the Workbench disks boot with `mkdisk --stack=48`, which takes 16 KB of heap. tests/wbmulti runs Workbench, a Shell, Clock, SysMon and More (with one v7fs-handler and the test's two 2,048 B helpers): 6,400 B of pool stay free and 48 KB of memory, so on 1 MB the heap, not the pool, now limits a fourth tool.
 
 ## 6. Phasing (done)
 

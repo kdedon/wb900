@@ -485,10 +485,13 @@ void DoSyncAction(void (*func)(struct IntuiActionMsg *, struct IntuitionBase *),
 {
     struct IIHData *iihd = (struct IIHData *)GetPrivIBase(IntuitionBase)->InputHandler->is_Data;
     struct Task    *me = FindTask(NULL);
+    struct GfxBase *GfxBase = GetPrivIBase(IntuitionBase)->GfxBase;
 
     if (me == iihd->InputDeviceTask)
     {
+        OwnBlitter();
         func(msg, IntuitionBase);
+        DisownBlitter();
     }
     else
     {
@@ -545,10 +548,13 @@ BOOL DoASyncAction(void (*func)(struct IntuiActionMsg *, struct IntuitionBase *)
     struct IIHData          *iihd = (struct IIHData *)GetPrivIBase(IntuitionBase)->InputHandler->is_Data;
     struct Task             *me = FindTask(NULL);
     struct IntuiActionMsg   *new_msg;
+    struct GfxBase          *GfxBase = GetPrivIBase(IntuitionBase)->GfxBase;
 
     if (me == iihd->InputDeviceTask)
     {
+        OwnBlitter();
         func(msg, IntuitionBase);
+        DisownBlitter();
         return TRUE;
     }
     else if ((new_msg = AllocVecPooled(iihd->ActionsMemPool,size)))
@@ -578,6 +584,7 @@ void HandleIntuiActions(struct IIHData *iihdata,
                         struct IntuitionBase *IntuitionBase)
 {
     struct IntuiActionMsg *am;
+    struct GfxBase        *GfxBase = GetPrivIBase(IntuitionBase)->GfxBase;
 
     if (iihdata->ActiveSysGadget)
     {
@@ -594,7 +601,9 @@ void HandleIntuiActions(struct IIHData *iihdata,
         if (!am)
             break;
 
+        OwnBlitter();
         am->handler(am, IntuitionBase);
+        DisownBlitter();
 
         if (am->task)
         {

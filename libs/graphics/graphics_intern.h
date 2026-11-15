@@ -76,6 +76,7 @@ struct SoftSprite {
     UBYTE                  *ss_Tmpl;       /* templates of pens 1-3, and room to merge */
     ULONG                   ss_TmplSize;
     struct BitMap          *ss_Flush;      /* drawn into, to flush at the end */
+    UWORD                   ss_Hold;       /* OwnBlitter() nesting */
 };
 
 BOOL gfx_SpriteBefore(struct BitMap *bm, struct Rectangle *r, struct GfxBase *GfxBase);

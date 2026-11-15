@@ -332,7 +332,7 @@ BOOL FRGetDirectory(STRPTR path, struct LayoutData *ld, struct AslBase_intern *A
     struct IntFileReq           *ifreq = (struct IntFileReq *)ld->ld_IntReq;
     struct FileRequester        *freq = (struct FileRequester *)ld->ld_Req;
     struct FileInfoBlock        *fib;
-    UBYTE                       parsedpattern[MAX_PATTERN_LEN * 2 + 3];
+    UBYTE                       *parsedpattern = NULL;
     struct AnchorPath           *ap = NULL;
     BPTR                        lock;
     BOOL                        dopatternstring = FALSE, success = FALSE;
@@ -352,7 +352,9 @@ BOOL FRGetDirectory(STRPTR path, struct LayoutData *ld, struct AslBase_intern *A
         char *pat;
 
         GetAttr(STRINGA_TextVal, udata->PatternGad, (IPTR *)&pat);
-        if (pat[0])
+        /* Off the stack: the scan below goes deep */
+        if (pat[0] && (parsedpattern = MyAllocVecPooled(ld->ld_IntReq->ir_MemPool,
+            MAX_PATTERN_LEN * 2 + 3, AslBase)))
         {
             if (ParsePatternNoCase(pat, parsedpattern, MAX_PATTERN_LEN * 2 + 3) != -1)
             {
@@ -545,6 +547,7 @@ BOOL FRGetDirectory(STRPTR path, struct LayoutData *ld, struct AslBase_intern *A
         UnLock(lock);
 
     } /* if (directory locked) */
+    MyFreeVecPooled(parsedpattern, AslBase);
 
     udata->LVColumnAlign[0] = ASLLV_ALIGN_LEFT;         /* File/Dir name */
     udata->LVColumnAlign[1] = ASLLV_ALIGN_RIGHT;        /* Size/"Drawer" */
@@ -794,12 +797,11 @@ BOOL FRValidPath(CONST_STRPTR path, struct AslBase_intern *AslBase)
 
 /*****************************************************************************************/
 
-BOOL FRNewPath(STRPTR path, struct LayoutData *ld, struct AslBase_intern *AslBase)
+/* FRNewPath on a buffer of the caller's, which it changes */
+static BOOL newpath(STRPTR pathstring, struct LayoutData *ld, struct AslBase_intern *AslBase)
 {
-    char                pathstring[MAX_PATH_LEN];
     BOOL                result = FALSE;
 
-    strcpy(pathstring, path);
     fixpath(pathstring);
 
     if (!FRValidPath(pathstring, AslBase))
@@ -815,6 +817,14 @@ BOOL FRNewPath(STRPTR path, struct LayoutData *ld, struct AslBase_intern *AslBas
     return result;
 }
 
+BOOL FRNewPath(STRPTR path, struct LayoutData *ld, struct AslBase_intern *AslBase)
+{
+    char                pathstring[MAX_PATH_LEN];
+
+    strcpy(pathstring, path);
+    return newpath(pathstring, ld, AslBase);
+}
+
 /*****************************************************************************************/
 
 BOOL FRAddPath(STRPTR path, struct LayoutData *ld, struct AslBase_intern *AslBase)
@@ -828,7 +838,7 @@ BOOL FRAddPath(STRPTR path, struct LayoutData *ld, struct AslBase_intern *AslBas
     strcpy(pathstring, gadpath);
     AddPart(pathstring, path, MAX_PATH_LEN);
 
-    result = FRNewPath(pathstring, ld, AslBase);
+    result = newpath(pathstring, ld, AslBase);
 
     return result;
 
@@ -909,7 +919,7 @@ BOOL FRParentPath(struct LayoutData *ld, struct AslBase_intern *AslBase)
     else
     {
         UnLock(lock);
-        result = FRNewPath(pathstring, ld, AslBase);
+        result = newpath(pathstring, ld, AslBase);
     }
 
     return result;

@@ -19,7 +19,7 @@
 #define RMB_FREEZES_OUTPUT      1
 
 /* A window's handler process: it also runs console.device's writes */
-#define CONTASK_STACKSIZE       4096
+#define CONTASK_STACKSIZE       3840
 #define CONTASK_PRIORITY        5
 
 #define CONSOLEBUFFER_SIZE      256

@@ -20,7 +20,7 @@ static char wbhandler[] = "Workbench Handler";
 extern APTR WorkbenchFuncs[];
 
 /* The handler's stack */
-#define HANDLER_STACK   1536
+#define HANDLER_STACK   1280
 
 static BOOL openall(struct WorkbenchBase *WorkbenchBase)
 {

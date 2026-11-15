@@ -9,7 +9,7 @@
 
 /* The plan's rates at 6 MHz, in microseconds a byte or an action */
 #define US_PUSH		15
-#define US_SEEK		25
+#define US_SEEK		15
 #define US_REG		8
 #define US_FILLB	1
 #define US_COPYB	2
@@ -103,11 +103,11 @@ BOOL lct_step(struct BitMap *bm, char *what, ULONG *us)
 		ok = FALSE;
 	}
 	push = s->ls_Data[31] - last.ls_Data[31];
-	seek = s->ls_Data[18] - last.ls_Data[18];
+	seek = s->ls_Data[19] - last.ls_Data[19];
 	regs = 0;
 	for (i = 0; i < 38; i++)
 		regs += s->ls_Data[i] - last.ls_Data[i];
-	regs -= push + 2 * seek;
+	regs -= push + seek;
 	t = push * US_PUSH + seek * US_SEEK + regs * US_REG +
 	    (s->ls_Fill - last.ls_Fill) * US_FILLB +
 	    (s->ls_Copy - last.ls_Copy) * US_COPYB;

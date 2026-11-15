@@ -8,7 +8,7 @@
 
 #define MENUTASK_NAME 	    	"Intuition menu handler"
 /* All task stacks share one small pool */
-#define MENUTASK_STACKSIZE  	3072
+#define MENUTASK_STACKSIZE  	2304
 #define MENUTASK_PRIORITY   	10
 
 #define ITEM_ITEM    	    	1

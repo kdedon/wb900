@@ -35,6 +35,20 @@ Opened 2026-11-14; status from exec816-0f and the c900/exec900 log. The user app
 | 26 | ExecBase: idle time, for a CPU load (below) | open | — |
 | 27 | `Close()`: clear the `pr_ConsoleTask` that the handle's `Open()` set (below) | **Landed** d2a5278b: Close clears the console its handle set; Open("*") afterwards fails with ERROR_DEVICE_NOT_MOUNTED | done |
 | 28 | `InLoadSeg`: read a hunk's RELOC32 offsets in blocks (below) | **Landed** d547e925: 128-entry reloc buffer; a 2,219-reloc file loads in 0.32 s instead of 1.50 s at 6 MHz | done |
+| 29 | A smaller root (boot) stack, so a Workbench disk gives the rest to the pool (below) | **Landed** 9159ccc8: `--rootstack=KB`, 1-16, default 4; boot uses about 500 B, so 2 KB is the safe choice for our root program | done |
+| 30 | DH1:'s handler: share DH0:'s code instead of a second copy (below) | open | — |
+
+### 30. A second v7fs-handler on 1 MB
+
+On a `--lnames` disk, DH1:'s handler is a second loaded copy (about 17 KB) plus its 16 buffers (8.3 KB): 25,400 B less heap at boot. On 1 MB that is the difference for asl.library (hunks of 52,964, 60,662 and 13,174 B): tests/edit opens it for Save As, and with `--lnames` it no longer loads. Before the open: 172,328 B free, largest 131,072 with one handler; 146,928 B, largest 65,536 with two, and no hole left for the 13 KB hunk. tests/edit runs on 1,088 KB meanwhile. Repro: `make test T=edit` with the test's EMUFLAGS line removed.
+
+Asked for: one code copy for both volumes (per-process data, say from the startup message), or fewer DH1: buffers (a mkdisk or kboot.cfg setting).
+
+### 29. Root stack size
+
+On 1 MB, Workbench, a Shell running a command and three tools need about 38 KB of task stacks (SIZING.md §5a), so the Workbench disks boot with `mkdisk --stack=48`, which takes 16 KB of heap; that machine then has about 48 KB of memory free. The root stack (0xF000-0xFFFF) stays 4,096 B, but a Workbench disk's root program only starts Workbench and waits: it used 762 B on the board.
+
+Asked for: the root stack's size as a boot setting beside `sc_kb` (say `mkdisk --rootstack=KB`, 1 to 4), with the freed bytes in the `MEMF_STACK` pool. A 1 KB root stack would let these disks boot with 45 KB instead of 48, 3 KB more heap.
 
 ### 16. Semaphore and Forbid cost
 
@@ -158,3 +172,5 @@ Minor (fixed by 9's alerts.h): `<exec/alerts.h>` lacked `AN_Unknown` and the `AG
 ## Deferred: C900 keys with no PC key on the MiSTer (2026-11-15)
 
 The MiSTer core maps PC keys to C900 codes (rtl/host/ps2_kbd_matrix.sv). c900-c0 is mapping the arrows (0x5F-0x62), Del (0x55), keypad / (0x5A), Enter (0x5E) and . (0x59). Unreachable from a PC keyboard: Help (0x54, Amiga 0x5F), F12-F15, CE, keypad 00, W1-W3. wb900 uses none yet; when something does, pick PC keys and ask c900-c0 to map them. C900 key numbers: kernel3 os/hrtty/src/kbtab.c, Exec900 docs/platform.md#keyboard.
+
+Exec900 1e499a37 (2026-11-15): the stack segment is 63 KB on every machine and its spare RAM serves ordinary allocations last, so 1 MB needs no `--stack` tuning.

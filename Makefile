@@ -70,7 +70,7 @@ GFXDRIVERS = hr lc
 DEVS	= input console
 TESTS	= $(basename $(notdir $(wildcard $(TOP)/tests/*.c)))
 # The tests that open intuition.library
-ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin asl more edit expunge
+ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin asl more edit expunge wbmulti
 # The demos also made as NAME-1x.bin, in the Workbench 1.x style
 STYLED	= wbdemo wbinter gtdemo wbboot
 
@@ -168,15 +168,20 @@ ITESTS	+= lcwb
 $(OUT)/progs/lcwb: $(LCTEST) $(ALIB)
 lcwb_PUT = --put=Devs/system-configuration=$(OUT)/devs/system-configuration
 $(OUT)/lcwb.bin: $(OUT)/devs/system-configuration
+# lcbench: the card's port costs on the board
+$(OUT)/progs/lcbench: $(OBJ)/lcm/bench.o $(OBJ)/lc/lcport.o
 # lcdemo: the card on the board, timed; wbboot-lc.bin: its Workbench, in
-# the 1.x style
+# the 1.x style; both with the serial mouse
+LCMOUSE	= --module=$(EXEC900_OUT)/hunks/gameport.dev
 ITESTS	+= lcdemo
 $(OUT)/progs/lcdemo: $(ALIB)
-lcdemo_PUT = $(lcwb_PUT)
+lcdemo_PUT = $(lcwb_PUT) $(LCMOUSE)
 $(OUT)/lcdemo.bin: $(OUT)/devs/system-configuration
 all: $(OUT)/wbboot-lc.bin
 $(OUT)/wbboot-lc.bin: $(OUT)/wbboot-1x.bin
-	cp $< $@
+	$(MKDISK) --kboot=$(KBOOT) --root=$(OUT)/progs/wbboot $(call DISK,wbboot) \
+	  --put=Devs/system-configuration=$(OUT)/devs/system-configuration \
+	  $(LCMOUSE) $@ $(EXEC900_OUT)/exec900.sys
 intuition_LINK = $(ALIB)
 intuition_SRC = $(TOP)/lib
 $(eval $(call LIBRARY,intuition,Intuition,it))
@@ -214,12 +219,12 @@ $(OBJ)/t_%.o: $(TOP)/tests/%.c $(HDRS) $(patsubst %,$(OUT)/include/lvo/%_lib.h,$
 	$(call CCRULE,$<,t_$*,$@)
 
 $(OUT)/progs/%: $(OBJ)/startup.o $(OBJ)/t_%.o $(OBJ)/amiga.o $(OBJ)/portio.o $(OBJ)/progabs.o
-	$(SYMCHECK) $(TOP)/tests/$*.c $(if $(filter $(ALIBTESTS),$*),$(TOP)/lib) $(if $(filter wbboot shellwin,$*),$(WBSRC))
+	$(SYMCHECK) $(TOP)/tests/$*.c $(if $(filter $(ALIBTESTS),$*),$(TOP)/lib) $(if $(filter wbboot shellwin,$*),$(WBSRC)) $(if $(filter wbmulti,$*),$(filter-out %/selftest.c,$(WBSRC)))
 	@mkdir -p $(OUT)/progs
 	$(LD) -r -o $(OBJ)/p_$*.r $^
 	$(MKHUNK) --entry=start $@ $(OBJ)/p_$*.r
 # The tests that link amiga.lib
-ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin asl expunge
+ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin asl expunge wbmulti
 $(patsubst %,$(OUT)/progs/%,$(ALIBTESTS)): $(ALIB)
 # amiga.lib's commodities calls
 CXLIB	= $(patsubst $(TOP)/lib/%.c,$(OBJ)/lib/%.o,$(wildcard $(TOP)/lib/cx/*.c))
@@ -266,6 +271,8 @@ $(eval $(call UTIL,LogView,logview))
 WBSRC	= $(patsubst %,$(TOP)/wb/%.c,workbench drawer selftest)
 $(OUT)/progs/wbboot $(OUT)/progs/shellwin: $(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC))
 $(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC)): $(TOP)/wb/workbench.h
+# tests/wbmulti.c drives Workbench with its own selftest()
+$(OUT)/progs/wbmulti: $(OBJ)/w_workbench.o $(OBJ)/w_drawer.o
 
 # The icons of Workbench's disk: $(OUT)/wb/NAME.info, from mkinfo.py
 # with NAME_INFO's options
@@ -276,17 +283,17 @@ Demos_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
 	--window=140,110,400,140
 Trashcan_INFO = --type=trashcan --art=builtin:trash --select=builtin:trash_open
 Notes_INFO = --type=project --art=builtin:project --tool=SYS:Utilities/More \
-	--stack=6144
+	--stack=4096
 ReadMe_INFO = $(Notes_INFO)
 Utilities_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
 	--window=160,180,440,130
-More_INFO = --type=tool --art=builtin:tool --stack=6144
-Edit_INFO = --type=tool --art=builtin:tool --stack=6144
-Calc_INFO = --type=tool --art=$(TOP)/wb/calculator/calculator.txt --stack=4096
-Clock_INFO = --type=tool --art=$(TOP)/wb/clock/clock.txt --stack=3072
-KeyShow_INFO = --type=tool --art=$(TOP)/wb/keyshow/keyshow.txt --stack=3072
-SysMon_INFO = --type=tool --art=$(TOP)/wb/sysmon/sysmon.txt --stack=4096
-LogView_INFO = --type=tool --art=$(TOP)/wb/logview/logview.txt --stack=4096
+More_INFO = --type=tool --art=builtin:tool --stack=4096
+Edit_INFO = --type=tool --art=builtin:tool --stack=4096
+Calc_INFO = --type=tool --art=$(TOP)/wb/calculator/calculator.txt --stack=2816
+Clock_INFO = --type=tool --art=$(TOP)/wb/clock/clock.txt --stack=2048
+KeyShow_INFO = --type=tool --art=$(TOP)/wb/keyshow/keyshow.txt --stack=2048
+SysMon_INFO = --type=tool --art=$(TOP)/wb/sysmon/sysmon.txt --stack=3072
+LogView_INFO = --type=tool --art=$(TOP)/wb/logview/logview.txt --stack=3072
 $(patsubst %,$(OUT)/wb/%.info,Calc Clock KeyShow SysMon LogView): $(wildcard $(TOP)/wb/*/*.txt)
 Tools_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
 	--window=180,150,300,100
@@ -333,10 +340,13 @@ WBDISK	= Disk.info Demos.info Demos/Hello.info Demos/Notes.info Demos/ReadMe.inf
 	Trashcan.info Tools.info Tools/Commodity.info \
 	$(patsubst %,Tools/Commodity/%.info,$(CXTOOLS)) Utilities.info
 CXPUT	= $(foreach t,$(CXTOOLS),--put=Tools/Commodity/$(t)=$(OUT)/cx/$(t))
+# A 48 KB stack segment: a 1 MB machine's 32 KB fits Workbench and a
+# Shell but not two tools beside them (SIZING.md)
+WBSTACK	= --stack=48
 wbboot_PUT = $(workbench_PUT) --put=Demos/Notes=$(TOP)/wb/Notes \
 	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan $(CXPUT) $(UTILPUT) \
 	$(foreach i,$(filter-out Demos/Hello.info,$(WBDISK)),--put=$(i)=$(OUT)/wb/$(notdir $(i))) \
-	--module=$(EXEC900_OUT)/hunks/ram-handler
+	--module=$(EXEC900_OUT)/hunks/ram-handler $(WBSTACK)
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin $(OUT)/shellwin.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS)
 # More's test: the utilities and the Shell
@@ -356,6 +366,10 @@ $(OUT)/cxtools.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(patsubst %,$(OUT)/wb/
 # Workbench's disk with the Shell
 shellwin_PUT = $(wbboot_PUT) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg
 $(OUT)/shellwin.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
+# Workbench, a Shell and four tools at once
+wbmulti_PUT = $(shellwin_PUT)
+$(OUT)/wbmulti.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK))) \
+	$(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS)
 
 BINDEPS	= $(patsubst %,$(OUT)/libs/%.library,$(LIBS)) $(patsubst %,$(OUT)/libs/%.gfxdriver,$(GFXDRIVERS)) $(patsubst %,$(OUT)/devs/%.device,$(DEVS)) $(OUT)/l/con-handler $(EXEC900_OUT)/exec900.sys
 $(OUT)/%.bin: $(OUT)/progs/% $(BINDEPS)

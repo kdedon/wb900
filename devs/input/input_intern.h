@@ -38,7 +38,7 @@
 /* Size of the input device's stack. Input handlers run on it, and all
  * task stacks share one small pool, so handlers must be frugal:
  * intuition's handler opens windows and draws on it. */
-#define IDTASK_STACKSIZE    	    4096
+#define IDTASK_STACKSIZE    	    3840
 
 /* Priority of the input.device task */
 #define IDTASK_PRIORITY     	    20

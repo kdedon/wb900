@@ -48,7 +48,7 @@ int main(void)
 	SetSignal(0L, SIGBREAKF_CTRL_F);
 	t[0].ti_Tag = NP_Entry;		t[0].ti_Data = (ULONG)Workbench;
 	t[1].ti_Tag = NP_Name;		t[1].ti_Data = (ULONG)"Workbench";
-	t[2].ti_Tag = NP_StackSize;	t[2].ti_Data = 3584;
+	t[2].ti_Tag = NP_StackSize;	t[2].ti_Data = 3072;
 	t[3].ti_Tag = NP_ExitCode;	t[3].ti_Data = (ULONG)done;
 	t[4].ti_Tag = NP_ExitData;	t[4].ti_Data = (ULONG)&s;
 	t[5].ti_Tag = TAG_DONE;

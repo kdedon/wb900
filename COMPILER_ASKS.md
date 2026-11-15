@@ -1,6 +1,6 @@
 # Requested MWC compiler changes
 
-Target: commodore-900-toolchain, cc0 front end (cc1 where noted). Motivation: HAZARDS.md. Each later ask's heading gives its status; 13, 17 and 18 are open.
+Target: commodore-900-toolchain, cc0 front end (cc1 where noted). Motivation: HAZARDS.md. Each later ask's heading gives its status; 13, 17, 18 and 20 are open.
 
 1–4 landed on toolchain main as 4bf4702, 2026-11-14 (prototypes bbcf7d6, long switch 8a9a078, `//` 20be671, mixed declarations 5027c09). Existing code stays byte-identical; native and host builds match.
 
@@ -232,6 +232,26 @@ unsigned long u(unsigned short a, unsigned short b) { return (unsigned long)a * 
 ```
 
 cc2 gives `q` a DIVL (zero-extended to 64 bits, about 740 clocks) and `p` and `u` a MULTL (about 300), where DIV (32 by 16, about 107) and MULT (16 by 16 to 32, about 70) give the same result: for `p` always, for `u` and `q` when the operands are under 32768 or the code corrects for the sign. Row offsets (`(ULONG)y * BytesPerRow`) and line steps in graphics.library spent 10-20% of a line's setup there. Not blocking: libs/graphics/gfxasm.s has `gfx_MulW` and `gfx_MulDiv`. Expected: MULT for a product of two 16-bit operands widened to long, and DIV where the divisor and quotient are known to fit.
+
+## 19. `srlb`/`srab` by a constant: as and the emulator disagree on the count (opened 2026-11-15; as is right, the emulator is wrong, reported to its owner)
+
+```
+	ldb	rl0, $0xF8
+	srlb	rl0, $1		/ as: B201 00FF; the emulator shifts rl0 left 255: 0, C clear
+```
+
+as writes byte shifts' count word with 00 in the high byte (`machine.c`: "byte forms: 00 in the high byte"), so a right shift by 1 is 0x00FF. The emulator reads the word as a signed 16-bit count, sees +255 and shifts left. One of them is wrong; the Z8000 manual decides which. Not blocking: libs/lc/lcport.s shifts the byte as a word (`srl r0, $1`). Expected: the right shift, C the bit shifted out.
+
+## 20. A conditional operand of a 16-bit product keeps MULTL (opened 2026-11-15)
+
+```c
+unsigned long f(int c, short a, short b, unsigned short w)
+{
+	return (unsigned long)(c ? a : b) * w;	/* MULTL, 453 clocks */
+}
+```
+
+18's MULT is missed when the widened operand is a `?:`, with or without a cast to `short` inside: 453 clocks against 164 for `(unsigned long)a * w`. A `?:` nested in a sum, `(unsigned long)(a + (c ? b : 0)) * w`, gets MULT (220). Not blocking: graphics.library puts the `?:` outside the products. Expected: MULT when both arms are 16-bit.
 
 ## Out of scope (handled by the converter or by hand)
 

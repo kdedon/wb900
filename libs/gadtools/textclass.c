@@ -276,20 +276,85 @@ AROS_UFH2 (void, puttostr,
 
 /**********************************************************************************************/
 
-IPTR GTText__GM_RENDER(Class *cl, struct Gadget *g, struct gpRender *msg)
+/* Apart from GM_RENDER, so that textbuf is off the stack while the frame and label draw */
+static void rendertext(Class *cl, struct TextData *data, struct Gadget *g,
+    struct gpRender *msg)
 {
     UWORD               *pens = msg->gpr_GInfo->gi_DrInfo->dri_Pens;
     UBYTE               textbuf[256], *str;
-    struct TextData     *data = INST_DATA(cl, g);
     WORD                left, left2, top, width, height, numchars, tlength;
     struct TextFont     *oldfont;
     struct RastPort     *rp = msg->gpr_RPort;
-    
 
     left   = g->LeftEdge;
     top    = g->TopEdge;
     width  = g->Width;
     height = g->Height;
+
+    /* preserve font */
+    oldfont = rp->Font;
+    SetFont(rp, data->font);
+
+    str = textbuf;
+    if (data->gadgetkind == TEXT_KIND)
+    {
+        strncpy(str, (char *)data->toprint, sizeof(textbuf));
+        textbuf[sizeof(textbuf) - 1] = '\0';
+    }
+    else /* NUMERIC_KIND or label of SLIDER_KIND */
+    {
+        ULONG value = data->toprint;
+        RawDoFmt(data->format, (RAWARG)&value, (APTR)puttostr, &str);
+    }
+
+    numchars = strlen(textbuf);
+
+    if (data->flags & TEXTF_BORDER)
+    {
+        left += VBORDER + 1;
+        top  += HBORDER + 1;
+        width  = g->Width -  (VBORDER + 1) * 2;
+        height = g->Height - (HBORDER + 1) * 2;
+    }
+
+    if (data->flags & TEXTF_CLIPPED)
+    {
+        struct TextExtent te;
+
+        /* See how many chars fits into the display area */
+        numchars = TextFit(rp, textbuf, numchars, &te, NULL, 1, width, g->Height);
+    }
+
+    tlength = TextLength(rp, textbuf, numchars);
+
+    left2 = left;
+    switch (data->justification)
+    {
+        case GTJ_LEFT:
+            break;
+        case GTJ_RIGHT:
+            left2 += (width - tlength);
+            break;
+        case GTJ_CENTER:
+            left2 += ((width - tlength) / 2);
+            break;
+    }
+
+    /* Render text */
+    SetABPenDrMd(rp, pens[data->backpen], pens[data->backpen], JAM2);
+    RectFill(rp, left, top, left + width - 1, top + height - 1);
+    SetAPen(rp, pens[data->frontpen]);
+
+    Move(rp, left2,
+         top + ((height - (WORD)data->font->tf_YSize) / 2) + data->font->tf_Baseline);
+    Text(rp, textbuf, numchars);
+
+    SetFont(rp, oldfont);
+}
+
+IPTR GTText__GM_RENDER(Class *cl, struct Gadget *g, struct gpRender *msg)
+{
+    struct TextData     *data = INST_DATA(cl, g);
 
     if (msg->gpr_Redraw == GREDRAW_REDRAW)
     {
@@ -297,8 +362,8 @@ IPTR GTText__GM_RENDER(Class *cl, struct Gadget *g, struct gpRender *msg)
         {
             DrawImageState(msg->gpr_RPort,
                     (struct Image *)data->frame,
-                    left,
-                    top,
+                    g->LeftEdge,
+                    g->TopEdge,
                     IDS_NORMAL,
                     msg->gpr_GInfo->gi_DrInfo);
         }
@@ -307,68 +372,7 @@ IPTR GTText__GM_RENDER(Class *cl, struct Gadget *g, struct gpRender *msg)
     }
     
     if (data->toprint || (data->gadgetkind != TEXT_KIND))
-    {
-        /* preserve font */
-        oldfont = rp->Font;
-        SetFont(rp, data->font);
-
-        str = textbuf;
-        if (data->gadgetkind == TEXT_KIND)
-        {
-            strncpy(str, (char *)data->toprint, sizeof(textbuf));
-            textbuf[sizeof(textbuf) - 1] = '\0';
-        }
-        else /* NUMERIC_KIND or label of SLIDER_KIND */
-        {
-            ULONG value = data->toprint;
-            RawDoFmt(data->format, (RAWARG)&value, (APTR)puttostr, &str);
-        }
-
-        numchars = strlen(textbuf);
-
-        if (data->flags & TEXTF_BORDER)
-        {
-            left += VBORDER + 1;
-            top  += HBORDER + 1;
-            width  = g->Width -  (VBORDER + 1) * 2;
-            height = g->Height - (HBORDER + 1) * 2;
-        }
-
-        if (data->flags & TEXTF_CLIPPED)
-        {
-            struct TextExtent te;
-
-            /* See how many chars fits into the display area */
-            numchars = TextFit(rp, textbuf, numchars, &te, NULL, 1, width, g->Height);
-        }
-
-        tlength = TextLength(rp, textbuf, numchars);
-
-        left2 = left;
-        switch (data->justification)
-        {
-            case GTJ_LEFT:
-                break;
-            case GTJ_RIGHT:
-                left2 += (width - tlength);
-                break;
-            case GTJ_CENTER:
-                left2 += ((width - tlength) / 2);
-                break;
-        }
-
-        /* Render text */
-        SetABPenDrMd(rp, pens[data->backpen], pens[data->backpen], JAM2);
-        RectFill(rp, left, top, left + width - 1, top + height - 1);
-        SetAPen(rp, pens[data->frontpen]);
-
-        Move(rp, left2,
-             top + ((height - (WORD)data->font->tf_YSize) / 2) + data->font->tf_Baseline);
-        Text(rp, textbuf, numchars);
-
-        SetFont(rp, oldfont);
-
-    } /* if (data->toprint || (data->gadgetkind != TEXT_KIND)) */
+        rendertext(cl, data, g, msg);
     
     return 0;
 }

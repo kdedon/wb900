@@ -168,7 +168,7 @@ void gfx_SpriteAfter(struct GfxBase *GfxBase)
 
     if (!ss->ss_Shown && ss->ss_Sprite)
         sprite_show(ss, GfxBase);
-    if (ss->ss_Flush && ss->ss_Lock.ss_NestCount == 1) {
+    if (ss->ss_Flush && ss->ss_Lock.ss_NestCount == 1 && ss->ss_Hold == 0) {
         sprite_flush(ss->ss_Flush);
         ss->ss_Flush = NULL;
     }
@@ -396,3 +396,57 @@ void gfx_SpriteAfter(struct GfxBase *GfxBase)
 
     AROS_LIBFUNC_EXIT
 } /* MoveSprite */
+
+/*****************************************************************************
+
+    NAME */
+
+        AROS_LH0(void, OwnBlitter,
+
+/*  LOCATION */
+        struct GfxBase *, GfxBase, 76, Graphics)
+
+/*  FUNCTION
+        Start a run of drawing: a display drawn in RAM shows it only at
+        the matching DisownBlitter(). Calls nest.
+
+*****************************************************************************/
+{
+    AROS_LIBFUNC_INIT
+
+    struct SoftSprite *ss = &PrivGBase(GfxBase)->sprite;
+
+    ObtainSemaphore(&ss->ss_Lock);
+    ss->ss_Hold++;
+    ReleaseSemaphore(&ss->ss_Lock);
+
+    AROS_LIBFUNC_EXIT
+} /* OwnBlitter */
+
+/*****************************************************************************
+
+    NAME */
+
+        AROS_LH0(void, DisownBlitter,
+
+/*  LOCATION */
+        struct GfxBase *, GfxBase, 77, Graphics)
+
+/*  FUNCTION
+        End a run of drawing from OwnBlitter().
+
+*****************************************************************************/
+{
+    AROS_LIBFUNC_INIT
+
+    struct SoftSprite *ss = &PrivGBase(GfxBase)->sprite;
+
+    ObtainSemaphore(&ss->ss_Lock);
+    if (--ss->ss_Hold == 0 && ss->ss_Flush) {
+        sprite_flush(ss->ss_Flush);
+        ss->ss_Flush = NULL;
+    }
+    ReleaseSemaphore(&ss->ss_Lock);
+
+    AROS_LIBFUNC_EXIT
+} /* DisownBlitter */

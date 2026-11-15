@@ -128,12 +128,14 @@ static struct entry *findentry(struct entry *l, char *name, struct entry *not)
 	return NULL;
 }
 
+/* The scans' paths, off the stack: icon loading under them goes deep */
+static char scanpath[PATHLEN];
+
 /* The objects of a drawer: those with an icon, or all of them */
 static void scandir(struct WBWin *ww)
 {
 	struct FileInfoBlock *fib = AllocDosObject(DOS_FIB, NULL);
 	struct entry *list = NULL, *e, *f;
-	char path[PATHLEN];
 	BPTR lock;
 	WORD n;
 
@@ -171,10 +173,10 @@ static void scandir(struct WBWin *ww)
 	while ((e = list) != NULL) {
 		list = e->e_Next;
 		if (e->e_Name[0] && (e->e_Info || ww->ww_ShowAll)) {
-			strcpy(path, ww->ww_Path);
-			AddPart(path, e->e_Name, PATHLEN);
-			newicon(ww, e->e_Name, e->e_Info ? GetDiskObject(path) :
-			    GetDiskObjectNew(path));
+			strcpy(scanpath, ww->ww_Path);
+			AddPart(scanpath, e->e_Name, PATHLEN);
+			newicon(ww, e->e_Name, e->e_Info ? GetDiskObject(scanpath) :
+			    GetDiskObjectNew(scanpath));
 		}
 		FreeVec(e);
 	}
@@ -183,7 +185,7 @@ static void scandir(struct WBWin *ww)
 /* The disks: a device that is a file system shows its volume */
 static void scanvolumes(struct WBWin *ww)
 {
-	char names[8][NAMELEN], path[PATHLEN];
+	static char names[8][NAMELEN];
 	struct DosList *dl;
 	struct DiskObject *dobj;
 	WORD n = 0, i;
@@ -203,10 +205,10 @@ static void scanvolumes(struct WBWin *ww)
 		if (!IsFileSystem(names[i]) ||
 		    (lock = Lock(names[i], ACCESS_READ)) == NULL)
 			continue;
-		if (NameFromLock(lock, path, NAMELEN) &&
-		    (dobj = GetDiskObjectNew(path)) != NULL) {
+		if (NameFromLock(lock, scanpath, NAMELEN) &&
+		    (dobj = GetDiskObjectNew(scanpath)) != NULL) {
 			dobj->do_Type = WBDISK;
-			newicon(ww, path, dobj);
+			newicon(ww, scanpath, dobj);
 		}
 		UnLock(lock);
 	}

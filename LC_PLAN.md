@@ -224,18 +224,18 @@ Source: C900_MiSTer rtl/vendor/vdc856x and rtl/lc_display.
 
 | Part | Where |
 |---|---|
-| Port layer (assembly) | `libs/lc/lcport.s` |
+| Port layer (assembly) | `libs/lc/lcport.s`, `lcport.h` |
 | Driver, 6.1 KB code, 1.8 KB BSS, 16 KB shadow | `libs/lc/lc.c` → `LIBS:lc.gfxdriver` |
 | `gd_Flush`, card table, LC mode ID | `gfxdriver.h`, `softsprite.c`, `display.c`, `hrmodeid.h` |
 | 8568 port model, port-access shims | `tests/lc/vdcmodel.c`, `tests/lc/vdcio.s` |
 | Tests | `tests/lcvdc.c` (phase 1), `lcgfx.c` (2, 3), `lcwb.c` (Workbench) |
-| Board | `lcdemo.bin`, `wbboot-lc.bin` |
+| Board | `lcdemo.bin`, `wbboot-lc.bin`, `lcbench.bin` (`tests/lc/bench.s`) |
 
 The tests run the driver's own `lcport.s`: the Makefile turns each port instruction into a call to the model. A fake framebuf.resource reports an LC card, and a patched `Enable()` counts pieces that end with the chip busy.
 
 ### Deviations
 
-- **Dirty tracking:** up to 3 byte spans a row (1.4 KB), merged across gaps of 2 bytes or less, instead of a bitmap. The 6 MHz CPU never scans bits.
+- **Dirty tracking:** see [Board run 1](#board-run-1-and-the-cpu-cost-2026-11-15).
 - **Fills** do not flush first, as pushes read the shadow. Partial edge bytes of fills and copies are pushed beside each row's block, without a seek.
 - **`hrmodeid.h`** keeps its name and gains `LC_MONITOR_ID` and `LCMONO_200_ID`.
 - **Push rate:** with c900-c0's slots (about 20 R31 bytes a display line) a push is CPU-bound at about 8.2 µs a byte. The tests still price it at 15 µs.
@@ -257,7 +257,35 @@ The tests run the driver's own `lcport.s`: the Makefile turns each port instruct
 
 ### Open points
 
-- **Window drags** through intuition push the whole window (about 84 ms for 320x120): layers moves a layer through its backup bitmaps, so the driver sees a RAM-to-display copy. A display-to-display blit in layers would take the VDC copy (about 15 ms).
-- **Mouse:** add gameport.dev to the LC images' `Modules` once exec816's serial backend has passed on the board.
-- **Board timing:** `lcdemo.bin` prints each case's E-clock time against the plan.
+- **Window drags** through intuition push the whole window (about 80 ms for 320x120): layers moves a layer through its backup bitmaps, so the driver sees a RAM-to-display copy. A display-to-display blit in layers would take the VDC copy (about 15 ms).
+
+## Board run 1 and the CPU cost (2026-11-15)
+
+Core C900_74ce82a, 6 MHz: every case took 2-10 times the plan (clear 93 ms, scroll 100 ms, aligned move 250 ms, pointer move 30 ms, window open 1.16 s). The chip was not the limit; the driver's C was:
+
+- `lc_room` divided (DIVL, about 740 clocks) before every port action, and each action was 3-4 C calls.
+- Every row of a fill, copy or flush went through C, and the 3-span merge ran per row of every primitive.
+- Each primitive flushed: a window open pushed the same rows about 6 times (786 row pushes).
+
+Emulator instruction counts (no port waits), before and after; RAM is graphics' drawing into a RAM bitmap, the floor:
+
+| Case | Before | After | RAM |
+|---|---|---|---|
+| Clear | 45 k | 18 k | 11 k |
+| Text line, 80 chars | 25 k | 22 k | 16 k |
+| Scroll, full width | 26 k | 15 k | 7 k |
+| Scroll, 40-byte window | 93 k | 30 k | 7 k |
+| Window move 300x100, unaligned | 86 k | 67 k | 26 k |
+| Window move 300x100, aligned | 75 k | 26 k | 3 k |
+| Pointer move | 12 k | 9 k | 6 k |
+| Window open 320x120 | 450 k | 255 k | 120 k (no driver) |
+
+Changes:
+
+- **Port layer** (`lcport.s`, `lcport.h`): row loops for fills and copies with their edge bytes, the flush, and dirty marking are assembly. The piece budget is a subtraction; a piece ends inside the layer (ready, Enable, Disable). A seek writes R18 only when the high byte changes. R31 stays selected across a run.
+- **Dirty tracking:** a row keeps one span while marks touch it (gap of 1 byte or less), else one bit a byte. A flush finds dirty rows with CPIRB.
+- **Batching:** `OwnBlitter()`/`DisownBlitter()` in graphics hold flushes; intuition wraps each action in them. Window open: 1332 pushed bytes to 699.
+- **Mouse:** `lcdemo.bin` and `wbboot-lc.bin` list gameport.dev in `Modules`.
+
+Expect about 11 clocks an instruction, so roughly: clear 45 ms, scroll 55 ms, 40-byte scroll 55 ms, aligned move 50 ms, pointer move 16 ms, window open 0.5 s. `lcbench.bin` measures what is left: clocks per select, seek, R31 write (polled and not, lost bytes read back), R30 fill and R32/R33 copy by block size, display on and with R1 = 8, the port layer's loops, and graphics' RAM drawing.
 
