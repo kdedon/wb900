@@ -1,5 +1,8 @@
 This is the wb900 Workbench disk.
 
-Demos holds Hello, a Workbench tool: double-click it, or Notes, a
-project that Hello opens.  Show All Files in the Window menu shows this
-file, which has no icon.
+Demos holds Hello, a Workbench tool: double-click it.  Notes and this
+file are projects that More, in Utilities, shows.  In More, Space and
+Backspace page, the cursor keys scroll, F finds, N and P find the next
+and previous match, J jumps to a line, E opens the file in Edit and Esc
+quits.  Edit, also in Utilities, is a text editor.  Show All Files in
+the Window menu shows the files and drawers that have no icons.

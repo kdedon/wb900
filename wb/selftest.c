@@ -3,9 +3,9 @@
  * Workbench without a display: a process writes a user's events to
  * input.device while Workbench runs.  It opens the System disk and the
  * Demos drawer with double clicks, checks the icons' pixels, selects
- * Hello with a click and a lasso, drags it, launches it, shows all files
- * and cleans up through the menus, and quits.  Each check prints a FAIL
- * line when it fails.
+ * Hello with a click and a lasso, drags it, launches it, opens Notes,
+ * shows all files and cleans up through the menus, and quits.  Each
+ * check prints a FAIL line when it fails.
  */
 #include "workbench.h"
 #include <devices/input.h>
@@ -234,7 +234,7 @@ static void script(void)
 	demos = waitwin("System:Demos");
 	hello = findicon(demos, "Hello");
 	check(hello != NULL && findicon(demos, "Notes") != NULL &&
-	    findicon(demos, "ReadMe") == NULL, "Demos drawer");
+	    findicon(demos, "ReadMe") != NULL, "Demos drawer");
 	if (hello == NULL)
 		return;
 	check(hello->in_Obj->do_Type == WBTOOL && pixels(demos, hello, 0),
@@ -269,22 +269,25 @@ static void script(void)
 		check(waittask("Hello", TRUE) == NULL, "Hello ended");
 	}
 
-	/* Notes is a project: its default tool Hello opens it */
+	/* Notes is a project: its default tool More opens it */
 	in = findicon(demos, "Notes");
 	iconpos(demos, in, &x, &y);
 	click(x, y);
 	click(x, y);
-	t = waittask("Hello", FALSE);
+	t = waittask("More", FALSE);
 	check(t != NULL, "Notes opened");
 	if (t != NULL) {
 		Delay(10);
 		Signal(t, SIGBREAKF_CTRL_C);
-		check(waittask("Hello", TRUE) == NULL, "Hello ended again");
+		check(waittask("More", TRUE) == NULL, "More ended");
 	}
+	/* Workbench redraws what More's window covered */
+	settle();
 
 	/* Window: Show All Files, then Clean Up */
 	pick(1, 4);
-	check(findicon(demos, "ReadMe") != NULL, "Show All Files");
+	check(demos->ww_ShowAll && findicon(demos, "ReadMe") != NULL,
+	    "Show All Files");
 	/* move Notes onto Hello's column, then clean up: a row again */
 	in = findicon(demos, "Notes");
 	iconpos(demos, in, &x, &y);

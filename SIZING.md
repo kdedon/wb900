@@ -86,7 +86,9 @@ AROS intuition depends on (number of includes): graphics 66, layers 43, utility 
 - **Measured 2026-11-15:** gadtools.library (all of AROS workbench/libs/gadtools) is 63,626 B code in one hunk plus 1,970 B data, from 8.3k lines. In tests/gadtools the input task used 2,571 B of its 4,096 B stack and the menu task 2,045 B, so its stack is now 3,072 B (was 2,048 B).
 
 - **Measured 2026-11-15:** icon.library (classic .info icons only) is about 21 KB code + 2 KB data; workbench.library 16 KB + 0.4 KB, and its handler process uses 882 of 1,536 B of stack. The Workbench program is a 28 KB hunk; its process uses about 2.6 KB of its 3.5 KB stack in the self test.
+- **Measured 2026-11-15:** asl.library (all of AROS workbench/libs/asl but locale, prefs and the truecolour button images) is 126,800 B code in three hunks of 52,964, 60,662 and 13,174 B, plus 3,488 B data, from 16.1k lines. A process that calls it needs about 3.8 KB of stack: tests/asl's used 3,822 B.
 - **Measured 2026-11-15:** commodities.library is 9,960 B code + 1,950 B data. The commodities are NoCapsLock 2.5 KB, AutoPoint 3.1 KB, ClickToFront 3.3 KB, Blanker 4.3 KB and DepthMenu 6.6 KB of code; each process uses 850–1,300 B of its 2,048 B stack. Their handlers run on the input task, which used 2,751 of 4,096 B in tests/cxtools. Every event through a broker costs three allocations and frees.
+- **Measured 2026-11-15:** More is 18.6 KB code + 1.7 KB data + 6.0 KB bss. Edit (JanoEditor) is 72.7 KB code in two hunks (62.0 and 10.6 KB) + 4.1 KB data. Each uses about 3.0 KB of stack with asl's file requester open in its process, and their icons ask for 6 KB. Each reads a file into one segment, so files are limited to 65,520 bytes.
 
 ## 6. Suggested phasing
 

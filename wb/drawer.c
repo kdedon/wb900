@@ -118,10 +118,11 @@ static BOOL isinfo(char *name)
 	return n > 5 && Stricmp(name + n - 5, ".info") == 0;
 }
 
-static struct entry *findentry(struct entry *l, char *name)
+/* The entry of name other than not */
+static struct entry *findentry(struct entry *l, char *name, struct entry *not)
 {
 	for (; l != NULL; l = l->e_Next)
-		if (Stricmp(l->e_Name, name) == 0)
+		if (l != not && Stricmp(l->e_Name, name) == 0)
 			return l;
 	return NULL;
 }
@@ -156,7 +157,7 @@ static void scandir(struct WBWin *ww)
 			continue;
 		n = strlen(e->e_Name) - 5;
 		e->e_Name[n] = 0;
-		if ((f = findentry(list, e->e_Name)) != NULL && f != e) {
+		if ((f = findentry(list, e->e_Name, e)) != NULL) {
 			f->e_Info = TRUE;
 			e->e_Name[0] = 0;
 		} else if (Stricmp(e->e_Name, "Disk") == 0 &&

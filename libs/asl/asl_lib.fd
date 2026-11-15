@@ -1,0 +1,19 @@
+* asl.library in the C900 dialect of an Amiga fd file, from AROS's
+* asl.conf.  Each function takes AslBase first; the C functions are
+* AROS_LH definitions named Asl_N after their vector.
+##base _AslBase
+##bias 30
+##public
+AllocFileRequest()() struct FileRequester * @Asl_5
+FreeFileRequest(fileReq)(struct FileRequester *) void @Asl_6
+RequestFile(fileReq)(struct FileRequester *) BOOL @Asl_7
+AllocAslRequest(reqType,tagList)(ULONG,struct TagItem *) APTR @Asl_8
+FreeAslRequest(requester)(APTR) void @Asl_9
+AslRequest(requester,tagList)(APTR,struct TagItem *) BOOL @Asl_10
+##private
+aslPrivate1()()
+aslPrivate2()()
+##public
+AbortAslRequest(requester)(APTR) void @Asl_13
+ActivateAslRequest(requester)(APTR) void @Asl_14
+##end

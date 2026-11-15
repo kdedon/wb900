@@ -196,6 +196,24 @@ f_:
 
 The Z8000 has no based or indexed mode on register 0, but as-z8001 takes these without a word and emits direct-address loads (`LD R9,0x0014`, `LDL RR2,0x0004`), which read low memory. Expected: an error, as for any other mode the CPU lacks. Not blocking: libs/graphics/gfxasm.s now uses RR10 there.
 
+## 15. Wrong code: members missing from an automatic aggregate's initializer are not zeroed (opened 2026-11-15)
+
+```c
+struct N { unsigned char t; char *l; char *k; short f; };
+char *g(struct N *p);
+char *k(void) { struct N n[] = { {1, (char *)10, 0, 3}, {2} }; return g(n); }
+```
+
+cc0 stores `n[1].t = 2` and leaves `n[1].l`, `k` and `f` as stack garbage; C89 zeroes them, as for a static. **Blocks** asl.library: its menus' `{NM_ITEM, NM_BARLABEL}` entries reach gadtools' CreateMenusA() with a garbage `nm_CommKey`, which traps. libs/asl spells the zeros out in its NewMenu tables meanwhile. AROS's `{TAG_DONE}` entries are hit too, harmlessly.
+
+## 16. `readonly` is a keyword (opened 2026-11-15)
+
+```c
+struct S { char readonly; };	/* cc0: class not allowed in structure body */
+```
+
+cc0 is built with `READONLY`, which makes `readonly` (and `alien` with `ALIEN`) a storage class. Standard C has neither. Not blocking: libs/asl renamed AROS's listview field to `isreadonly`. Expected: both names are ordinary identifiers.
+
 ## Out of scope (handled by the converter or by hand)
 
 Designated initializers (~123 sites), statement expressions, `inline`, variadic macros (4 sites), the AROS_LH/UFH macros, and 64-bit integers.

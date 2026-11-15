@@ -28,6 +28,8 @@ Opened 2026-11-14. Status reported by exec816-0f the same day. Exec work is a pl
 | 19 | Free the name `console.device` for the window console (below) | open | — |
 | 20 | `Open()`: set `pr_ConsoleTask` from the handle's `fh_Type` after the open packet (below) | open | — |
 | 21 | `NewShell WINDOW`: open the window once (below) | open | — |
+| 22 | dos.library: `DateToStr`, `CompareDates` and `SplitName`, with `<dos/datetime.h>` and `MAXFILENAMELENGTH` (below) | open | — |
+| 23 | A Shell command's default stack: 1600 B is too small for intuition programs (below) | open | — |
 
 ### 16. Semaphore and Forbid cost
 
@@ -52,6 +54,18 @@ Asked for: `me->pr_ConsoleTask = fh->fh_Type` (the port after the packet). Meanw
 `newshell()` in `dos/shell.c` opens the WINDOW name twice, for input and output. With a window CON: that is two windows. AmigaOS opens it once and gets the output stream as `*` of that window.
 
 Asked for: open the window once (`MODE_OLDFILE`), `SetConsoleTask(in's fh_Type)` around `Open("*", MODE_NEWFILE)` for the output, and give the new shell that console task. Until then `NewShell` from a Shell window opens two windows.
+
+### 22. DateToStr, CompareDates, SplitName
+
+asl.library's file requester lists each file's date and time with `DateToStr` (`FORMAT_DOS`), sorts by date with `CompareDates` and splits a volume name with `SplitName`. Exec900's dos.library lacks all three: `fd/dos_lib.fd` names them without types, so `<lvo/dos_lib.h>` has no call macros. `<dos/datetime.h>` (`struct DateTime`, `FORMAT_*`, `LEN_DATSTRING`) and `<dos/dos.h>`'s `MAXFILENAMELENGTH` are missing too.
+
+Asked for: the three calls at AmigaDOS's LVOs (−744 DateToStr, −738 CompareDates, −414 SplitName) and the two headers' definitions. Meanwhile asl leaves the date and time columns empty, compares DateStamps itself, cuts the name at the colon itself and uses 108 for `MAXFILENAMELENGTH`.
+
+### 23. Default command stack
+
+`CLISTACK` gives each Shell command 1600 bytes. More and Edit use 2.6-3.0 KB, as most intuition and gadtools programs will, so `SYS:Utilities/More file` from a Shell overflows: AN_StackProbe, then a trap that stops the machine. With `Stack 4096` first they run. Repro: tests/more.c without its `Stack 4096`.
+
+Asked for: a 4096-byte default (AmigaOS uses 4000), or a stack size taken from the program file.
 
 ### 10. Keyboard raw codes
 

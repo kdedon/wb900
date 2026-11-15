@@ -64,7 +64,7 @@ define CCRULE
 	$(CC2) 001200000010 $(OBJ)/$(2).z1 $(3) $(OBJ)/$(2).scr 0
 endef
 
-LIBS	= utility keymap graphics layers intuition gadtools icon workbench commodities
+LIBS	= utility keymap graphics layers intuition gadtools icon workbench commodities asl
 # graphics.library's display drivers (LIBS:NAME.gfxdriver)
 GFXDRIVERS = hr
 DEVS	= input console
@@ -72,7 +72,7 @@ DEVS	= input console
 console_DEVNAME = wincon
 TESTS	= $(basename $(notdir $(wildcard $(TOP)/tests/*.c)))
 # The tests that open intuition.library
-ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin
+ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin asl more edit
 # The demos also made as NAME-1x.bin, in the Workbench 1.x style
 STYLED	= wbdemo wbinter gtdemo wbboot
 
@@ -160,6 +160,10 @@ $(eval $(call LIBRARY,workbench,Workbench,wb))
 $(workbench_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility intuition icon)
 $(eval $(call LIBRARY,commodities,Commodities,cx))
 $(commodities_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility keymap)
+asl_LINK = $(ALIB)
+asl_SRC = $(TOP)/lib
+$(eval $(call LIBRARY,asl,Asl,asl))
+$(asl_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility graphics layers intuition gadtools workbench)
 
 # CON: and RAW: (fs/con), a boot module: lib/startup.s (its process
 # entry), the handler and amiga.lib's calls.
@@ -183,7 +187,7 @@ $(OUT)/progs/%: $(OBJ)/startup.o $(OBJ)/t_%.o $(OBJ)/amiga.o $(OBJ)/portio.o $(O
 	$(LD) -r -o $(OBJ)/p_$*.r $^
 	$(MKHUNK) --entry=start $@ $(OBJ)/p_$*.r
 # The tests that link amiga.lib
-ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin
+ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin asl
 $(patsubst %,$(OUT)/progs/%,$(ALIBTESTS)): $(ALIB)
 # amiga.lib's commodities calls
 CXLIB	= $(patsubst $(TOP)/lib/%.c,$(OBJ)/lib/%.o,$(wildcard $(TOP)/lib/cx/*.c))
@@ -206,6 +210,20 @@ $(OUT)/cx/%: $(OBJ)/startup.o $(OBJ)/c_%.o $(CXLIB) $(OBJ)/amiga.o $(OBJ)/portio
 	@mkdir -p $(OUT)/cx
 	$(LD) -r -o $(OBJ)/c_$*.r $^
 	$(MKHUNK) --entry=start $@ $(OBJ)/c_$*.r
+# The utilities (wb/DIR/*.c) as $(OUT)/util/NAME, in code hunks of at
+# most 64 KB: $(call UTIL,NAME,DIR)
+define UTIL
+$(1)_OBJS = $(patsubst $(TOP)/wb/$(2)/%.c,$(OBJ)/u_$(2)/%.o,$(wildcard $(TOP)/wb/$(2)/*.c))
+$(OBJ)/u_$(2)/%.o: $(TOP)/wb/$(2)/%.c $(wildcard $(TOP)/wb/$(2)/*.h) $(HDRS) $(patsubst %,$(OUT)/include/lvo/%_lib.h,$(LIBS) $(DEVS))
+	$$(call CCRULE,$$<,u_$(2)/$$*,$$@)
+$(OUT)/util/$(1): $(OBJ)/startup.o $$($(1)_OBJS) $(OBJ)/amiga.o $(OBJ)/progabs.o
+	$(SYMCHECK) $(TOP)/wb/$(2)
+	@mkdir -p $(OUT)/util
+	$(MKHUNK) --split --entry=start $$@ $$^
+endef
+UTILS	= More Edit
+$(eval $(call UTIL,More,more))
+$(eval $(call UTIL,Edit,edit))
 # Workbench, which tests/wbboot.c starts
 WBSRC	= $(patsubst %,$(TOP)/wb/%.c,workbench drawer selftest)
 $(OUT)/progs/wbboot $(OUT)/progs/shellwin: $(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC))
@@ -219,7 +237,13 @@ Disk_INFO = --type=disk --art=builtin:disk --window=60,40,420,180
 Demos_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
 	--window=140,110,400,140
 Trashcan_INFO = --type=trashcan --art=builtin:trash --select=builtin:trash_open
-Notes_INFO = --type=project --art=builtin:project --tool=SYS:Demos/Hello
+Notes_INFO = --type=project --art=builtin:project --tool=SYS:Utilities/More \
+	--stack=6144
+ReadMe_INFO = $(Notes_INFO)
+Utilities_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
+	--window=220,190,300,100
+More_INFO = --type=tool --art=builtin:tool --stack=6144
+Edit_INFO = --type=tool --art=builtin:tool --stack=6144
 Tools_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
 	--window=180,150,300,100
 Commodities_INFO = --type=drawer --art=builtin:drawer \
@@ -241,7 +265,7 @@ $(OUT)/wb/%.info: $(TOP)/tools/mkinfo.py $(TOP)/wb/hello.txt $(TOP)/libs/icon/su
 # libraries, display drivers and devices.
 # The exec partition holds 512 KB, so only the tests that open
 # intuition.library carry it.
-DISKLIBS = $(if $(filter $(ITESTS),$(1)),$(LIBS),$(filter-out intuition gadtools icon workbench,$(LIBS)))
+DISKLIBS = $(if $(filter $(ITESTS),$(1)),$(LIBS),$(filter-out intuition gadtools icon workbench asl,$(LIBS)))
 DISK	= --module=$(EXEC900_OUT)/hunks/dos.library \
 	  --module=$(EXEC900_OUT)/hunks/v7fs-handler \
 	  $(if $(filter $(ITESTS),$(1)),--module=$(OUT)/l/con-handler) \
@@ -255,15 +279,26 @@ DISK	= --module=$(EXEC900_OUT)/hunks/dos.library \
 # A test's more files on its disk: NAME_PUT, mkdisk --put options
 workbench_PUT = --put=Demos/Hello=$(OUT)/wb/hello --put=Demos/Hello.info=$(OUT)/wb/Hello.info
 $(OUT)/workbench.bin: $(OUT)/wb/hello $(OUT)/wb/Hello.info
+# asl's test picks a file in Demos
+asl_PUT = --put=Demos/Notes=$(TOP)/wb/Notes --put=Demos/ReadMe=$(TOP)/wb/ReadMe
+# The utilities, with their icons
+UTILPUT	= $(foreach u,$(UTILS),--put=Utilities/$(u)=$(OUT)/util/$(u) --put=Utilities/$(u).info=$(OUT)/wb/$(u).info)
+UTILDEPS = $(patsubst %,$(OUT)/util/%,$(UTILS)) $(patsubst %,$(OUT)/wb/%.info,$(UTILS))
 # Workbench's disk: a few drawers, a tool and a project with icons
-WBDISK	= Disk.info Demos.info Demos/Hello.info Demos/Notes.info Trashcan.info \
-	Tools.info Tools/Commodities.info $(patsubst %,Tools/Commodities/%.info,$(CXTOOLS))
+WBDISK	= Disk.info Demos.info Demos/Hello.info Demos/Notes.info Demos/ReadMe.info \
+	Trashcan.info Tools.info Tools/Commodities.info \
+	$(patsubst %,Tools/Commodities/%.info,$(CXTOOLS)) Utilities.info
 CXPUT	= $(foreach t,$(CXTOOLS),--put=Tools/Commodities/$(t)=$(OUT)/cx/$(t))
 wbboot_PUT = $(workbench_PUT) --put=Demos/Notes=$(TOP)/wb/Notes \
-	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan $(CXPUT) \
+	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan $(CXPUT) $(UTILPUT) \
 	$(foreach i,$(filter-out Demos/Hello.info,$(WBDISK)),--put=$(i)=$(OUT)/wb/$(notdir $(i)))
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
-$(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin $(OUT)/shellwin.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS))
+$(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin $(OUT)/shellwin.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS)
+# More's test: the utilities and the Shell
+more_PUT = $(UTILPUT) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg
+$(OUT)/more.bin: $(UTILDEPS)
+edit_PUT = $(more_PUT)
+$(OUT)/edit.bin: $(UTILDEPS)
 # The commodities' test: the tools, with a quick Blanker
 cxtools_PUT = $(CXPUT) --put=Tools/Commodities/Blanker.info=$(OUT)/wb/BlankerTest.info \
 	$(foreach t,$(filter-out Blanker,$(CXTOOLS)),--put=Tools/Commodities/$(t).info=$(OUT)/wb/$(t).info)
