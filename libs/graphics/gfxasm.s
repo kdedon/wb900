@@ -5,7 +5,7 @@
 
 	.globl	gfx_FillRows_, gfx_FillRect_, gfx_TmplRows_, gfx_TmplRows1_
 	.globl	gfx_CopyRows_, gfx_ShiftRows_
-	.globl	gfx_LineRun_, gfx_WCopy_, gfx_Bits_, gfx_MulW_, gfx_MulDiv_, gfx_Glyphs_, gfx_FastChars_
+	.globl	gfx_LineRun_, gfx_WCopy_, gfx_Bits_, gfx_MulDiv_, gfx_Glyphs_, gfx_FastChars_
 
 	.shri
 
@@ -1269,16 +1269,9 @@ gfx_Bits_:
 	add	r15, $6
 9:	ret
 
-/ gfx_MulW(a, b): a * b, both 0-32767, as a long.
-gfx_MulW_:
-	ld	r1, rr14(4)
-	ld	r3, rr14(6)
-	mult	rr0, r3
-	ret
-
 / gfx_MulDiv(a, b, c, d, rem): (a * b + c) / d, a and b 0-32767, the sum
 / not negative, d 1-32767 and the quotient under 32768; the remainder to
-/ rem unless it is NULL.
+/ rem unless it is NULL.  C would divide the long sum with DIVL.
 gfx_MulDiv_:
 	ld	r1, rr14(4)
 	ld	r3, rr14(6)

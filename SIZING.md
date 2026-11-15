@@ -9,7 +9,7 @@
 | CPU | Z8001 segmented + Z8010 MMU, 6 MHz stock, 10/12/48 MHz turbo on MiSTer | c900-c0 |
 | RAM | 512 KB / 1 MB motherboard; optional 2–16 MB RAM card (invented); ~957 KB free under Exec900 on 1 MB | c900-c0, exec816-0f |
 | Segments | No object or code hunk may cross 64 KB; pointer arithmetic is 16-bit offset only | exec816-0f |
-| Stacks | One shared pool: 32 KB on 1 MB, 63 KB above (EXEC_ASKS 5b); Workbench disks ask 48 KB (§5a); DOS+shell uses ~8.5 KB | exec816-0f |
+| Stacks | One shared pool, 63 KB (EXEC_ASKS 5b), its unused RAM lent to the heap; Workbench disks take a 2 KB root stack (§5a); DOS+shell uses ~8.5 KB | exec816-0f |
 | Compiler | Mark Williams C: K&R, 16-bit int, 15-char externals; prototypes, `//`, mixed declarations and long switch added (COMPILER_ASKS), long names via `-VLNAME` (EXEC_ASKS 4) | exec816-0f |
 | ABI | Stack args, caller pops, result r1/rr0; Amiga LVO jump tables (6-byte JP); non-exec libs take base as hidden first arg | exec816-0f |
 | Display | HR card: 128 KB VRAM CPU-mapped at 0x3E0000; jumper-selected 1024x800 or 1024x1024 1bpp (128 B stride), or 640x400 4bpp chunky RGBI (320 B stride, fixed CGA palette). No blitter, HW cursor or vblank IRQ | kernel3 |
@@ -112,26 +112,24 @@ Every task stack comes from one pool. Each stack is its measured peak (the emula
 | console.device task | 1,336 | 2,048 | 1,792 | refresh |
 | con-handler | 328 | 1,024 | 768 | |
 | More, Edit (icons; Notes, ReadMe) | 2,869 | 6,144 | 4,096 | asl's Parent: 3,360 from a shallow caller |
-| Calc | 2,209 | 4,096 | 2,816 | |
+| Calculator | 2,209 | 4,096 | 2,816 | |
 | Clock, KeyShow | 1,282 | 3,072 | 2,048 | |
 | SysMon, LogView | 2,539 | 4,096 | 3,072 | |
 | commodities | 1,314 | 2,048 | 2,048 | |
 
 Cuts: asl's Parent and Add go through one path buffer instead of two and its pattern buffer is pooled (asl from 3,874 to 3,360); gadtools' text gadget keeps its text buffer off the frame and label drawing (SysMon −168, More −195); Workbench's scans and commands keep their paths static.
 
-The pool on 1 MB, in bytes, with two v7fs-handlers (long-name disks):
+The pool on 1 MB, in bytes, with two v7fs-handlers (long-name disks), a 63 KB segment and a 2 KB root stack:
 
-| | 32 KB segment | 48 KB segment |
-|---|---:|---:|
-| Pool after the interrupt stack | 26,880 | 43,264 |
-| ramlib, 2 × v7fs-handler, ram-handler, con-handler | 6,400 | 6,400 |
-| input.device, Workbench, its handler, menu task | 10,496 | 10,496 |
-| Shell: CON: window, console.device task, Shell process | 7,680 | 7,680 |
-| Left for tools | 2,304 | 18,688 |
-| Clock, SysMon, More | 9,216 | 9,216 |
-| A Shell command (4,000) and spare | does not fit | 5,472 spare |
+| | |
+|---|---:|
+| Pool after the root and interrupt stacks | 60,672 |
+| ramlib, 2 × v7fs-handler, ram-handler, con-handler | 6,400 |
+| input.device, Workbench, its handler, menu task | 10,496 |
+| Shell: CON: window, console.device task, Shell process | 7,680 |
+| Left: 9 Shell commands of 4,000 B (exec816), or Clock, SysMon, More and 6 | 36,096 |
 
-So the Workbench disks boot with `mkdisk --stack=48`, which takes 16 KB of heap. tests/wbmulti runs Workbench, a Shell, Clock, SysMon and More (with one v7fs-handler and the test's two 2,048 B helpers): 6,400 B of pool stay free and 48 KB of memory, so on 1 MB the heap, not the pool, now limits a fourth tool.
+The segment's unused RAM serves ordinary allocations once the heap is full, so the Workbench disks keep the default 63 KB and boot with `mkdisk --rootstack=2` (shellwin and wbmulti keep 4 KB: shellwin's root program opens CON:). tests/wbmulti runs Workbench, a Shell, Clock, SysMon and More (with both v7fs-handlers and the test's two 2,048 B helpers): 20,480 B of pool stay free and 25 KB of memory.
 
 ## 6. Phasing (done)
 

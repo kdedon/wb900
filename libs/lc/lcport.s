@@ -460,12 +460,11 @@ fgrp:
 	cpb	rl0, $0xFF
 	jr	eq, ffull
 	ldb	rh2, rl6
-	clrb	rh0
-1:	srl	r0, $1
+1:	srlb	rl0, $1
 	jr	nc, 2f
 	calr	dirty
 2:	inc	r6, $1
-	test	r0
+	testb	rl0
 	jr	nz, 1b
 	ldb	rr12(r4), rl0
 	ldb	rl6, rh2

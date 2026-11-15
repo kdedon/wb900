@@ -82,10 +82,8 @@ void gfx_LineRun(APTR job, WORD xstep, UWORD count);
 void gfx_WCopy(UWORD *d, const UWORD *s, UWORD n);
 void gfx_Bits(UWORD *out, const UBYTE *s, UWORD sh, UWORD n);
 
-/* a * b, both 0-32767; (a * b + c) / d with a, b and d 0-32767, the
-   sum not negative and the quotient under 32768, its remainder to rem
-   unless NULL */
-ULONG gfx_MulW(UWORD a, UWORD b);
+/* (a * b + c) / d with a, b and d 0-32767, the sum not negative and
+   the quotient under 32768, its remainder to rem unless NULL */
 UWORD gfx_MulDiv(UWORD a, UWORD b, LONG c, UWORD d, UWORD *rem);
 
 /* The template of a fixed 8-pixel font by job (text.c); whether its

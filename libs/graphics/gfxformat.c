@@ -95,8 +95,10 @@ static UWORD runrows(ULONG o, UWORD len, LONG step, UWORD rows)
     if (o < 0x10000L && o + len > 0x10000L)
         return 0;
     /* the rows from o to the last are on one side of 0x10000 */
-    last = gfx_MulW(rows - 1, (UWORD)(step < 0 ? -step : step));
-    last = step < 0 ? o - last : o + last;
+    if (step < 0)
+        last = o - (ULONG)(rows - 1) * (UWORD)-step;
+    else
+        last = o + (ULONG)(rows - 1) * (UWORD)step;
     if (o >= 0x10000L ? last >= 0x10000L : last + len <= 0x10000L)
         return rows;
     if (step > 0)
@@ -181,7 +183,7 @@ static void fillcols(const struct GfxPens *p, const struct GfxPlane *pl,
         if (k > 0) {
             gfx_FillRows((UWORD *)PL_AT(pl, o), cnt, k, bpr, tab, tpm,
                 tall ? 0 : y);
-            o += gfx_MulW(k, bpr);
+            o += (ULONG)k * bpr;
             y += k;
             rows -= k;
             continue;
@@ -217,7 +219,7 @@ static void fillspan(const struct GfxPlane *pl, ULONG o, UWORD n, UWORD rows,
         k = runrows(o, n << 1, bpr, rows);
         if (k > 0) {
             fillrect((UWORD *)PL_AT(pl, o), n, k, bpr, a, x, lm, rm);
-            o += gfx_MulW(k, bpr);
+            o += (ULONG)k * bpr;
             rows -= k;
             continue;
         }
@@ -248,7 +250,7 @@ void gfx_Fill(struct BitMap *bm, const struct Rectangle *r,
     lm = 0xFFFF >> (bx0 & 15);
     rm = 0xFFFF << (15 - (bx1 & 15));
     rows = r->MaxY - r->MinY + 1;
-    o = gfx_MulW(r->MinY, bpr) + (w0 << 1);
+    o = (ULONG)r->MinY * bpr + (w0 << 1);
     if (p->gp_Ptrn == NULL) {
         t = (dm & INVERSVID) ? 0 : 0xFFFF;
         for (q = pl; np > 0; np--, q++) {
@@ -266,7 +268,7 @@ void gfx_Fill(struct BitMap *bm, const struct Rectangle *r,
             if (a == 0xFFFF && x == 0)
                 continue;
             if (q->pl_Hi == NULL ||
-                    o + gfx_MulW(rows - 1, bpr) + (n << 1) <= 0x10000L)
+                    o + (ULONG)(rows - 1) * bpr + (n << 1) <= 0x10000L)
                 fillrect((UWORD *)(q->pl_Lo + (UWORD)o), n, rows, bpr,
                     a, x, lm, rm);
             else
@@ -379,7 +381,7 @@ static void tmplrows(struct tmpljob *tj, UWORD *d, UWORD rows,
             gfx_TmplRows(tj);
         else
             gfx_TmplRows1(tj);
-        d = (UWORD *)((UBYTE *)d + gfx_MulW(tj->tj_DStep, rows - 1));
+        d = (UWORD *)((UBYTE *)d + (ULONG)tj->tj_DStep * (rows - 1));
         src += tj->tj_SrcMod * (rows - 1);
     }
     if (last) {
@@ -452,7 +454,7 @@ void gfx_Template(struct BitMap *bm, const struct Rectangle *r,
         for (c = 0; c < n; c += cnt) {
             cnt = n - c < TPASS ? n - c : TPASS;
             tb = tx + (WORD)(c * ppw);
-            o = gfx_MulW(r->MinY, bpr) + ((w0 + c) << 1);
+            o = (ULONG)r->MinY * bpr + ((w0 + c) << 1);
             s = src;
             y = r->MinY;
             for (rows = r->MaxY - r->MinY + 1; rows > 0; rows -= k) {
@@ -471,7 +473,7 @@ void gfx_Template(struct BitMap *bm, const struct Rectangle *r,
                         tb + (WORD)(n1 * ppw), cnt - n1, 0xFFFF,
                         c + cnt == n ? rm : 0xFFFF, y == r->MaxY, qlen);
                 }
-                o += gfx_MulW(k, bpr);
+                o += (ULONG)k * bpr;
                 s += srcmod * k;
                 y += k;
             }
@@ -661,8 +663,8 @@ void gfx_Copy(struct BitMap *src, WORD sx, WORD sy, struct BitMap *dst,
         cj.cj_Const = pp == (PLANEPTR)-1 ? 0xFFFF : 0;
         cj.cj_Lo = pp == (PLANEPTR)-1 ? NULL : pp;
         cj.cj_Hi = pp == src->Planes[0] ? shi : NULL;
-        so = gfx_MulW(up ? sy + h - 1 : sy, sbpr) + (sw << 1);
-        dof = gfx_MulW(up ? r->MaxY : r->MinY, dbpr) + (w0 << 1);
+        so = (up ? (ULONG)(sy + h - 1) * sbpr : (ULONG)sy * sbpr) + (sw << 1);
+        dof = (up ? (ULONG)r->MaxY * dbpr : (ULONG)r->MinY * dbpr) + (w0 << 1);
         for (rows = h; rows > 0; rows -= k) {
             k = 1;
             if (aligned && cj.cj_Lo && dp[i].pl_M == 0xFFFF) {
@@ -684,10 +686,10 @@ void gfx_Copy(struct BitMap *src, WORD sx, WORD sy, struct BitMap *dst,
                             cj.cj_Left ? -1 : 1);
                     if (minterm == 0x30)
                         fillrect(up ? (UWORD *)((UBYTE *)d -
-                            gfx_MulW(k - 1, dbpr)) : d, cj.cj_N, k, dbpr,
+                            (ULONG)(k - 1) * dbpr) : d, cj.cj_N, k, dbpr,
                             0xFFFF, 0xFFFF, cj.cj_LM, cj.cj_RM);
-                    so = up ? so - gfx_MulW(k, sbpr) : so + gfx_MulW(k, sbpr);
-                    dof = up ? dof - gfx_MulW(k, dbpr) : dof + gfx_MulW(k, dbpr);
+                    so = up ? so - (ULONG)k * sbpr : so + (ULONG)k * sbpr;
+                    dof = up ? dof - (ULONG)k * dbpr : dof + (ULONG)k * dbpr;
                     continue;
                 }
                 k = 1;
@@ -772,7 +774,7 @@ static void linerun(const struct line *ln, const struct GfxPlane *pl,
     y = ln->y0 + ln->sy * (ln->steep ? s : f);
     /* 2 dm (s + 1) - dM - 2 dM f, from the remainder of f */
     lj->lj_Err = r + 2 * (ln->dm - ln->dM);
-    o = gfx_MulW(y, ln->bpr) + (ln->bpp == 1 ? x >> 3 : x >> 1);
+    o = (ULONG)y * ln->bpr + (ln->bpp == 1 ? x >> 3 : x >> 1);
     lj->lj_At = PL_AT(pl, o);
     lj->lj_Mask = (ln->bpp == 1 ? 0x80 >> (x & 7) :
         ((x & 1) ? 0x0F : 0xF0)) & pm;
@@ -866,7 +868,8 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
         }
         /* pieces that stay in one half: the rows below yb are in the
            first 64 KB, row yb from byte rb (pixel xs) on */
-        yb = gfx_MulDiv(1, 0, 0xFFFFL, ln.bpr, (UWORD *)&rb);
+        yb = 0xFFFF / ln.bpr;
+        rb = 0xFFFF % ln.bpr;
         if (++rb == ln.bpr) {
             yb++;
             rb = 0;

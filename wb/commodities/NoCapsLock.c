@@ -16,7 +16,7 @@
 
     LOCATION
 
-        SYS:Tools/Commodity
+        SYS:Tools/Commodities
 
     FUNCTION
 

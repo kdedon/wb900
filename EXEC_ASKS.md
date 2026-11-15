@@ -36,7 +36,21 @@ Opened 2026-11-14; status from exec816-0f and the c900/exec900 log. The user app
 | 27 | `Close()`: clear the `pr_ConsoleTask` that the handle's `Open()` set (below) | **Landed** d2a5278b: Close clears the console its handle set; Open("*") afterwards fails with ERROR_DEVICE_NOT_MOUNTED | done |
 | 28 | `InLoadSeg`: read a hunk's RELOC32 offsets in blocks (below) | **Landed** d547e925: 128-entry reloc buffer; a 2,219-reloc file loads in 0.32 s instead of 1.50 s at 6 MHz | done |
 | 29 | A smaller root (boot) stack, so a Workbench disk gives the rest to the pool (below) | **Landed** 9159ccc8: `--rootstack=KB`, 1-16, default 4; boot uses about 500 B, so 2 KB is the safe choice for our root program | done |
-| 30 | DH1:'s handler: share DH0:'s code instead of a second copy (below) | open | — |
+| 30 | DH1:'s handler: share DH0:'s code instead of a second copy (below) | **Landed** 49f8df91: one shared v7fs-handler seglist; first use of DH1: costs 11,240 B (7,096 with `--sysbuffers=8`) instead of 37,760 | done |
+| 31 | A 63 KB stack segment on 1 MB leaves no two free heap pages for a 640x400x4 bitmap (below) | open | — |
+| 32 | Tell framebuf.resource the HR jumper at boot (below) | open | — |
+
+### 32. The HR jumper at boot
+
+The strap reads the same for 1024x800 and 1024x1024, and nothing sets `BF_HR1024`, so a 1024x1024 card is drawn as 1024x800. The mono/colour read is inferred from undumped PALs and could disagree with the jumper. Either way HR can boot into a mode the display isn't set for.
+
+Asked for: a boot setting that tells framebuf.resource the jumper (say `mkdisk --hrmode=800|1024|rgbi` into the kboot flags, or a config line read before the console starts), reported by framebuf and used by the console, with the strap read as the default. wb900's ScreenMode preferences then confirm it, and a boot key forces the reported mode.
+
+### 31. Whole heap pages on 1 MB
+
+Since 1e499a37 a 1 MB machine boots with a 63 KB stack segment: `14 heap pages and 4096 bytes` where 32 KB gave 35,840 more bytes. The segment's spare RAM serves small allocations, but not a block of whole pages: tests/asl's `AllocBitMap(640, 400, 4, ...)` chunky bitmap (128,000 B, rows split at 64 KB) now fails, and passes with `mkdisk --stack=32`. Repro: `make test T=asl` with `--stack=32` removed from `asl_PUT`. tests/asl boots with 32 KB meanwhile.
+
+Asked for: the stack segment's unused pages back in the page heap, or a 1 MB default that leaves the page.
 
 ### 30. A second v7fs-handler on 1 MB
 

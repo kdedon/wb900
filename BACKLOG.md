@@ -11,3 +11,5 @@ After gadtools, the native Workbench and the second speed pass. Done:
 Zune (AROS's MUI) is out: too heavy at 6 MHz. Tools use intuition and gadtools.
 
 Next: Exchange and the preferences editors (palette, pointer, screen mode, input, time) as native gadtools tools, diskfont.library, ShowConfig and Help.
+
+Decided against (2026-11-15): LR graphics. The LR card is MDA-like (HD6545, 720x350, mono with intensity, fixed character ROM); CGA-style text tricks would give at best about 160x175 in 3 shades, too little for Workbench.

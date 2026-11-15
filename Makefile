@@ -239,7 +239,7 @@ $(OUT)/wb/%: $(OBJ)/startup.o $(OBJ)/w_%.o $(OBJ)/amiga.o $(OBJ)/portio.o $(OBJ)
 	$(LD) -r -o $(OBJ)/q_$*.r $^
 	$(MKHUNK) --entry=start $@ $(OBJ)/q_$*.r
 # The commodities (wb/commodities), with amiga.lib's commodities calls
-CXTOOLS	= ToFront AutoPoint DepthMenu Blanker NoCaps
+CXTOOLS	= ClickToFront AutoPoint DepthMenu Blanker NoCapsLock
 $(OBJ)/c_%.o: $(TOP)/wb/commodities/%.c $(HDRS) $(patsubst %,$(OUT)/include/lvo/%_lib.h,$(LIBS) $(DEVS))
 	$(call CCRULE,$<,c_$*,$@)
 $(OUT)/cx/%: $(OBJ)/startup.o $(OBJ)/c_%.o $(CXLIB) $(OBJ)/amiga.o $(OBJ)/portio.o $(OBJ)/progabs.o
@@ -258,11 +258,10 @@ $(OUT)/util/$(1): $(OBJ)/startup.o $$($(1)_OBJS) $(OBJ)/amiga.o $(OBJ)/progabs.o
 	@mkdir -p $(OUT)/util
 	$(MKHUNK) --split --entry=start $$@ $$^
 endef
-# A name keeps 14 bytes on the disk, so NAME.info needs NAME of 9 at most
-UTILS	= More Edit Calc Clock KeyShow SysMon LogView
+UTILS	= More Edit Calculator Clock KeyShow SysMon LogView
 $(eval $(call UTIL,More,more))
 $(eval $(call UTIL,Edit,edit))
-$(eval $(call UTIL,Calc,calculator))
+$(eval $(call UTIL,Calculator,calculator))
 $(eval $(call UTIL,Clock,clock))
 $(eval $(call UTIL,KeyShow,keyshow))
 $(eval $(call UTIL,SysMon,sysmon))
@@ -289,21 +288,21 @@ Utilities_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open
 	--window=160,180,440,130
 More_INFO = --type=tool --art=builtin:tool --stack=4096
 Edit_INFO = --type=tool --art=builtin:tool --stack=4096
-Calc_INFO = --type=tool --art=$(TOP)/wb/calculator/calculator.txt --stack=2816
+Calculator_INFO = --type=tool --art=$(TOP)/wb/calculator/calculator.txt --stack=2816
 Clock_INFO = --type=tool --art=$(TOP)/wb/clock/clock.txt --stack=2048
 KeyShow_INFO = --type=tool --art=$(TOP)/wb/keyshow/keyshow.txt --stack=2048
 SysMon_INFO = --type=tool --art=$(TOP)/wb/sysmon/sysmon.txt --stack=3072
 LogView_INFO = --type=tool --art=$(TOP)/wb/logview/logview.txt --stack=3072
-$(patsubst %,$(OUT)/wb/%.info,Calc Clock KeyShow SysMon LogView): $(wildcard $(TOP)/wb/*/*.txt)
+$(patsubst %,$(OUT)/wb/%.info,Calculator Clock KeyShow SysMon LogView): $(wildcard $(TOP)/wb/*/*.txt)
 Tools_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
 	--window=180,150,300,100
-Commodity_INFO = --type=drawer --art=builtin:drawer \
+Commodities_INFO = --type=drawer --art=builtin:drawer \
 	--select=builtin:drawer_open --window=120,200,520,110
 CX_INFO	= --type=tool --art=builtin:tool --stack=2048 --tooltype=CX_PRIORITY=0
-ToFront_INFO = $(CX_INFO) --tooltype=QUALIFIER=NONE --tooltype=NUMCLICKS=2
+ClickToFront_INFO = $(CX_INFO) --tooltype=QUALIFIER=NONE --tooltype=NUMCLICKS=2
 AutoPoint_INFO = $(CX_INFO)
 DepthMenu_INFO = $(CX_INFO)
-NoCaps_INFO = $(CX_INFO)
+NoCapsLock_INFO = $(CX_INFO)
 Blanker_INFO = $(CX_INFO) --tooltype=SECONDS=120 "--tooltype=BLANKKEY=ctrl alt b"
 # tests/cxtools.c's, which blanks after a second
 BlankerTest_INFO = $(CX_INFO) --tooltype=SECONDS=1 "--tooltype=BLANKKEY=ctrl alt b"
@@ -317,7 +316,8 @@ $(OUT)/wb/%.info: $(TOP)/tools/mkinfo.py $(TOP)/wb/hello.txt $(TOP)/libs/icon/su
 # The exec partition holds 512 KB, so only the tests that open
 # intuition.library carry it.
 DISKLIBS = $(if $(filter $(ITESTS),$(1)),$(LIBS),$(filter-out intuition gadtools icon workbench asl,$(LIBS)))
-DISK	= --module=$(EXEC900_OUT)/hunks/dos.library \
+DISK	= $(if $(filter $(LNAMES),$(1)),--lnames) \
+	  --module=$(EXEC900_OUT)/hunks/dos.library \
 	  --module=$(EXEC900_OUT)/hunks/v7fs-handler \
 	  $(if $(filter $(ITESTS),$(1)),--module=$(OUT)/l/con-handler) \
 	  $(patsubst %,--file=$(EXEC900_OUT)/hunks/%.display,lr hr lc) \
@@ -327,22 +327,26 @@ DISK	= --module=$(EXEC900_OUT)/hunks/dos.library \
 	  $(foreach d,$(DEVS),--put=Devs/$(d).device=$(OUT)/devs/$(d).device) \
 	  $($(1)_PUT)
 
+# The disks with Workbench's files: Boot holds the modules, the System
+# volume (SYS:) keeps names of up to 30 bytes
+LNAMES	= wbboot shellwin wbmulti more edit cxtools $(TOOLTESTS)
 # A test's more files on its disk: NAME_PUT, mkdisk --put options
 workbench_PUT = --put=Demos/Hello=$(OUT)/wb/hello --put=Demos/Hello.info=$(OUT)/wb/Hello.info
 $(OUT)/workbench.bin: $(OUT)/wb/hello $(OUT)/wb/Hello.info
-# asl's test picks a file in Demos
-asl_PUT = --put=Demos/Notes=$(TOP)/wb/Notes --put=Demos/ReadMe=$(TOP)/wb/ReadMe
+# asl's test picks a file in Demos.  Its 125 KB chunky bitmap needs two
+# whole heap pages, which a 63 KB stack segment leaves none of on 1 MB.
+asl_PUT = --put=Demos/Notes=$(TOP)/wb/Notes --put=Demos/ReadMe=$(TOP)/wb/ReadMe --stack=32
 # The utilities, with their icons
 UTILPUT	= $(foreach u,$(UTILS),--put=Utilities/$(u)=$(OUT)/util/$(u) --put=Utilities/$(u).info=$(OUT)/wb/$(u).info)
 UTILDEPS = $(patsubst %,$(OUT)/util/%,$(UTILS)) $(patsubst %,$(OUT)/wb/%.info,$(UTILS))
 # Workbench's disk: a few drawers, a tool and a project with icons
 WBDISK	= Disk.info Demos.info Demos/Hello.info Demos/Notes.info Demos/ReadMe.info \
-	Trashcan.info Tools.info Tools/Commodity.info \
-	$(patsubst %,Tools/Commodity/%.info,$(CXTOOLS)) Utilities.info
-CXPUT	= $(foreach t,$(CXTOOLS),--put=Tools/Commodity/$(t)=$(OUT)/cx/$(t))
-# A 48 KB stack segment: a 1 MB machine's 32 KB fits Workbench and a
-# Shell but not two tools beside them (SIZING.md)
-WBSTACK	= --stack=48
+	Trashcan.info Tools.info Tools/Commodities.info \
+	$(patsubst %,Tools/Commodities/%.info,$(CXTOOLS)) Utilities.info
+CXPUT	= $(foreach t,$(CXTOOLS),--put=Tools/Commodities/$(t)=$(OUT)/cx/$(t))
+# The root program uses under 800 B of its stack, boot about 500;
+# shellwin's opens CON: and needs over 2 KB
+WBSTACK	= --rootstack=2
 wbboot_PUT = $(workbench_PUT) --put=Demos/Notes=$(TOP)/wb/Notes \
 	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan $(CXPUT) $(UTILPUT) \
 	$(foreach i,$(filter-out Demos/Hello.info,$(WBDISK)),--put=$(i)=$(OUT)/wb/$(notdir $(i))) \
@@ -360,11 +364,11 @@ ITESTS	+= $(TOOLTESTS)
 $(foreach t,$(TOOLTESTS),$(eval $(t)_PUT = $$(more_PUT)))
 $(patsubst %,$(OUT)/%.bin,$(TOOLTESTS)): $(UTILDEPS)
 # The commodities' test: the tools, with a quick Blanker
-cxtools_PUT = $(CXPUT) --put=Tools/Commodity/Blanker.info=$(OUT)/wb/BlankerTest.info \
-	$(foreach t,$(filter-out Blanker,$(CXTOOLS)),--put=Tools/Commodity/$(t).info=$(OUT)/wb/$(t).info)
+cxtools_PUT = $(CXPUT) --put=Tools/Commodities/Blanker.info=$(OUT)/wb/BlankerTest.info \
+	$(foreach t,$(filter-out Blanker,$(CXTOOLS)),--put=Tools/Commodities/$(t).info=$(OUT)/wb/$(t).info)
 $(OUT)/cxtools.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(patsubst %,$(OUT)/wb/%.info,BlankerTest $(CXTOOLS))
 # Workbench's disk with the Shell
-shellwin_PUT = $(wbboot_PUT) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg
+shellwin_PUT = $(filter-out $(WBSTACK),$(wbboot_PUT)) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg
 $(OUT)/shellwin.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
 # Workbench, a Shell and four tools at once
 wbmulti_PUT = $(shellwin_PUT)

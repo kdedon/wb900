@@ -1,9 +1,10 @@
 /* SPDX-License-Identifier: MIT */
 /*
  * Workbench without a display: a process writes a user's events to
- * input.device while Workbench runs.  It moves the Ram Disk, opens the
- * System disk and the Utilities and Demos drawers with double clicks,
- * checks the icons' pixels and labels, selects
+ * input.device while Workbench runs.  It finds the Boot, System and Ram
+ * Disk volumes, moves the Ram Disk, opens the System disk and the
+ * Utilities and Demos drawers with double clicks, checks the icons'
+ * pixels and labels, selects
  * Hello with a click and a lasso, drags it, launches it, opens Notes,
  * shows all files and cleans up through the menus.  It uses an AppIcon
  * and an AppMenuItem, scrolls a narrowed drawer, snapshots it, copies
@@ -682,6 +683,8 @@ static void script(void)
 	struct Task *t;
 	WORD x, y, x0, n;
 
+	check(findicon(root, "Boot:") != NULL &&
+	    findicon(root, "Ram Disk:") != NULL, "Boot and Ram Disk icons");
 	in = findicon(root, "System:");
 	check(in != NULL, "System disk icon");
 	if (in == NULL)
