@@ -1,0 +1,11 @@
+* keymap.library in the C900 dialect of an Amiga fd file, from AROS's
+* keymap.conf.  Each function takes KeymapBase first; the C functions
+* are AROS_LH definitions named Keymap_N after their vector.
+##base _KeymapBase
+##bias 30
+##public
+SetKeyMapDefault(keyMap)(struct KeyMap *) void @Keymap_5
+AskKeyMapDefault()() struct KeyMap * @Keymap_6
+MapRawKey(event,buffer,length,keyMap)(struct InputEvent *,STRPTR,LONG,struct KeyMap *) WORD @Keymap_7
+MapANSI(string,count,buffer,length,keyMap)(STRPTR,LONG,STRPTR,LONG,struct KeyMap *) LONG @Keymap_8
+##end

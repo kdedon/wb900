@@ -1,0 +1,61 @@
+* layers.library in the C900 dialect of an Amiga fd file, from AROS's
+* layers.conf.  Each function takes LayersBase first; the C functions are
+* AROS_LH definitions named Layers_N after their vector.  A function that
+* keeps its register list is not implemented.
+##base _LayersBase
+##bias 30
+##public
+InitLayers(li)(struct Layer_Info *) void @Layers_5
+CreateUpfrontLayer(li,bm,x0,y0,x1,y1,flags,bm2)(struct Layer_Info *,struct BitMap *,LONG,LONG,LONG,LONG,LONG,struct BitMap *) struct Layer * @Layers_6
+CreateBehindLayer(li,bm,x0,y0,x1,y1,flags,bm2)(struct Layer_Info *,struct BitMap *,LONG,LONG,LONG,LONG,LONG,struct BitMap *) struct Layer * @Layers_7
+UpfrontLayer(dummy,layer)(LONG,struct Layer *) LONG @Layers_8
+BehindLayer(dummy,layer)(LONG,struct Layer *) LONG @Layers_9
+MoveLayer(dummy,layer,dx,dy)(LONG,struct Layer *,LONG,LONG) LONG @Layers_10
+SizeLayer(dummy,layer,dx,dy)(LONG,struct Layer *,LONG,LONG) LONG @Layers_11
+ScrollLayer(dummy,layer,dx,dy)(LONG,struct Layer *,LONG,LONG) void @Layers_12
+BeginUpdate(l)(struct Layer *) LONG @Layers_13
+EndUpdate(layer,flag)(struct Layer *,UWORD) void @Layers_14
+DeleteLayer(dummy,layer)(LONG,struct Layer *) LONG @Layers_15
+LockLayer(dummy,layer)(LONG,struct Layer *) void @Layers_16
+UnlockLayer(layer)(struct Layer *) void @Layers_17
+LockLayers(li)(struct Layer_Info *) void @Layers_18
+UnlockLayers(li)(struct Layer_Info *) void @Layers_19
+LockLayerInfo(li)(struct Layer_Info *) void @Layers_20
+SwapBitsRastPortClipRect(rp,cr)(a0,a1)
+WhichLayer(li,x,y)(struct Layer_Info *,LONG,LONG) struct Layer * @Layers_22
+UnlockLayerInfo(li)(struct Layer_Info *) void @Layers_23
+NewLayerInfo()() struct Layer_Info * @Layers_24
+DisposeLayerInfo(li)(struct Layer_Info *) void @Layers_25
+FattenLayerInfo(li)(struct Layer_Info *) LONG @Layers_26
+ThinLayerInfo(li)(struct Layer_Info *) void @Layers_27
+MoveLayerInFrontOf(layer_to_move,other_layer)(struct Layer *,struct Layer *) LONG @Layers_28
+InstallClipRegion(layer,region)(struct Layer *,struct Region *) struct Region * @Layers_29
+MoveSizeLayer(layer,dx,dy,dw,dh)(struct Layer *,LONG,LONG,LONG,LONG) LONG @Layers_30
+CreateUpfrontHookLayer(li,bm,x0,y0,x1,y1,flags,hook,bm2)(struct Layer_Info *,struct BitMap *,LONG,LONG,LONG,LONG,LONG,struct Hook *,struct BitMap *) struct Layer * @Layers_31
+CreateBehindHookLayer(li,bm,x0,y0,x1,y1,flags,hook,bm2)(struct Layer_Info *,struct BitMap *,LONG,LONG,LONG,LONG,LONG,struct Hook *,struct BitMap *) struct Layer * @Layers_32
+InstallLayerHook(layer,hook)(struct Layer *,struct Hook *) struct Hook * @Layers_33
+InstallLayerInfoHook(li,hook)(struct Layer_Info *,struct Hook *) struct Hook * @Layers_34
+SortLayerCR(layer,dx,dy)(struct Layer *,LONG,LONG) void @Layers_35
+DoHookClipRects(hook,rport,rect)(struct Hook *,struct RastPort *,struct Rectangle *) void @Layers_36
+ChangeLayerShape(l,newshape,callback)(struct Layer *,struct Region *,struct Hook *) struct Region * @Layers_37
+ScaleLayer(l,taglist)(a0,a1)
+CreateUpfrontLayerTagList(li,bm,x0,y0,x1,y1,flags,tagList)(struct Layer_Info *,struct BitMap *,LONG,LONG,LONG,LONG,LONG,struct TagItem *) struct Layer * @Layers_39
+CreateBehindLayerTagList(li,bm,x0,y0,x1,y1,flags,tagList)(struct Layer_Info *,struct BitMap *,LONG,LONG,LONG,LONG,LONG,struct TagItem *) struct Layer * @Layers_40
+ChangeLayerVisibility(l,visible)(struct Layer *,int) LONG @Layers_41
+##private
+layersPrivate1()()
+##public
+IsLayerVisible(l)(struct Layer *) LONG @Layers_43
+IsLayerHiddenBySibling(l,check_invisible)(struct Layer *,BOOL) BOOL @Layers_44
+CollectPixelsLayer(l,r,callback)(a0,a1,a2)
+##private
+layersPrivate2()()
+layersPrivate3()()
+layersPrivate4()()
+layersPrivate5()()
+layersPrivate6()()
+layersPrivate7()()
+##public
+IsLayerHitAt(l,x,y)(a0,d0,d1)
+ChangeLayerInputShape(l,region)(a0,a1)
+##end

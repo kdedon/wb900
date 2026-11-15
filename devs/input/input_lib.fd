@@ -1,0 +1,11 @@
+* input.device in the C900 dialect of an Amiga fd file, from AROS's
+* input.conf.  Each function takes InputBase first; the C functions are
+* AROS_LH definitions named Input_N after their vector.
+##base _InputBase
+##bias 30
+##private
+BeginIO(ioRequest)(struct IORequest *) void @Input_5
+AbortIO(ioRequest)(struct IORequest *) LONG @Input_6
+##public
+PeekQualifier()() UWORD @Input_7
+##end

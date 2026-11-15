@@ -1,0 +1,654 @@
+/*
+    Copyright (C) 1995-2026, The AROS Development Team. All rights reserved.
+    Copyright (C) 2001-2003, The MorphOS Development Team. All Rights Reserved.
+*/
+
+#define DEBUG_BUILDEASYREQUEST(x)
+
+/**********************************************************************************************/
+
+#include <clib/macros.h>
+#include <aros/asmcall.h>
+#include <proto/exec.h>
+#include <proto/intuition.h>
+#include <proto/graphics.h>
+#include <exec/memory.h>
+#include <intuition/icclass.h>
+#include <intuition/gadgetclass.h>
+#include <intuition/imageclass.h>
+#include <intuition/screens.h>
+#include <graphics/rastport.h>
+#include <graphics/gfxmacros.h>
+#include <utility/tagitem.h>
+#include "intuition_intern.h"
+
+
+static int charsinstring(CONST_STRPTR string, char c)
+{
+    int count = 0;
+
+    while (string[0])
+    {
+        if (string[0] == c)
+            count++;
+        string++;
+    }
+    return count;
+}
+
+static struct IntuiText *requester_makebodyplain(struct IntReqDims *dims, STRPTR string, struct TextAttr *font)
+{
+    struct IntuiText *res;
+    char *s;
+    unsigned int lines = charsinstring(string, '\n') + 1;
+    unsigned int i;
+
+    res = AllocVec(sizeof(struct IntuiText) * lines, MEMF_ANY);
+    if (res)
+    {
+        s = string;
+        for (i = 0; i < lines; i++)
+        {
+            res[i].FrontPen = 1;
+            res[i].BackPen  = 0;
+            res[i].DrawMode = JAM2;
+            res[i].ITextFont = font;
+            res[i].LeftEdge = 0;
+            res[i].TopEdge  = (dims->fontheight + dims->fontxheight) * i;
+            res[i].IText = s;
+            while (*s)
+            {
+                if (*s == '\n')
+                    break;
+                s++;
+            }
+            res[i].NextText = *s ? &res[i+1] : NULL;
+            *s++ = '\0';
+        }
+    }
+    return res;
+}
+
+/**********************************************************************************************/
+
+static STRPTR *buildeasyreq_makelabels(struct IntReqDims *dims,CONST_STRPTR labeltext, RAWARG args, struct IntuitionBase *IntuitionBase);
+static STRPTR buildeasyreq_formattext(CONST_STRPTR textformat, RAWARG args, RAWARG *nextargptr, struct IntuitionBase *IntuitionBase);
+static BOOL buildeasyreq_calculatedims(struct IntReqDims *dims,
+                                       struct Screen *scr,
+                                       STRPTR formattedtext,
+                                       STRPTR *gadgetlabels,
+                                       struct IntuitionBase *IntuitionBase);
+static struct Gadget *buildeasyreq_makegadgets(struct IntReqDims *dims,
+                                STRPTR *gadgetlabels,
+                                struct Screen *scr,
+                                ULONG *idcmp,
+                                struct IntuitionBase *IntuitionBase);
+static struct Gadget *FindGadgetByID(struct Gadget *thisgadget, UWORD GadgetID);
+
+const struct TagItem mapproptop[] = {
+    {PGA_Top, ICSPECIAL_CODE},
+    {TAG_END, }
+};
+
+/*****************************************************************************
+
+    NAME */
+#include <proto/intuition.h>
+#include <exec/types.h>
+#include <intuition/intuition.h>
+
+        AROS_LH4(struct Window *, BuildEasyRequestArgs,
+
+/*  SYNOPSIS */
+        AROS_LHA(struct Window     *, RefWindow, A0),
+        AROS_LHA(struct EasyStruct *, easyStruct, A1),
+        AROS_LHA(ULONG              , IDCMP, D0),
+        AROS_LHA(RAWARG             , Args, A3),
+
+/*  LOCATION */
+        struct IntuitionBase *, IntuitionBase, 99, Intuition)
+
+/*  FUNCTION
+        Opens a requester, which provides one or more choices. The control is
+        returned to the application after the requester was opened. It is
+        handled by subsequent calls to SysReqHandler() and closed by calling
+        FreeSysRequest().
+
+    INPUTS
+        RefWindow - A reference window. If NULL, the requester opens on
+                    the default public screen.
+        easyStruct - The EasyStruct structure (<intuition/intuition.h>),
+                     which describes the requester.
+        IDCMP - IDCMP flags, which should satisfy the requester, too. This is
+                useful for requesters, which want to listen to disk changes,
+                etc. Note that this is not a pointer to the flags as in
+                EasyRequestArgs().
+        Args - The arguments for easyStruct->es_TextFormat.
+
+    RESULT
+        Returns a pointer to the requester. Use this pointer only for calls
+        to SysReqHandler() and FreeSysRequest().
+
+    NOTES
+
+    EXAMPLE
+
+    BUGS
+
+    SEE ALSO
+        EasyRequestArgs(), SysReqHandler(), FreeSysRequest()
+
+    INTERNALS
+
+*****************************************************************************/
+{
+    AROS_LIBFUNC_INIT
+
+    struct Screen               *scr = NULL, *lockedscr = NULL;
+    struct Window               *req;
+    struct Gadget               *gadgets;
+    CONST_STRPTR                 reqtitle;
+    STRPTR                      *gadgetlabels;
+    struct IntRequestUserData   *requserdata;
+    RAWARG                       nextarg;
+    ULONG                       reqidcmp = IDCMP_GADGETUP | IDCMP_RAWKEY;
+
+    if (!easyStruct)
+        return FALSE;
+
+    /* get requester title */
+    reqtitle = easyStruct->es_Title;
+    if ((!reqtitle) && (RefWindow))
+        reqtitle = RefWindow->Title;
+
+    if (!reqtitle) reqtitle = "System Request"; /* stegerg: should be localized */
+
+    /* get screen and screendrawinfo */
+    if (RefWindow)
+        scr = RefWindow->WScreen;
+
+    if (!scr)
+    {
+        scr = LockPubScreen(NULL);
+        if (!scr)
+            return FALSE;
+
+        lockedscr = scr;
+    }
+
+    /* create everything */
+    requserdata = AllocVec(sizeof(struct IntRequestUserData),
+                           MEMF_ANY|MEMF_CLEAR);
+
+    if (requserdata)
+    {
+
+        requserdata->drawreq = buildreq_draw;
+
+        requserdata->RawBody = buildeasyreq_formattext(easyStruct->es_TextFormat,
+                                                Args,
+                                                &nextarg,
+                                                IntuitionBase);
+
+        if (requserdata->RawBody)
+        {
+            gadgetlabels = buildeasyreq_makelabels(&requserdata->ReqDims,
+                                                   easyStruct->es_GadgetFormat,
+                                                   nextarg,
+                                                   IntuitionBase);
+
+            if(gadgetlabels)
+            {
+                if (buildeasyreq_calculatedims(&requserdata->ReqDims, scr,
+                                               requserdata->RawBody, gadgetlabels, IntuitionBase))
+                {
+
+                    struct TextAttr *reqfont = NULL;
+                    struct TextAttr defreqfont = {
+                        "topaz.font",
+                        scr->RastPort.Font->tf_YSize,
+                        scr->RastPort.Font->tf_Style,
+                        0
+                    };
+                    reqfont = GetPrivIBase(IntuitionBase)->ReqFont;
+                    requserdata->ReqBody = requester_makebodyplain(&requserdata->ReqDims, requserdata->RawBody, reqfont);
+
+                    gadgets = buildeasyreq_makegadgets(&requserdata->ReqDims, gadgetlabels, scr, &reqidcmp, IntuitionBase);
+                    if (gadgets)
+                    {
+
+                        struct TagItem win_tags[] =
+                        {
+                            { WA_Width                                    , requserdata->ReqDims.width                                                  },
+                            { WA_Height                                   , requserdata->ReqDims.height                                                 },
+                            { WA_Left                                     , - scr->LeftEdge + (scr->ViewPort.DWidth/2) - (requserdata->ReqDims.width/2) },
+                            { WA_Top                                      , - scr->TopEdge + (scr->ViewPort.DHeight/2) - (requserdata->ReqDims.height/2)},
+                            { WA_IDCMP                                    , reqidcmp | (IDCMP & ~IDCMP_VANILLAKEY)                      },
+                            { WA_Gadgets                                  , (IPTR)gadgets                                               },
+                            { WA_Title                                    , (IPTR)reqtitle                                              },
+                            { (lockedscr ? WA_PubScreen : WA_CustomScreen), (IPTR)scr                                                   },
+                            { WA_Flags                                    , WFLG_DRAGBAR     |
+                                                                            WFLG_DEPTHGADGET |
+                                                                            WFLG_ACTIVATE    |
+                                                                            WFLG_RMBTRAP   /*|
+                                                                            WFLG_SIMPLE_REFRESH*/                                       },
+                            {TAG_DONE                                                                                                   }
+                        };
+
+                        req = OpenWindowTagList(NULL, win_tags);
+
+                        if (req)
+                        {
+                            if (lockedscr) UnlockPubScreen(NULL, lockedscr);
+
+                            req->UserData = (BYTE *)requserdata;
+                            requserdata->IDCMP = IDCMP;
+                            requserdata->GadgetLabels = gadgetlabels;
+                            requserdata->Gadgets = gadgets;
+
+                            if (gadgets = FindGadgetByID(req->FirstGadget, (UWORD)-3))
+                            {
+
+                                struct TagItem proptags[4];
+
+                                proptags[0].ti_Tag = PGA_Total;   proptags[0].ti_Data = requserdata->ReqDims.textheight;
+                                proptags[1].ti_Tag = PGA_Visible; proptags[1].ti_Data = req->GZZHeight;
+                                proptags[2].ti_Tag = PGA_Top;     proptags[2].ti_Data = 0;
+                                proptags[3].ti_Tag = TAG_END;
+                                SetGadgetAttrsA(gadgets, req, NULL, proptags);
+                            }
+                            gadgets = requserdata->Gadgets;
+                            buildreq_draw(&requserdata->ReqDims, requserdata->ReqBody,
+                                     req, scr, requserdata->Gadgets, IntuitionBase);
+
+                            return req;
+                        }
+
+                        intrequest_freegadgets(gadgets, IntuitionBase);
+
+                    } /* if (gadgets) */
+
+                } /* if (if (buildeasyreq_calculatedims... */
+
+                intrequest_freelabels(gadgetlabels, IntuitionBase);
+
+            } /* if (gadgetlabels) */
+
+            FreeVec(requserdata->RawBody);
+
+        } /* if (requserdata->RawBody) */
+
+        /* opening requester failed -> free everything */
+        FreeVec(requserdata);
+
+    } /* if (requserdata) */
+
+    if (lockedscr) UnlockPubScreen(NULL, lockedscr);
+
+    return NULL;
+
+    AROS_LIBFUNC_EXIT
+
+} /* BuildEasyRequestArgs */
+
+/**********************************************************************************************/
+
+static struct Gadget *FindGadgetByID(struct Gadget *thisgadget, UWORD GadgetID)
+{
+
+    while ((thisgadget))
+    {
+
+        if (thisgadget->GadgetID == GadgetID)
+        {
+            return thisgadget;
+        }
+        thisgadget = thisgadget->NextGadget;
+    }
+    return NULL;
+}
+
+/**********************************************************************************************/
+
+/* RawDoFmt() output: count the characters, or copy them */
+static void fmt_count(UBYTE c, ULONG *len)
+{
+    (*len)++;
+}
+
+static void fmt_copy(UBYTE c, UBYTE **p)
+{
+    *(*p)++ = c;
+}
+
+/* create an array of gadgetlabels */
+static STRPTR *buildeasyreq_makelabels(struct IntReqDims *dims,
+                                       CONST_STRPTR labeltext,
+                                       RAWARG args,
+                                       struct IntuitionBase *IntuitionBase)
+{
+    STRPTR  *gadgetlabels;
+    STRPTR   label, p;
+    int      currentgadget;
+    ULONG    len = 0;
+
+    /* make room for pointer-array */
+    dims->gadgets = charsinstring(labeltext, '|') + 1;
+
+    gadgetlabels = AllocVec((dims->gadgets + 1) * sizeof(STRPTR), MEMF_ANY);
+    if (!gadgetlabels)
+        return NULL;
+
+    gadgetlabels[dims->gadgets] = NULL;
+
+    /* copy label-string */
+    RawDoFmt((char *)labeltext, args, (APTR)fmt_count, &len);
+
+    label = AllocVec(len + 1, MEMF_ANY);
+    if (!label)
+    {
+        FreeVec(gadgetlabels);
+        return NULL;
+    }
+
+    p = label;
+    RawDoFmt((char *)labeltext, args, (APTR)fmt_copy, &p);
+
+    /* set up the pointers and insert null-bytes */
+    for (currentgadget = 0; currentgadget < dims->gadgets; currentgadget++)
+    {
+        gadgetlabels[currentgadget] = label;
+
+        if (currentgadget != (dims->gadgets - 1))
+        {
+            while (label[0] != '|')
+                label++;
+
+            label[0] = '\0';
+            label++;
+        }
+    }
+
+    return gadgetlabels;
+}
+
+/**********************************************************************************************/
+
+/**********************************************************************************************/
+
+/* format the supplied text string by using the supplied args */
+static STRPTR buildeasyreq_formattext(CONST_STRPTR textformat,
+                                      RAWARG args,
+                                      RAWARG *nextargptr,
+                                      struct IntuitionBase *IntuitionBase)
+{
+    STRPTR buffer, p;
+    ULONG  len = 0;
+
+    RawDoFmt((char *)textformat, args, (APTR)fmt_count, &len);
+
+    buffer = AllocVec(len + 1, MEMF_ANY | MEMF_CLEAR);
+    if (!buffer) return NULL;
+
+    p = buffer;
+    *nextargptr = RawDoFmt((char *)textformat, args, (APTR)fmt_copy, &p);
+
+    return buffer;
+}
+
+/**********************************************************************************************/
+
+/* calculate dimensions of the requester */
+static BOOL buildeasyreq_calculatedims(struct IntReqDims *dims,
+                                       struct Screen *scr,
+                                       STRPTR formattedtext,
+                                       STRPTR *gadgetlabels,
+                                       struct IntuitionBase *IntuitionBase)
+{
+    struct GfxBase *GfxBase = GetPrivIBase(IntuitionBase)->GfxBase;
+    STRPTR  textline;
+    int     textlines, line; /* number of lines in es_TextFormat */
+    int     currentgadget = 0;
+    UWORD   textboxwidth = 0, gadgetswidth; /* width of upper/lower part */
+
+    /* calculate height of requester */
+    dims->fontheight = scr->RastPort.Font->tf_YSize;
+    dims->fontxheight = dims->fontheight - scr->RastPort.Font->tf_Baseline;
+    if (dims->fontxheight < 1) dims->fontxheight = 1;
+
+    textlines = charsinstring(formattedtext, '\n') + 1;
+    dims->textheight = TEXTBOXBORDER_Y +
+                       textlines * (dims->fontheight + dims->fontxheight) - dims->fontxheight +
+                       TEXTBOXBORDER_Y;
+    dims->height     = scr->WBorTop + dims->fontheight + 1 +
+                       OUTERSPACING_Y +
+                       dims->textheight +
+                       TEXTGADGETSPACING +
+                       /* Width of gadgets is not counted here. It's counted in buildeasyreq_makegadgets(). */
+                       OUTERSPACING_Y +
+                       scr->WBorBottom;
+
+    /* calculate width of text-box */
+    textline = formattedtext;
+    for (line = 0; line<textlines; line++)
+    {
+        int   linelen; /* length of current text line */
+        UWORD linewidth; /* width (pixel) of current text line */
+
+        if (line == (textlines - 1))
+            linelen = strlen(textline);
+        else
+        {
+            linelen = 0;
+            while (textline[linelen] != '\n')
+                linelen++;
+        }
+        linewidth = TextLength(&scr->RastPort, textline, linelen);
+        if (linewidth > textboxwidth)
+            textboxwidth = linewidth;
+        textline = textline + linelen + 1;
+    }
+    textboxwidth += TEXTBOXBORDER_X * 2;
+
+    /* calculate width of gadgets */
+    dims->gadgetwidth = 0;
+    while (gadgetlabels[currentgadget])
+    {
+        UWORD gadgetwidth; /* width of current gadget */
+
+        gadgetwidth = TextLength(&scr->RastPort, gadgetlabels[currentgadget],
+                                 strlen(gadgetlabels[currentgadget]));
+        if (gadgetwidth > dims->gadgetwidth)
+            dims->gadgetwidth = gadgetwidth;
+        currentgadget++;
+    }
+
+    dims->gadgetwidth += BUTTONBORDER_X * 2;
+    gadgetswidth = (dims->gadgetwidth + GADGETGADGETSPACING) * dims->gadgets - GADGETGADGETSPACING;
+
+    /* calculate width of requester and position of requester text */
+    dims->textleft = scr->WBorLeft + OUTERSPACING_X + TEXTBOXBORDER_X;
+    if (textboxwidth > gadgetswidth)
+    {
+        dims->width = textboxwidth;
+    }
+    else
+    {
+        dims->textleft += (gadgetswidth - textboxwidth) / 2;
+        dims->width = gadgetswidth;
+    }
+    dims->width += OUTERSPACING_X * 2 + scr->WBorLeft + scr->WBorRight;
+
+    if (dims->width > scr->Width)
+    {
+
+        dims->width = scr->Width;
+    }
+
+    return TRUE;
+}
+
+/**********************************************************************************************/
+
+/* make all the gadgets */
+static struct Gadget *buildeasyreq_makegadgets(struct IntReqDims *dims,
+                    STRPTR *gadgetlabels,
+                    struct Screen *scr,
+                    ULONG   *idcmp,
+                    struct IntuitionBase *IntuitionBase)
+{
+    UWORD gadgetheight = dims->fontheight + BUTTONBORDER_Y * 2;
+    struct Gadget   *gadgetlist, *thisgadget = NULL;
+    struct Image    *gadgetframe;
+    WORD             currentgadget;
+    UWORD            xoffset, yoffset, spacing, gadgetswidth, gadgetsheight, ngadgets, nrows;
+    UWORD            x, y;
+    struct DrawInfo *dri;
+    struct TagItem   frametags[4], gadtags[8], texttags[2], proptags[12];
+
+    if (gadgetlabels[0] == NULL)
+        return NULL;
+
+    frametags[0].ti_Tag = IA_FrameType; frametags[0].ti_Data = FRAME_BUTTON;
+    frametags[1].ti_Tag = IA_Width;     frametags[1].ti_Data = dims->gadgetwidth;
+    frametags[2].ti_Tag = IA_Height;    frametags[2].ti_Data = gadgetheight;
+    frametags[3].ti_Tag = TAG_DONE;
+    gadgetframe = (struct Image *)NewObjectA(NULL, FRAMEICLASS, frametags);
+
+    if (!gadgetframe)
+        return NULL;
+
+    ngadgets = dims->gadgets;
+    gadgetswidth = (dims->gadgetwidth + GADGETGADGETSPACING) * ngadgets - GADGETGADGETSPACING;
+    spacing = dims->width - scr->WBorLeft - scr->WBorRight - OUTERSPACING_X * 2;
+
+    /*
+     * At this point 'spacing' holds total width of inner space available for use by gadgets.
+     * If gadgets would occupy more space than we have (window/screen is too narrow),
+     * we will rearrange gadgets in several rows.
+     * First we need to calculate how many gadgets per row will fit on the screen.
+     */
+    while (gadgetswidth > spacing)
+    {
+        if (ngadgets == 1)
+        {
+            /* Only one gadget left? Too bad... */
+            break;
+        }
+
+        ngadgets--;
+        gadgetswidth = (dims->gadgetwidth + GADGETGADGETSPACING) * ngadgets - GADGETGADGETSPACING;
+
+    }
+
+    nrows = dims->gadgets / ngadgets;
+    if (nrows * ngadgets < dims->gadgets)
+        nrows++;
+
+    /* Now calculate spacing between gadgets */
+    if (ngadgets > 1)
+        spacing = (spacing - dims->gadgetwidth) / (ngadgets - 1);
+
+    dri = GetScreenDrawInfo(scr);
+
+    /* Now we know how much space our gadgets will occupy. Add the required height to the requester. */
+    gadgetheight += GADGETGADGETSPACING_Y;
+    gadgetsheight = nrows * gadgetheight - GADGETGADGETSPACING_Y;
+    dims->height += gadgetsheight;
+
+    dims->disptextheight = dims->textheight;
+
+    /* Check if the resulting height fits on the screen. */
+    if (dims->height > scr->Height)
+    {
+
+        /* Decrease height of the requester at the expense of textbox */
+        dims->height = scr->Height;
+        dims->disptextheight = dims->height - scr->WBorTop - dims->fontheight - 1 -
+                           OUTERSPACING_Y -
+                           TEXTGADGETSPACING -
+                           gadgetsheight -
+                           OUTERSPACING_Y -
+                           scr->WBorBottom;
+    }
+
+    gadgetlist = NULL;
+    currentgadget = 0;
+    yoffset = dims->height - scr->WBorBottom - OUTERSPACING_Y - gadgetsheight;
+
+    for (y = 0; y < nrows; y++)
+    {
+        xoffset = scr->WBorLeft + OUTERSPACING_X;
+        if (ngadgets == 1)
+            xoffset += (spacing - dims->gadgetwidth) / 2;
+
+        for (x = 0; x < ngadgets; x++)
+        {
+            WORD gadgetid = (currentgadget == (dims->gadgets - 1)) ? 0 : currentgadget + 1;
+
+            gadtags[0].ti_Tag = GA_ID;        gadtags[0].ti_Data = gadgetid;
+            gadtags[1].ti_Tag = GA_Previous;  gadtags[1].ti_Data = (IPTR)thisgadget;
+            gadtags[2].ti_Tag = GA_Left;      gadtags[2].ti_Data = xoffset;
+            gadtags[3].ti_Tag = GA_Top;       gadtags[3].ti_Data = yoffset;
+            gadtags[4].ti_Tag = GA_Image;     gadtags[4].ti_Data = (IPTR)gadgetframe;
+            gadtags[5].ti_Tag = GA_RelVerify; gadtags[5].ti_Data = TRUE;
+            gadtags[6].ti_Tag = GA_DrawInfo;  gadtags[6].ti_Data = (IPTR)dri;
+            gadtags[7].ti_Tag = TAG_DONE;
+            thisgadget = NewObjectA(NULL, FRBUTTONCLASS, gadtags);
+
+            if (currentgadget == 0)
+                gadgetlist = thisgadget;
+
+            if (!thisgadget)
+            {
+                intrequest_freegadgets(gadgetlist, IntuitionBase);
+                return NULL;
+            }
+
+            texttags[0].ti_Tag = GA_Text; texttags[0].ti_Data = (IPTR)gadgetlabels[currentgadget++];
+            texttags[1].ti_Tag = TAG_DONE;
+            SetAttrsA(thisgadget, texttags);
+
+            if (currentgadget == dims->gadgets)
+            {
+                /*
+                 * The last row can be incomplete, if number of gadgets does not
+                 * divide on number of rows.
+                 */
+                break;
+            }
+
+            xoffset += spacing;
+        }
+        yoffset += gadgetheight;
+    }
+
+    if (dims->textheight > dims->disptextheight)
+    {
+#define SCRLWIDTH   18
+#define SCRLHEIGHT  9
+        proptags[0].ti_Tag = GA_ID;        proptags[0].ti_Data = (UWORD)-3;
+        proptags[1].ti_Tag = GA_Previous;  proptags[1].ti_Data = (IPTR)thisgadget;
+        proptags[2].ti_Tag = GA_RelRight;  proptags[2].ti_Data = -(OUTERSPACING_X + SCRLWIDTH + 2);
+        proptags[3].ti_Tag = GA_Top;       proptags[3].ti_Data = (scr->WBorTop + OUTERSPACING_Y + dims->fontheight + 1);
+        proptags[4].ti_Tag = GA_Width;     proptags[4].ti_Data = SCRLWIDTH - 8;
+        proptags[5].ti_Tag = GA_RelHeight; proptags[5].ti_Data = -(dims->height - dims->disptextheight - scr->WBorTop + dims->fontheight);
+        proptags[6].ti_Tag = GA_DrawInfo;  proptags[6].ti_Data = (IPTR)dri;
+        proptags[7].ti_Tag = PGA_Freedom;  proptags[7].ti_Data = FREEVERT;
+        proptags[8].ti_Tag = PGA_NewLook;  proptags[8].ti_Data = TRUE;
+        proptags[9].ti_Tag = ICA_TARGET;   proptags[9].ti_Data = ICTARGET_IDCMP;
+        proptags[10].ti_Tag = ICA_MAP;     proptags[10].ti_Data = (IPTR)mapproptop;
+        proptags[11].ti_Tag = TAG_END;
+        thisgadget = NewObjectA(NULL, PROPGCLASS, proptags);
+
+        *idcmp |= IDCMP_IDCMPUPDATE;
+        if (currentgadget == 0)
+            gadgetlist = thisgadget;
+    }
+
+    FreeScreenDrawInfo(scr, dri);
+
+    return gadgetlist;
+}
+
+/**********************************************************************************************/

@@ -1,0 +1,9 @@
+* SPDX-License-Identifier: MIT
+* hr.gfxdriver, graphics.library's driver for the HR card, in the C900
+* dialect of an Amiga fd file.  GetGfxDriver() is <graphics/gfxdriver.h>'s
+* first function of a display driver.
+##base _HRBase
+##bias 30
+##public
+GetGfxDriver(fmts)(struct GfxDriver **) struct GfxDriver * @HR_5
+##end

@@ -1,0 +1,79 @@
+* utility.library in the C900 dialect of an Amiga fd file, from AROS's
+* utility.conf.  Each function takes UtilityBase first; the C functions
+* are AROS_LH definitions named Utility_N after their vector.  The QUAD
+* results of SDivMod32, SMult64 and UMult64 do not fit the C900 ABI, so
+* those keep register lists and are unimplemented.
+##base _UtilityBase
+##bias 30
+##public
+FindTagItem(tagValue,tagList)(Tag,const struct TagItem *) struct TagItem * @Utility_5
+GetTagData(tagValue,defaultVal,tagList)(Tag,IPTR,const struct TagItem *) IPTR @Utility_6
+PackBoolTags(initialFlags,tagList,boolMap)(ULONG,struct TagItem *,struct TagItem *) ULONG @Utility_7
+NextTagItem(tagListPtr)(struct TagItem **) struct TagItem * @Utility_8
+FilterTagChanges(changeList,originalList,apply)(struct TagItem *,const struct TagItem *,BOOL) void @Utility_9
+MapTags(tagList,mapList,mapType)(struct TagItem *,struct TagItem *,ULONG) void @Utility_10
+AllocateTagItems(numTags)(ULONG) struct TagItem * @Utility_11
+CloneTagItems(tagList)(const struct TagItem *) struct TagItem * @Utility_12
+FreeTagItems(tagList)(struct TagItem *) void @Utility_13
+RefreshTagItemClones(clone,original)(struct TagItem *,const struct TagItem *) void @Utility_14
+TagInArray(tagValue,tagArray)(Tag,Tag *) BOOL @Utility_15
+FilterTagItems(tagList,filterArray,logic)(struct TagItem *,Tag *,ULONG) ULONG @Utility_16
+CallHookPkt(hook,object,paramPacket)(struct Hook *,APTR,APTR) IPTR @Utility_17
+##private
+utilityPrivate1()()
+utilityPrivate2()()
+##public
+Amiga2Date(seconds,result)(ULONG,struct ClockData *) void @Utility_20
+Date2Amiga(date)(struct ClockData *) ULONG @Utility_21
+CheckDate(date)(struct ClockData *) ULONG @Utility_22
+SMult32(arg1,arg2)(LONG,LONG) LONG @Utility_23
+UMult32(arg1,arg2)(ULONG,ULONG) ULONG @Utility_24
+SDivMod32(dividend,divisor)(d0,d1)
+UDivMod32(dividend,divisor)(ULONG,ULONG) ULONG @Utility_26
+Stricmp(string1,string2)(CONST_STRPTR,CONST_STRPTR) LONG @Utility_27
+Strnicmp(string1,string2,length)(CONST_STRPTR,CONST_STRPTR,LONG) LONG @Utility_28
+ToUpper(character)(ULONG) UBYTE @Utility_29
+ToLower(character)(ULONG) UBYTE @Utility_30
+ApplyTagChanges(list,changelist)(struct TagItem *,struct TagItem *) void @Utility_31
+##private
+utilityPrivate3()()
+##public
+SMult64(arg1,arg2)(d0,d1)
+UMult64(arg1,arg2)(d0,d1)
+PackStructureTags(pack,packTable,tagList)(APTR,ULONG *,struct TagItem *) ULONG @Utility_35
+UnpackStructureTags(pack,packTable,tagList)(APTR,ULONG *,struct TagItem *) ULONG @Utility_36
+AddNamedObject(nameSpace,object)(struct NamedObject *,struct NamedObject *) BOOL @Utility_37
+AllocNamedObjectA(name,tagList)(CONST_STRPTR,struct TagItem *) struct NamedObject * @Utility_38
+AttemptRemNamedObject(object)(struct NamedObject *) LONG @Utility_39
+FindNamedObject(nameSpace,name,lastObject)(struct NamedObject *,CONST_STRPTR,struct NamedObject *) struct NamedObject * @Utility_40
+FreeNamedObject(object)(struct NamedObject *) void @Utility_41
+NamedObjectName(object)(struct NamedObject *) STRPTR @Utility_42
+ReleaseNamedObject(object)(struct NamedObject *) void @Utility_43
+RemNamedObject(object,message)(struct NamedObject *,struct Message *) void @Utility_44
+GetUniqueID()() ULONG @Utility_45
+##private
+utilityPrivate4()()
+utilityPrivate5()()
+utilityPrivate6()()
+utilityPrivate7()()
+##public
+Strlcpy(destination,source,size)(STRPTR,CONST_STRPTR,LONG) LONG @Utility_50
+Strlcat(destination,source,size)(STRPTR,CONST_STRPTR,LONG) LONG @Utility_51
+VSNPrintf(buffer,buffer_size,format,args)(STRPTR,LONG,CONST_STRPTR,RAWARG) LONG @Utility_52
+##private
+utilityPrivate8()()
+utilityPrivate9()()
+utilityPrivate10()()
+utilityPrivate11()()
+utilityPrivate12()()
+utilityPrivate13()()
+utilityPrivate14()()
+utilityPrivate15()()
+utilityPrivate16()()
+utilityPrivate17()()
+utilityPrivate18()()
+utilityPrivate19()()
+utilityPrivate20()()
+##public
+SetMem(destination,c,length)(APTR,UBYTE,LONG) APTR @Utility_66
+##end

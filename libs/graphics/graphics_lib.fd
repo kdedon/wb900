@@ -1,0 +1,224 @@
+* graphics.library in the C900 dialect of an Amiga fd file, from AROS's
+* graphics.conf.  Each function takes GfxBase first; the C functions are
+* AROS_LH definitions named Graphics_N after their vector.  A function
+* that keeps its register list is not implemented.
+* DeinitRastPort(), in AROS a link library call, has a free AROS slot.
+##base _GfxBase
+##bias 30
+##public
+BltBitMap(srcBitMap,xSrc,ySrc,destBitMap,xDest,yDest,xSize,ySize,minterm,mask,tempA)(struct BitMap *,WORD,WORD,struct BitMap *,WORD,WORD,WORD,WORD,UBYTE,UBYTE,PLANEPTR) LONG @Graphics_5
+BltTemplate(source,xSrc,srcMod,destRP,xDest,yDest,xSize,ySize)(PLANEPTR,WORD,WORD,struct RastPort *,WORD,WORD,WORD,WORD) void @Graphics_6
+ClearEOL(rp)(a1)
+ClearScreen(rp)(a1)
+TextLength(rp,string,count)(struct RastPort *,CONST_STRPTR,WORD) WORD @Graphics_9
+Text(rp,string,count)(struct RastPort *,CONST_STRPTR,WORD) void @Graphics_10
+SetFont(rp,textFont)(struct RastPort *,struct TextFont *) void @Graphics_11
+OpenFont(textAttr)(const struct TextAttr *) struct TextFont * @Graphics_12
+CloseFont(textFont)(struct TextFont *) void @Graphics_13
+AskSoftStyle(rp)(struct RastPort *) ULONG @Graphics_14
+SetSoftStyle(rp,style,enable)(struct RastPort *,ULONG,ULONG) ULONG @Graphics_15
+AddBob(bob,rp)(a0,a1)
+AddVSprite(vs,rp)(a0,a1)
+DoCollision(rp)(a1)
+DrawGList(rp,vp)(a1,a0)
+InitGels(head,tail,GInfo)(a0,a1,a2)
+InitMasks(vs)(a0)
+RemIBob(bob,rp,vp)(a0,a1,a2)
+RemVSprite(vs)(a0)
+SetCollision(num,routine,GInfo)(d0,a0,a1)
+SortGList(rp)(a1)
+AddAnimOb(anOb,anKey,rp)(a0,a1,a2)
+Animate(anKey,rp)(a0,a1)
+GetGBuffers(anOb,rp,db)(a0,a1,d0)
+InitGMasks(anOb)(a0)
+DrawEllipse(rp,xCenter,yCenter,a,b)(a1,d0,d1,d2,d3)
+AreaEllipse(rp,cx,cy,a,b)(a1,d0,d1,d2,d3)
+LoadRGB4(vp,colors,count)(a0,a1,d0)
+InitRastPort(rp)(struct RastPort *) void @Graphics_33
+InitVPort(vp)(struct ViewPort *) void @Graphics_34
+MrgCop(view)(struct View *) ULONG @Graphics_35
+MakeVPort(view,viewport)(struct View *,struct ViewPort *) ULONG @Graphics_36
+LoadView(view)(struct View *) void @Graphics_37
+WaitBlit()()
+SetRast(rp,pen)(struct RastPort *,UBYTE) void @Graphics_39
+Move(rp,x,y)(struct RastPort *,WORD,WORD) void @Graphics_40
+Draw(rp,x,y)(struct RastPort *,WORD,WORD) void @Graphics_41
+AreaMove(rp,x,y)(a1,d0,d1)
+AreaDraw(rp,x,y)(a1,d0,d1)
+AreaEnd(rp)(a1)
+WaitTOF()() void @Graphics_45
+QBlit(bn)(a1)
+InitArea(areainfo,buffer,maxvectors)(a0,a1,d0)
+SetRGB4(vp,n,r,g,b)(struct ViewPort *,WORD,UBYTE,UBYTE,UBYTE) void @Graphics_48
+QBSBlit(bn)(a1)
+BltClear(memBlock,bytecount,flags)(a1,d0,d1)
+RectFill(rp,xMin,yMin,xMax,yMax)(struct RastPort *,WORD,WORD,WORD,WORD) void @Graphics_51
+BltPattern(rp,mask,xMin,yMin,xMax,yMax,byteCnt)(struct RastPort *,PLANEPTR,WORD,WORD,WORD,WORD,WORD) void @Graphics_52
+ReadPixel(rp,x,y)(struct RastPort *,WORD,WORD) LONG @Graphics_53
+WritePixel(rp,x,y)(struct RastPort *,WORD,WORD) LONG @Graphics_54
+Flood(rp,mode,x,y)(a1,d2,d0,d1)
+PolyDraw(rp,count,polyTable)(a1,d0,a0)
+SetAPen(rp,pen)(struct RastPort *,UBYTE) void @Graphics_57
+SetBPen(rp,pen)(struct RastPort *,UBYTE) void @Graphics_58
+SetDrMd(rp,drawMode)(struct RastPort *,UBYTE) void @Graphics_59
+InitView(view)(struct View *) void @Graphics_60
+CBump(ucl)(a1)
+CMove(ucl,reg,value)(a1,d0,d1)
+CWait(ucl,v,h)(a1,d0,d1)
+VBeamPos()()
+InitBitMap(bm,depth,width,height)(struct BitMap *,BYTE,UWORD,UWORD) void @Graphics_65
+ScrollRaster(rp,dx,dy,xMin,yMin,xMax,yMax)(struct RastPort *,WORD,WORD,WORD,WORD,WORD,WORD) void @Graphics_66
+WaitBOVP(vp)(struct ViewPort *) void @Graphics_67
+GetSprite(sprite,pick)(a0,d0)
+FreeSprite(pick)(d0)
+ChangeSprite(vp,s,newdata)(a0,a1,a2)
+MoveSprite(vp,sprite,x,y)(struct ViewPort *,struct SimpleSprite *,WORD,WORD) void @Graphics_71
+LockLayerRom(l)(struct Layer *) void @Graphics_72
+UnlockLayerRom(l)(struct Layer *) void @Graphics_73
+SyncSBitMap(l)(struct Layer *) void @Graphics_74
+CopySBitMap(l)(struct Layer *) void @Graphics_75
+OwnBlitter()()
+DisownBlitter()()
+InitTmpRas(tmpras,buffer,size)(a0,a1,d0)
+AskFont(rp,textAttr)(struct RastPort *,struct TextAttr *) void @Graphics_79
+AddFont(textFont)(a1)
+RemFont(textFont)(a1)
+AllocRaster(width,height)(ULONG,ULONG) PLANEPTR @Graphics_82
+FreeRaster(p,width,height)(PLANEPTR,UWORD,UWORD) void @Graphics_83
+AndRectRegion(Reg,Rect)(struct Region *,struct Rectangle *) void @Graphics_84
+OrRectRegion(Reg,Rect)(struct Region *,struct Rectangle *) BOOL @Graphics_85
+NewRegion()() struct Region * @Graphics_86
+ClearRectRegion(Reg,Rect)(struct Region *,struct Rectangle *) BOOL @Graphics_87
+ClearRegion(region)(struct Region *) void @Graphics_88
+DisposeRegion(region)(struct Region *) void @Graphics_89
+FreeVPortCopLists(vp)(struct ViewPort *) void @Graphics_90
+FreeCopList(coplist)(a0)
+ClipBlit(srcRP,xSrc,ySrc,destRP,xDest,yDest,xSize,ySize,minterm)(struct RastPort *,WORD,WORD,struct RastPort *,WORD,WORD,WORD,WORD,UBYTE) void @Graphics_92
+XorRectRegion(Reg,Rect)(struct Region *,struct Rectangle *) BOOL @Graphics_93
+FreeCprList(cprList)(struct cprlist *) void @Graphics_94
+GetColorMap(entries)(ULONG) struct ColorMap * @Graphics_95
+FreeColorMap(colormap)(struct ColorMap *) void @Graphics_96
+GetRGB4(colormap,entry)(struct ColorMap *,LONG) ULONG @Graphics_97
+ScrollVPort(vp)(struct ViewPort *) void @Graphics_98
+UCopperListInit(ucl,n)(a0,d0)
+FreeGBuffers(anOb,rp,db)(a0,a1,d0)
+BltBitMapRastPort(srcBitMap,xSrc,ySrc,destRP,xDest,yDest,xSize,ySize,minterm)(struct BitMap *,WORD,WORD,struct RastPort *,WORD,WORD,WORD,WORD,UBYTE) void @Graphics_101
+OrRegionRegion(R1,R2)(struct Region *,struct Region *) BOOL @Graphics_102
+XorRegionRegion(R1,R2)(struct Region *,struct Region *) BOOL @Graphics_103
+AndRegionRegion(R1,R2)(struct Region *,struct Region *) BOOL @Graphics_104
+SetRGB4CM(cm,n,r,g,b)(a0,d0,d1,d2,d3)
+BltMaskBitMapRastPort(srcBitMap,xSrc,ySrc,destRP,xDest,yDest,xSize,ySize,minterm,bltMask)(a0,d0,d1,a1,d2,d3,d4,d5,d6,a2)
+AddDisplayDriverA(gfxhidd,attrs,tags)(a0,a1,a2)
+SetDisplayDriverCallback(callback,userdata)(a0,a1)
+AttemptLockLayerRom(l)(struct Layer *) BOOL @Graphics_109
+GfxNew(node_type)(ULONG) struct ExtendedNode * @Graphics_110
+GfxFree(node)(struct ExtendedNode *) void @Graphics_111
+GfxAssociate(pointer,node)(void *,struct ExtendedNode *) void @Graphics_112
+BitMapScale(bitScaleArgs)(a0)
+ScalerDiv(factor,numerator,denominator)(d0,d1,d2)
+TextExtent(rp,string,count,textExtent)(struct RastPort *,CONST_STRPTR,WORD,struct TextExtent *) void @Graphics_115
+TextFit(rp,string,strLen,textExtent,constrainingExtent,strDirection,constrainingBitWidth,constrainingBitHeight)(struct RastPort *,CONST_STRPTR,UWORD,struct TextExtent *,struct TextExtent *,WORD,UWORD,UWORD) ULONG @Graphics_116
+GfxLookUp(pointer)(void *) struct ExtendedNode * @Graphics_117
+VideoControl(cm,tags)(struct ColorMap *,struct TagItem *) ULONG @Graphics_118
+OpenMonitor(monitor_name,display_id)(a1,d0)
+CloseMonitor(monitor_spec)(a0)
+FindDisplayInfo(ID)(ULONG) DisplayInfoHandle @Graphics_121
+NextDisplayInfo(last_ID)(ULONG) ULONG @Graphics_122
+AddDisplayData(displayInfoRecord)(a0)
+##private
+AddDisplayInfoData(handle,buf,size,tagID,ID)(a0,a1,d0,d1,d2)
+SetDisplayInfoData(handle,buf,size,tagID,ID)(a0,a1,d0,d1,d2)
+##public
+GetDisplayInfoData(handle,buf,size,tagID,ID)(DisplayInfoHandle,UBYTE *,ULONG,ULONG,ULONG) ULONG @Graphics_126
+FontExtent(font,fontExtent)(struct TextFont *,struct TextExtent *) void @Graphics_127
+ReadPixelLine8(rp,xstart,ystart,width,array,tempRP)(a0,d0,d1,d2,a2,a1)
+WritePixelLine8(rp,xstart,ystart,width,array,tempRP)(a0,d0,d1,d2,a2,a1)
+ReadPixelArray8(rp,xstart,ystart,xstop,ystop,array,temprp)(a0,d0,d1,d2,d3,a2,a1)
+WritePixelArray8(rp,xstart,ystart,xstop,ystop,array,temprp)(a0,d0,d1,d2,d3,a2,a1)
+GetVPModeID(vp)(struct ViewPort *) ULONG @Graphics_132
+ModeNotAvailable(modeID)(ULONG) ULONG @Graphics_133
+WeighTAMatch(reqTextAttr,targetTextAttr,targetTags)(const struct TextAttr *,const struct TextAttr *,struct TagItem *) WORD @Graphics_134
+EraseRect(rp,xMin,yMin,xMax,yMax)(struct RastPort *,WORD,WORD,WORD,WORD) void @Graphics_135
+ExtendFont(font,fontTags)(a0,a1)
+StripFont(font)(a0)
+CalcIVG(View,ViewPort)(a0,a1)
+AttachPalExtra(cm,vp)(struct ColorMap *,struct ViewPort *) LONG @Graphics_139
+ObtainBestPenA(cm,r,g,b,tags)(struct ColorMap *,ULONG,ULONG,ULONG,struct TagItem *) LONG @Graphics_140
+##private
+graphicsPrivate141()()
+##public
+SetRGB32(vp,n,r,g,b)(struct ViewPort *,ULONG,ULONG,ULONG,ULONG) void @Graphics_142
+GetAPen(rp)(a0)
+GetBPen(rp)(a0)
+GetDrMd(rp)(a0)
+GetOutlinePen(rp)(a0)
+LoadRGB32(vp,table)(struct ViewPort *,const ULONG *) void @Graphics_147
+SetChipRev(ChipRev)(d0)
+SetABPenDrMd(rp,apen,bpen,drawMode)(struct RastPort *,ULONG,ULONG,ULONG) void @Graphics_149
+GetRGB32(cm,firstcolor,ncolors,table)(struct ColorMap *,ULONG,ULONG,ULONG *) void @Graphics_150
+##private
+graphicsPrivate151()()
+graphicsPrivate152()()
+##public
+AllocBitMap(sizex,sizey,depth,flags,friend_bitmap)(ULONG,ULONG,ULONG,ULONG,struct BitMap *) struct BitMap * @Graphics_153
+FreeBitMap(bm)(struct BitMap *) void @Graphics_154
+GetExtSpriteA(sprite,tags)(a2,a1)
+CoerceMode(RealViewPort,MonitorID,Flags)(a0,d0,d1)
+ChangeVPBitMap(vp,bm,db)(struct ViewPort *,struct BitMap *,struct DBufInfo *) void @Graphics_157
+ReleasePen(cm,n)(struct ColorMap *,ULONG) void @Graphics_158
+ObtainPen(cm,n,r,g,b,flags)(struct ColorMap *,ULONG,ULONG,ULONG,ULONG,ULONG) LONG @Graphics_159
+GetBitMapAttr(bitmap,attribute)(struct BitMap *,ULONG) IPTR @Graphics_160
+AllocDBufInfo(vp)(a0)
+FreeDBufInfo(db)(a1)
+SetOutlinePen(rp,pen)(struct RastPort *,ULONG) ULONG @Graphics_163
+SetWriteMask(rp,mask)(struct RastPort *,ULONG) ULONG @Graphics_164
+SetMaxPen(rp,maxpen)(a0,d0)
+SetRGB32CM(cm,n,r,g,b)(struct ColorMap *,ULONG,ULONG,ULONG,ULONG) void @Graphics_166
+ScrollRasterBF(rp,dx,dy,xMin,yMin,xMax,yMax)(struct RastPort *,WORD,WORD,WORD,WORD,WORD,WORD) void @Graphics_167
+FindColor(cm,r,g,b,maxpen)(struct ColorMap *,ULONG,ULONG,ULONG,LONG) ULONG @Graphics_168
+##private
+graphicsPrivate169()()
+##public
+AllocSpriteDataA(bitmap,tagList)(struct BitMap *,struct TagItem *) struct ExtSprite * @Graphics_170
+ChangeExtSpriteA(vp,oldsprite,newsprite,tags)(struct ViewPort *,struct ExtSprite *,struct ExtSprite *,struct TagItem *) LONG @Graphics_171
+FreeSpriteData(extsp)(struct ExtSprite *) void @Graphics_172
+SetRPAttrsA(rp,tags)(struct RastPort *,struct TagItem *) void @Graphics_173
+GetRPAttrsA(rp,tags)(struct RastPort *,struct TagItem *) void @Graphics_174
+BestModeIDA(TagItems)(struct TagItem *) ULONG @Graphics_175
+WriteChunkyPixels(rp,xstart,ystart,xstop,ystop,array,bytesperrow)(a0,d0,d1,d2,d3,a2,d4)
+##private
+graphicsPrivate177()()
+##public
+DeinitRastPort(rp)(struct RastPort *) void @Graphics_178
+##private
+graphicsPrivate179()()
+graphicsPrivate180()()
+##public
+SetRegion(src,dest)(struct Region *,struct Region *) BOOL @Graphics_181
+ClearRegionRegion(R1,R2)(struct Region *,struct Region *) BOOL @Graphics_182
+AreRegionsEqual(R1,R2)(a0,a1)
+IsPointInRegion(Reg,x,y)(struct Region *,WORD,WORD) BOOL @Graphics_184
+ScrollRegion(region,rect,dx,dy)(struct Region *,struct Rectangle *,WORD,WORD) BOOL @Graphics_185
+AndRectRegionND(Reg,Rect)(struct Region *,struct Rectangle *) struct Region * @Graphics_186
+AndRegionRegionND(R1,R2)(struct Region *,struct Region *) struct Region * @Graphics_187
+OrRectRegionND(Reg,Rect)(a0,a1)
+OrRegionRegionND(R1,R2)(a0,a1)
+XorRectRegionND(Reg,Rect)(a0,a1)
+XorRegionRegionND(R1,R2)(a0,a1)
+ClearRectRegionND(Reg,Rect)(struct Region *,struct Rectangle *) struct Region * @Graphics_192
+ClearRegionRegionND(R1,R2)(a0,a1)
+##private
+graphicsPrivate194()()
+graphicsPrivate195()()
+graphicsPrivate196()()
+##public
+WritePixels8(rp,array,modulo,xstart,ystart,xstop,ystop,pixlut,do_update)(a0,a1,d0,d1,d2,d3,d4,a2,d5)
+FillRectPenDrMd(rp,x1,y1,x2,y2,pix,drmd,do_update)(a0,d0,d1,d2,d3,d4,d5,d6)
+DoRenderFunc(rp,src,rr,render_func,funcdata,do_update)(a0,a1,a2,a3,a4,d0)
+DoPixelFunc(rp,x,y,render_func,funcdata,do_update)(a0,d0,d1,a1,a2,d2)
+UpdateBitMap(bitmap,x,y,width,height)(a0,d0,d1,d2,d3)
+CompositeLayersSupported(screenbm,alphaformat)(a0,a1)
+LayerSurfacesChanged(screenbm,surfaces)(a0,a1)
+LayerSurfaceAlpha(surface,x,y)(a0,d0,d1)
+BltBitMapAlpha(srcBitMap,xSrc,ySrc,destBitMap,xDest,yDest,xSize,ySize,opacity)(a0,d0,d1,a1,d2,d3,d4,d5,d6)
+##end

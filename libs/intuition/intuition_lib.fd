@@ -1,0 +1,179 @@
+* intuition.library in the C900 dialect of an Amiga fd file, from AROS's
+* intuition.conf.  Each function takes IntuitionBase first; the C functions
+* are AROS_LH definitions named Intuition_N after their vector.  A function
+* that keeps its register list is not implemented.
+##base _IntuitionBase
+##bias 30
+##private
+OpenIntuition()()
+Intuition(iEvent)(a0)
+##public
+AddGadget(window,gadget,position)(struct Window *,struct Gadget *,UWORD) UWORD @Intuition_7
+ClearDMRequest(window)(struct Window *) BOOL @Intuition_8
+ClearMenuStrip(window)(struct Window *) void @Intuition_9
+ClearPointer(window)(struct Window *) void @Intuition_10
+CloseScreen(screen)(struct Screen *) BOOL @Intuition_11
+CloseWindow(window)(struct Window *) void @Intuition_12
+CloseWorkBench()() LONG @Intuition_13
+CurrentTime(seconds,micros)(ULONG *,ULONG *) void @Intuition_14
+DisplayAlert(alertnumber,string,height)(d0,a0,d1)
+DisplayBeep(screen)(struct Screen *) void @Intuition_16
+DoubleClick(sSeconds,sMicros,cSeconds,cMicros)(ULONG,ULONG,ULONG,ULONG) BOOL @Intuition_17
+DrawBorder(rp,border,leftOffset,topOffset)(struct RastPort *,struct Border *,WORD,WORD) void @Intuition_18
+DrawImage(rp,image,leftOffset,topOffset)(struct RastPort *,struct Image *,WORD,WORD) void @Intuition_19
+EndRequest(requester,window)(struct Requester *,struct Window *) void @Intuition_20
+GetDefPrefs(prefbuffer,size)(struct Preferences *,WORD) struct Preferences * @Intuition_21
+GetPrefs(prefbuffer,size)(struct Preferences *,WORD) struct Preferences * @Intuition_22
+InitRequester(requester)(struct Requester *) void @Intuition_23
+ItemAddress(menustrip,menunumber)(struct Menu *,UWORD) struct MenuItem * @Intuition_24
+ModifyIDCMP(window,flags)(struct Window *,ULONG) BOOL @Intuition_25
+ModifyProp(gadget,window,requester,flags,horizPot,vertPot,horizBody,vertBody)(struct Gadget *,struct Window *,struct Requester *,UWORD,UWORD,UWORD,UWORD,UWORD) void @Intuition_26
+MoveScreen(screen,dx,dy)(struct Screen *,WORD,WORD) void @Intuition_27
+MoveWindow(window,dx,dy)(struct Window *,WORD,WORD) void @Intuition_28
+OffGadget(gadget,window,requester)(struct Gadget *,struct Window *,struct Requester *) void @Intuition_29
+OffMenu(window,menunumber)(struct Window *,UWORD) void @Intuition_30
+OnGadget(gadget,window,requester)(struct Gadget *,struct Window *,struct Requester *) void @Intuition_31
+OnMenu(window,menunumber)(struct Window *,UWORD) void @Intuition_32
+OpenScreen(newScreen)(struct NewScreen *) struct Screen * @Intuition_33
+OpenWindow(newWindow)(struct NewWindow *) struct Window * @Intuition_34
+OpenWorkBench()() IPTR @Intuition_35
+PrintIText(rp,iText,leftOffset,topOffset)(struct RastPort *,struct IntuiText *,WORD,WORD) void @Intuition_36
+RefreshGadgets(gadgets,window,requester)(struct Gadget *,struct Window *,struct Requester *) void @Intuition_37
+RemoveGadget(window,gadget)(struct Window *,struct Gadget *) UWORD @Intuition_38
+ReportMouse(flag,window)(BOOL,struct Window *) void @Intuition_39
+Request(requester,window)(struct Requester *,struct Window *) BOOL @Intuition_40
+ScreenToBack(screen)(struct Screen *) void @Intuition_41
+ScreenToFront(screen)(struct Screen *) void @Intuition_42
+SetDMRequest(window,dmrequest)(struct Window *,struct Requester *) BOOL @Intuition_43
+SetMenuStrip(window,menu)(struct Window *,struct Menu *) BOOL @Intuition_44
+SetPointer(window,pointer,height,width,xOffset,yOffset)(struct Window *,const UWORD *,WORD,WORD,WORD,WORD) void @Intuition_45
+SetWindowTitles(window,windowTitle,screenTitle)(struct Window *,CONST_STRPTR,CONST_STRPTR) void @Intuition_46
+ShowTitle(screen,ShowIt)(struct Screen *,BOOL) void @Intuition_47
+SizeWindow(window,dx,dy)(struct Window *,WORD,WORD) void @Intuition_48
+ViewAddress()() struct View * @Intuition_49
+ViewPortAddress(window)(struct Window *) struct ViewPort * @Intuition_50
+WindowToBack(window)(struct Window *) void @Intuition_51
+WindowToFront(window)(struct Window *) void @Intuition_52
+WindowLimits(window,MinWidth,MinHeight,MaxWidth,MaxHeight)(struct Window *,WORD,WORD,UWORD,UWORD) BOOL @Intuition_53
+SetPrefs(prefbuffer,size,inform)(struct Preferences *,LONG,BOOL) struct Preferences * @Intuition_54
+IntuiTextLength(iText)(struct IntuiText *) LONG @Intuition_55
+WBenchToBack()() BOOL @Intuition_56
+WBenchToFront()() BOOL @Intuition_57
+AutoRequest(window,body,posText,negText,pFlag,nFlag,width,height)(struct Window *,struct IntuiText *,struct IntuiText *,struct IntuiText *,ULONG,ULONG,WORD,WORD) BOOL @Intuition_58
+BeginRefresh(window)(struct Window *) void @Intuition_59
+BuildSysRequest(window,bodytext,postext,negtext,IDCMPFlags,width,height)(struct Window *,struct IntuiText *,struct IntuiText *,struct IntuiText *,ULONG,WORD,WORD) struct Window * @Intuition_60
+EndRefresh(window,complete)(struct Window *,BOOL) void @Intuition_61
+FreeSysRequest(window)(struct Window *) void @Intuition_62
+MakeScreen(screen)(struct Screen *) LONG @Intuition_63
+RemakeDisplay()() LONG @Intuition_64
+RethinkDisplay()() LONG @Intuition_65
+AllocRemember(rememberKey,size,flags)(struct Remember **,ULONG,ULONG) APTR @Intuition_66
+AlohaWorkbench(wbmsgport)(struct MsgPort *) void @Intuition_67
+FreeRemember(rememberKey,reallyForget)(struct Remember **,BOOL) void @Intuition_68
+LockIBase(What)(ULONG) ULONG @Intuition_69
+UnlockIBase(ibLock)(ULONG) void @Intuition_70
+GetScreenData(buffer,size,type,screen)(APTR,UWORD,UWORD,struct Screen *) LONG @Intuition_71
+RefreshGList(gadgets,window,requester,numGad)(struct Gadget *,struct Window *,struct Requester *,WORD) void @Intuition_72
+AddGList(window,gadget,position,numGad,requester)(struct Window *,struct Gadget *,UWORD,WORD,struct Requester *) UWORD @Intuition_73
+RemoveGList(remPtr,gadget,numGad)(struct Window *,struct Gadget *,WORD) UWORD @Intuition_74
+ActivateWindow(window)(struct Window *) void @Intuition_75
+RefreshWindowFrame(window)(struct Window *) void @Intuition_76
+ActivateGadget(gadget,window,requester)(struct Gadget *,struct Window *,struct Requester *) BOOL @Intuition_77
+NewModifyProp(gadget,window,requester,flags,horizPot,vertPot,horizBody,vertBody,numGad)(struct Gadget *,struct Window *,struct Requester *,UWORD,UWORD,UWORD,UWORD,UWORD,WORD) void @Intuition_78
+QueryOverscan(displayid,rect,oscantype)(a0,a1,d0)
+MoveWindowInFrontOf(window,behindwindow)(struct Window *,struct Window *) void @Intuition_80
+ChangeWindowBox(window,left,top,width,height)(struct Window *,WORD,WORD,WORD,WORD) void @Intuition_81
+SetEditHook(hook)(struct Hook *) struct Hook * @Intuition_82
+SetMouseQueue(window,queuelength)(struct Window *,UWORD) LONG @Intuition_83
+ZipWindow(window)(struct Window *) void @Intuition_84
+LockPubScreen(name)(CONST_STRPTR) struct Screen * @Intuition_85
+UnlockPubScreen(name,screen)(UBYTE *,struct Screen *) void @Intuition_86
+LockPubScreenList()() struct List * @Intuition_87
+UnlockPubScreenList()() void @Intuition_88
+NextPubScreen(screen,namebuff)(struct Screen *,UBYTE *) UBYTE * @Intuition_89
+SetDefaultPubScreen(name)(UBYTE *) void @Intuition_90
+SetPubScreenModes(modes)(UWORD) UWORD @Intuition_91
+PubScreenStatus(scr,StatusFlags)(struct Screen *,UWORD) UWORD @Intuition_92
+ObtainGIRPort(gInfo)(struct GadgetInfo *) struct RastPort * @Intuition_93
+ReleaseGIRPort(rp)(struct RastPort *) void @Intuition_94
+GadgetMouse(gadget,ginfo,mousepoint)(struct Gadget *,struct GadgetInfo *,WORD *) void @Intuition_95
+SetIPrefs(data,length,type)(a0,d0,d1)
+GetDefaultPubScreen(nameBuffer)(UBYTE *) struct Screen * @Intuition_97
+EasyRequestArgs(window,easyStruct,IDCMP_ptr,argList)(struct Window *,struct EasyStruct *,ULONG *,RAWARG) LONG @Intuition_98
+BuildEasyRequestArgs(RefWindow,easyStruct,IDCMP,Args)(struct Window *,struct EasyStruct *,ULONG,RAWARG) struct Window * @Intuition_99
+SysReqHandler(window,IDCMPFlagsPtr,WaitInput)(struct Window *,ULONG *,BOOL) LONG @Intuition_100
+OpenWindowTagList(newWindow,tagList)(struct NewWindow *,struct TagItem *) struct Window * @Intuition_101
+OpenScreenTagList(newScreen,tagList)(struct NewScreen *,struct TagItem *) struct Screen * @Intuition_102
+DrawImageState(rp,image,leftOffset,topOffset,state,drawInfo)(struct RastPort *,struct Image *,WORD,WORD,ULONG,struct DrawInfo *) void @Intuition_103
+PointInImage(point,image)(ULONG,struct Image *) BOOL @Intuition_104
+EraseImage(rp,image,leftOffset,topOffset)(struct RastPort *,struct Image *,WORD,WORD) void @Intuition_105
+NewObjectA(classPtr,classID,tagList)(struct IClass *,UBYTE *,struct TagItem *) APTR @Intuition_106
+DisposeObject(object)(APTR) void @Intuition_107
+SetAttrsA(object,tagList)(APTR,struct TagItem *) IPTR @Intuition_108
+GetAttr(attrID,object,storagePtr)(ULONG,Object *,IPTR *) ULONG @Intuition_109
+SetGadgetAttrsA(gadget,window,requester,tagList)(struct Gadget *,struct Window *,struct Requester *,struct TagItem *) IPTR @Intuition_110
+NextObject(objectPtrPtr)(APTR) APTR @Intuition_111
+FindClass(classID)(ClassID) struct IClass * @Intuition_112
+MakeClass(classID,superClassID,superClassPtr,instanceSize,flags)(ClassID,ClassID,struct IClass *,UWORD,ULONG) struct IClass * @Intuition_113
+AddClass(classPtr)(struct IClass *) void @Intuition_114
+GetScreenDrawInfo(screen)(struct Screen *) struct DrawInfo * @Intuition_115
+FreeScreenDrawInfo(screen,drawInfo)(struct Screen *,struct DrawInfo *) void @Intuition_116
+ResetMenuStrip(window,menu)(struct Window *,struct Menu *) BOOL @Intuition_117
+RemoveClass(classPtr)(struct IClass *) void @Intuition_118
+FreeClass(iclass)(struct IClass *) BOOL @Intuition_119
+##private
+intuitionPrivate1()()
+intuitionPrivate2()()
+intuitionPrivate3()()
+intuitionPrivate4()()
+intuitionPrivate5()()
+intuitionPrivate6()()
+intuitionPrivate7()()
+intuitionPrivate8()()
+##public
+AllocScreenBuffer(screen,bitmap,flags)(a0,a1,d0)
+FreeScreenBuffer(screen,screenbuffer)(a0,a1)
+ChangeScreenBuffer(screen,screenbuffer)(a0,a1)
+ScreenDepth(screen,flags,reserved)(struct Screen *,ULONG,APTR) void @Intuition_131
+ScreenPosition(screen,flags,x1,y1,x2,y2)(struct Screen *,ULONG,LONG,LONG,LONG,LONG) void @Intuition_132
+ScrollWindowRaster(win,dx,dy,xmin,ymin,xmax,ymax)(struct Window *,WORD,WORD,WORD,WORD,WORD,WORD) void @Intuition_133
+LendMenus(fromwindow,towindow)(struct Window *,struct Window *) void @Intuition_134
+DoGadgetMethodA(gad,win,req,msg)(struct Gadget *,struct Window *,struct Requester *,Msg) IPTR @Intuition_135
+SetWindowPointerA(window,taglist)(struct Window *,struct TagItem *) void @Intuition_136
+TimedDisplayAlert(alertnumber,string,height,time)(d0,a0,d1,a1)
+HelpControl(window,flags)(struct Window *,ULONG) void @Intuition_138
+IsWindowVisible(window)(struct Window *) LONG @Intuition_139
+ShowWindow(window,other)(struct Window *,struct Window *) BOOL @Intuition_140
+HideWindow(window)(struct Window *) BOOL @Intuition_141
+##private
+intuitionPrivate9()()
+##public
+ChangeWindowShape(window,newshape,callback)(struct Window *,struct Region *,struct Hook *) struct Region * @Intuition_143
+SetDefaultScreenFont(textfont)(struct TextFont *) void @Intuition_144
+DoNotify(cl,o,ic,msg)(Class *,Object *,struct ICData *,struct opUpdate *) IPTR @Intuition_145
+FreeICData(icdata)(struct ICData *) void @Intuition_146
+##private
+intuitionPrivate10()()
+##public
+AllocIntuiMessage(window)(struct Window *) struct IntuiMessage * @Intuition_148
+FreeIntuiMessage(imsg)(struct IntuiMessage *) void @Intuition_149
+##private
+intuitionPrivate11()()
+##public
+SendIntuiMessage(window,imsg)(struct Window *,struct IntuiMessage *) void @Intuition_151
+ChangeDecoration(id,decor)(ULONG,struct NewDecorator *) void @Intuition_152
+##private
+intuitionPrivate12()()
+##public
+StartScreenNotifyTagList(tags)(a0)
+EndScreenNotify(notify)(a0)
+GetDrawInfoAttr(drawInfo,attrID,errorPtr)(struct DrawInfo *,ULONG,IPTR *) IPTR @Intuition_156
+WindowAction(window,action,tags)(struct Window *,ULONG,struct TagItem *) void @Intuition_157
+##private
+intuitionPrivate13()()
+##public
+ScrollWindowRasterNoFill(win,dx,dy,xmin,ymin,xmax,ymax)(struct Window *,WORD,WORD,WORD,WORD,WORD,WORD) void @Intuition_159
+SetPointerBounds(screen,rect,reserved,tags)(a0,a1,d0,a2)
+GetMonitorList(tags)(a1)
+FreeMonitorList(list)(a1)
+##end
