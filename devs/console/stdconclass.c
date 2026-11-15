@@ -11,7 +11,6 @@
 
 #include <intuition/intuition.h>
 #include <graphics/rastport.h>
-#include <exec/rawfmt.h>
 #include <aros/asmcall.h>
 
 
@@ -28,7 +27,9 @@ struct stdcondata
     UWORD pens[CONUNIT_PEN_MAX];
     UWORD *penmap[CONUNIT_PEN_MAX];
 
+    /* The template Text() builds, for a line as wide as the screen */
     PLANEPTR charScratch;
+    UWORD charScratchWidth;
     UWORD charScratchHeight;
 
     /* Libraries */
@@ -53,14 +54,14 @@ static Object *stdcon_new(Class *cl, Object *o, struct opSet *msg)
         /* Clear for checking inside dispose() whether stuff was allocated.
            Basically this is bug-prevention.
          */
-        SetMem(data, 0, sizeof(struct stdcondata));
+        memset(data, 0, sizeof(struct stdcondata));
         for (i = 0; i < CONUNIT_PEN_MAX; i ++)
         {
             data->pens[i] = i;
             data->penmap[i] = &data->pens[i];
         }
 
-        data->scd_GfxBase = TaggedOpenLibrary(TAGGEDOPEN_GRAPHICS);
+        data->scd_GfxBase = OpenLibrary("graphics.library", 0);
         if (data->scd_GfxBase)
         {
             data->dri = GetScreenDrawInfo(CU(o)->cu_Window->WScreen);
@@ -74,8 +75,10 @@ static Object *stdcon_new(Class *cl, Object *o, struct opSet *msg)
                 CU(o)->cu_BgPen = (BYTE)*(data->penmap[0]);
                 CU(o)->cu_FgPen = (BYTE)*(data->penmap[1]);
 
+                data->charScratchWidth = CU(o)->cu_Window->WScreen->Width;
                 data->charScratchHeight = RASTPORT(o)->Font->tf_YSize;
-                data->charScratch = AllocRaster(8, data->charScratchHeight);
+                data->charScratch = AllocRaster(data->charScratchWidth,
+                    data->charScratchHeight);
 
                 data->cursorvisible = TRUE;
                 data->windowactive =
@@ -99,7 +102,8 @@ static VOID stdcon_dispose(Class *cl, Object *o, Msg msg)
     struct Library *GfxBase = data->scd_GfxBase;
 
     if (data->charScratch)
-        FreeRaster(data->charScratch, 8, data->charScratchHeight);
+        FreeRaster(data->charScratch, data->charScratchWidth,
+            data->charScratchHeight);
 
     if (data->scd_GfxBase)
         CloseLibrary(data->scd_GfxBase);
@@ -142,13 +146,14 @@ static void stdcon_text(Object *o, struct stdcondata *data,
     struct TmpRas *savedTmpRas = rp->TmpRas;
     struct TmpRas charTmpRas;
     struct Library *GfxBase = data->scd_GfxBase;
-    ULONG scratchSize = RASSIZE(8, data->charScratchHeight);
+    ULONG scratchSize = RASSIZE(data->charScratchWidth,
+        data->charScratchHeight);
 
     Move(rp, CP_X(o), CP_Y(o) + rp->Font->tf_Baseline);
 
-    if (len == 1 && data->charScratch &&
+    if (data->charScratch &&
         (!savedTmpRas || savedTmpRas->Size < scratchSize))
-        rp->TmpRas = InitTmpRas(&charTmpRas, data->charScratch, scratchSize);
+        rp->TmpRas = INITTMPRAS(&charTmpRas, data->charScratch, scratchSize);
 
     Text(rp, text, len);
     rp->TmpRas = savedTmpRas;
@@ -276,6 +281,12 @@ static VOID stdcon_hscroll(Object *o, struct RastPort *rp,
         GFX_Y(o, YCP), GFX_Y(o, YCP + 1));
 }
 
+/* RawDoFmt() output into a string */
+static VOID putch(UBYTE c, UBYTE **p)
+{
+    *(*p)++ = c;
+}
+
 /*********  StdCon::DoCommand()  ****************************/
 
 static VOID stdcon_docommand(Class *cl, Object *o,
@@ -292,22 +303,6 @@ static VOID stdcon_docommand(Class *cl, Object *o,
     {
     case C_NIL:
         /* do nothing */
-        break;
-
-    case C_ASCII:
-
-
-        stdcon_overwritecursor(data);
-
-        setstyle(GfxBase, rp, o);
-        {
-            UBYTE c = params[0];
-            stdcon_text(o, data, rp, &c, 1);
-        }
-
-        /* Rerender the cursor */
-        Console_RenderCursor(o);
-
         break;
 
     case C_ASCII_STRING:
@@ -705,9 +700,12 @@ static VOID stdcon_docommand(Class *cl, Object *o,
 
     case C_WINDOW_STATUS_REQUEST:
         {
-            UBYTE reply[32];
-            NewRawDoFmt("\x9b" "1;1;%d;%d r", RAWFMTFUNC_STRING, reply,
-                CU(o)->cu_YMax + 1, CU(o)->cu_XMax + 1);
+            UBYTE reply[32], *p = reply;
+            WORD size[2];
+
+            size[0] = CU(o)->cu_YMax + 1;
+            size[1] = CU(o)->cu_XMax + 1;
+            RawDoFmt("\x9b" "1;1;%d;%d r", (RAWARG)size, (APTR)putch, &p);
             con_inject((struct ConsoleBase *)cl->cl_UserData, CU(o), reply,
                 -1);
             break;
@@ -715,9 +713,12 @@ static VOID stdcon_docommand(Class *cl, Object *o,
 
     case C_DEVICE_STATUS_REPORT:
         {
-            UBYTE reply[32];
-            NewRawDoFmt("\x9b" "%d;%dR", RAWFMTFUNC_STRING, reply,
-                CU(o)->cu_YCP + 1, CU(o)->cu_XCP + 1);
+            UBYTE reply[32], *p = reply;
+            WORD pos[2];
+
+            pos[0] = CU(o)->cu_YCP + 1;
+            pos[1] = CU(o)->cu_XCP + 1;
+            RawDoFmt("\x9b" "%d;%dR", (RAWARG)pos, (APTR)putch, &p);
             con_inject((struct ConsoleBase *)cl->cl_UserData, CU(o), reply,
                 -1);
             break;
@@ -736,14 +737,14 @@ static VOID stdcon_drawcursor(Object *o, struct stdcondata *data)
 {
     static const UWORD inactive_pattern[] = { 0xAAAA, 0x5555 };
     struct RastPort *rp = RASTPORT(o);
-    const UWORD *oldpattern = rp->AreaPtrn;
+    UWORD *oldpattern = rp->AreaPtrn;
     BYTE oldpatternsize = rp->AreaPtSz;
     struct Library *GfxBase = data->scd_GfxBase;
 
     SetDrMd(rp, COMPLEMENT);
     if (!data->windowactive)
     {
-        rp->AreaPtrn = inactive_pattern;
+        rp->AreaPtrn = (UWORD *)inactive_pattern;
         rp->AreaPtSz = 1;
     }
     RectFill(rp, CP_X(o), CP_Y(o), CP_X(o) + XRSIZE - 1,
@@ -757,7 +758,7 @@ static VOID stdcon_drawcursor(Object *o, struct stdcondata *data)
 }
 
 static VOID stdcon_rendercursor(Class *cl, Object *o,
-    struct P_Console_RenderCursor *msg)
+    Msg msg)
 {
     struct stdcondata *data = INST_DATA(cl, o);
 
@@ -773,7 +774,7 @@ static VOID stdcon_rendercursor(Class *cl, Object *o,
 
 /*********  StdCon::UnRenderCursor()  ****************************/
 static VOID stdcon_unrendercursor(Class *cl, Object *o,
-    struct P_Console_UnRenderCursor *msg)
+    Msg msg)
 {
     struct stdcondata *data = INST_DATA(cl, o);
 
@@ -793,6 +794,9 @@ static VOID stdcon_setactive(Class *cl, Object *o,
     struct stdcondata *data = INST_DATA(cl, o);
     BOOL active = msg->Event->ie_Class == IECLASS_ACTIVEWINDOW;
 
+    /* Keys and timer ticks come here too */
+    if (!active && msg->Event->ie_Class != IECLASS_INACTIVEWINDOW)
+        return;
     if (active == data->windowactive)
         return;
 
@@ -803,27 +807,11 @@ static VOID stdcon_setactive(Class *cl, Object *o,
         stdcon_drawcursor(o, data);
 }
 
-/**************************
-**  StdCon::ClearCell()  **
-**************************/
-static VOID stdcon_clearcell(Class *cl, Object *o,
-    struct P_Console_ClearCell *msg)
-{
-    struct RastPort *rp = RASTPORT(o);
-    struct stdcondata *data = INST_DATA(cl, o);
-    struct Library *GfxBase = data->scd_GfxBase;
-
-    SetAPen(rp, data->dri->dri_Pens[BACKGROUNDPEN]);
-    SetDrMd(rp, JAM1);
-    RectFill(rp, GFX_X(o, msg->X), GFX_Y(o, msg->Y), GFX_X(o,
-            msg->X) + XRSIZE - 1, GFX_Y(o, msg->Y) + YRSIZE - 1);
-}
-
 /*******************************
 **  StdCon::NewWindowSize()  **
 *******************************/
 static VOID stdcon_newwindowsize(Class *cl, Object *o,
-    struct P_Console_NewWindowSize *msg)
+    Msg msg)
 {
     struct RastPort *rp = RASTPORT(o);
     struct stdcondata *data = INST_DATA(cl, o);
@@ -876,7 +864,7 @@ static VOID stdcon_newwindowsize(Class *cl, Object *o,
     return;
 }
 
-IPTR stdcon_getpencolor(Class *cl, Object *o, struct P_Console_GetColorPen *msg)
+static IPTR stdcon_getpencolor(Class *cl, Object *o, struct P_Console_GetColorPen *msg)
 {
     struct stdcondata *data = INST_DATA(cl, o);
     *msg->PenPtr = (BYTE)*(data->penmap[msg->ColorIdx]);
@@ -910,20 +898,16 @@ AROS_UFH3S(IPTR, dispatch_stdconclass,
         break;
 
     case M_Console_RenderCursor:
-        stdcon_rendercursor(cl, o, (struct P_Console_RenderCursor *)msg);
+        stdcon_rendercursor(cl, o, msg);
         break;
 
     case M_Console_UnRenderCursor:
         stdcon_unrendercursor(cl, o,
-            (struct P_Console_UnRenderCursor *)msg);
-        break;
-
-    case M_Console_ClearCell:
-        stdcon_clearcell(cl, o, (struct P_Console_ClearCell *)msg);
+            msg);
         break;
 
     case M_Console_NewWindowSize:
-        stdcon_newwindowsize(cl, o, (struct P_Console_NewWindowSize *)msg);
+        stdcon_newwindowsize(cl, o, msg);
         break;
 
     case M_Console_HandleGadgets:
@@ -951,7 +935,7 @@ Class *makeStdConClass(struct ConsoleBase *ConsoleDevice)
         0UL);
     if (cl)
     {
-        cl->cl_Dispatcher.h_Entry = (APTR) dispatch_stdconclass;
+        cl->cl_Dispatcher.h_Entry = (ULONG (*)()) dispatch_stdconclass;
         cl->cl_Dispatcher.h_SubEntry = NULL;
 
         cl->cl_UserData = (IPTR) ConsoleDevice;

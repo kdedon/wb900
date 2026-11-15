@@ -6,11 +6,13 @@
 #ifndef CONSOLE_GCC_H
 #define CONSOLE_GCC_H
 
+#include <proto/exec.h>
 #include <aros/libcall.h>
 #include <aros/asmcall.h>
 #include <exec/execbase.h>
 #include <exec/devices.h>
 #include <exec/semaphores.h>
+#include <exec/memory.h>
 #include <dos/dos.h>
 #include <devices/conunit.h>
 #include <intuition/classes.h>
@@ -106,6 +108,10 @@ struct ConsoleBase;
     (((struct List *)(l))->lh_Head->ln_Succ ? ((struct List *)(l))->lh_Head : NULL)
 
 #define NEWLIST(l) NewList((struct List *)(l))
+
+/* graphics.library's InitTmpRas() */
+#define INITTMPRAS(t, b, s) \
+    ((t)->RasPtr = (UBYTE *)(b), (t)->Size = (s), (t))
 
 /* The C library functions console.device uses (crt.c) */
 ULONG strlen(CONST_STRPTR s);

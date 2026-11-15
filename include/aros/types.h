@@ -8,6 +8,7 @@
 #include <exec/types.h>
 
 typedef ULONG IPTR;		/* an integer that holds a pointer */
+typedef LONG SIPTR;		/* the same, signed */
 typedef APTR RAWARG;		/* RawDoFmt's data stream */
 typedef ULONG STACKULONG;	/* a ULONG passed on the stack */
 typedef IPTR STACKIPTR;		/* an IPTR passed on the stack */

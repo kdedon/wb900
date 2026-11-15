@@ -86,6 +86,7 @@ AROS intuition depends on (number of includes): graphics 66, layers 43, utility 
 - **Measured 2026-11-15:** gadtools.library (all of AROS workbench/libs/gadtools) is 63,626 B code in one hunk plus 1,970 B data, from 8.3k lines. In tests/gadtools the input task used 2,571 B of its 4,096 B stack and the menu task 2,045 B, so its stack is now 3,072 B (was 2,048 B).
 
 - **Measured 2026-11-15:** icon.library (classic .info icons only) is about 21 KB code + 2 KB data; workbench.library 16 KB + 0.4 KB, and its handler process uses 882 of 1,536 B of stack. The Workbench program is a 28 KB hunk; its process uses about 2.6 KB of its 3.5 KB stack in the self test.
+- **Measured 2026-11-15:** commodities.library is 9,960 B code + 1,950 B data. The commodities are NoCapsLock 2.5 KB, AutoPoint 3.1 KB, ClickToFront 3.3 KB, Blanker 4.3 KB and DepthMenu 6.6 KB of code; each process uses 850–1,300 B of its 2,048 B stack. Their handlers run on the input task, which used 2,751 of 4,096 B in tests/cxtools. Every event through a broker costs three allocations and frees.
 
 ## 6. Suggested phasing
 

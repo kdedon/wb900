@@ -25,12 +25,33 @@ Opened 2026-11-14. Status reported by exec816-0f the same day. Exec work is a pl
 | 16 | Faster `ObtainSemaphore`/`ReleaseSemaphore` and `Forbid`/`Permit` (below) | open | — |
 | 17 | `<dos/dosextens.h>`: the NDK ST_* entry types | **Landed** cc58d673 | done |
 | 18 | `mkdisk.py --mkdir=PATH` | **Landed** cc58d673 | done |
+| 19 | Free the name `console.device` for the window console (below) | open | — |
+| 20 | `Open()`: set `pr_ConsoleTask` from the handle's `fh_Type` after the open packet (below) | open | — |
+| 21 | `NewShell WINDOW`: open the window once (below) | open | — |
 
 ### 16. Semaphore and Forbid cost
 
 An uncontended `ObtainSemaphore` plus `ReleaseSemaphore` takes about 1.5k cycles at 6 MHz (`obtain` calls `xForbid`, `take` and `xPermit`; `xReleaseSem` calls `xForbid` and `xPermit`), and `Forbid`/`Permit` about 330 cycles a pair. graphics.library takes the layer lock and the pointer lock around every primitive, so opening a window does about 420 obtains and 900 Forbid/Permit pairs: 12% of its 5.1M cycles. Repro: wbdemo's win2-open under the profiling emulator.
 
 Asked for: an assembler fast path for the free, own-nested and shared cases (count and owner set with interrupts held off, no calls), falling back to the queue as now, and `Forbid`/`Permit` without the C call frame.
+
+### 19. The name console.device
+
+Amiga programs open `console.device` with a window in `io_Data` (CON: handlers, editors), or unit `CONU_LIBRARY` (-1) for `RawKeyConvert`. wb900's AROS console.device does both, but the kernel's text console holds the name, and ramlib refuses a second device of that name, so ours is `wincon.device` for now.
+
+Asked for: rename the kernel's device (say `kcon.device`, with its own macro instead of `CONSOLENAME`) in the kernel, `con.c`, the display modules and the tests. wb900 then renames its device to `console.device`.
+
+### 20. pr_ConsoleTask after Open
+
+wb900's CON: is one process per device that hands each open to a new window process; the window process sets `fh_Type` to its own port, as AmigaOS per-window handlers do. `xOpen` sets an unset `pr_ConsoleTask` to the device's port instead, so a later `Open("*")` (and `SystemTagList`'s default `SYS_Output`) reaches the device process, which has no window to give it. Repro: `Open("CON:0/0/300/100/x", MODE_OLDFILE)` from a process with no console, then `Open("*", MODE_NEWFILE)` fails.
+
+Asked for: `me->pr_ConsoleTask = fh->fh_Type` (the port after the packet). Meanwhile wb900's Shell launcher calls `SetConsoleTask(fh_Type)` itself.
+
+### 21. NewShell WINDOW
+
+`newshell()` in `dos/shell.c` opens the WINDOW name twice, for input and output. With a window CON: that is two windows. AmigaOS opens it once and gets the output stream as `*` of that window.
+
+Asked for: open the window once (`MODE_OLDFILE`), `SetConsoleTask(in's fh_Type)` around `Open("*", MODE_NEWFILE)` for the output, and give the new shell that console task. Until then `NewShell` from a Shell window opens two windows.
 
 ### 10. Keyboard raw codes
 

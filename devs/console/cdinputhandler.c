@@ -132,9 +132,13 @@ struct InputEvent *cdihandler(struct InputEvent *events,
    not deleted while we work on it
 */
 
+#undef IntuitionBase
+
 static Object *obtainconunit(struct Window *window,
     struct ConsoleBase *ConsoleDevice)
 {
+    struct IntuitionBase *IntuitionBase =
+        (APTR) ConsoleDevice->cb_IntuitionBase;
     struct Window *activewin;
     Object *o, *ostate;
     ULONG lock;
@@ -150,7 +154,7 @@ static Object *obtainconunit(struct Window *window,
     else
     {
         lock = LockIBase(0UL);
-        activewin = ((struct IntuitionBase *)IntuitionBase)->ActiveWindow;
+        activewin = IntuitionBase->ActiveWindow;
         UnlockIBase(lock);
     }
 

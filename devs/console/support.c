@@ -388,61 +388,61 @@ static const struct Command
     {C_CURSOR_BACKWARD,          1},                     /* 0x44 D */
     {C_CURSOR_NEXT_LINE,         1},                     /* 0x45 E */
     {C_CURSOR_PREV_LINE,         1},                     /* 0x46 F */
-    {-1,                         0},                      /* 0x47 G */
+    {-1,                         0},                     /* 0x47 G */
     {C_CURSOR_POS,               2},                     /* 0x48 H */
     {C_CURSOR_HTAB,              1},                     /* 0x49 I */
     {C_ERASE_IN_DISPLAY,         0},                     /* 0x4A J */
     {C_ERASE_IN_LINE,            1},                     /* 0x4B K */
     {C_INSERT_LINE,              1},                     /* 0x4C L */
     {C_DELETE_LINE,              1},                     /* 0x4D M */
-    {-1,                         0},                      /* 0x4E N */
-    {-1,                         0},                      /* 0x4F O */
+    {-1,                         0},                     /* 0x4E N */
+    {-1,                         0},                     /* 0x4F O */
     {C_DELETE_CHAR,              1},                     /* 0x50 P */
-    {-1,                         0},                      /* 0x51 Q */
-    {-1,                         0},                      /* 0x52 R */
+    {-1,                         0},                     /* 0x51 Q */
+    {-1,                         0},                     /* 0x52 R */
     {C_SCROLL_UP,                1},                     /* 0x53 S */
     {C_SCROLL_DOWN,              1},                     /* 0x54 T */
-    {-1,                         0},                      /* 0x55 U */
-    {-1,                         0},                      /* 0x56 V */
+    {-1,                         0},                     /* 0x55 U */
+    {-1,                         0},                     /* 0x56 V */
     {C_CURSOR_TAB_CTRL,          1},                     /* 0x57 W */
-    {-1,                         0},                      /* 0x58 X */
-    {-1,                         0},                      /* 0x59 Y */
+    {-1,                         0},                     /* 0x58 X */
+    {-1,                         0},                     /* 0x59 Y */
     {C_CURSOR_BACKTAB,           1},                     /* 0x5A Z */
-    {-1,                         0},                      /* 0x5B [ */
-    {-1,                         0},                      /* 0x5C \ */
-    {-1,                         0},                      /* 0x5D ] */
-    {-1,                         0},                      /* 0x5E ^ */
-    {-1,                         0},                      /* 0x5F _ */
-    {-1,                         0},                      /* 0x60 ` */
-    {-1,                         0},                      /* 0x61 a */
-    {-1,                         0},                      /* 0x62 b */
-    {-1,                         0},                      /* 0x63 c */
-    {-1,                         0},                      /* 0x64 d */
-    {-1,                         0},                      /* 0x65 e */
-    {-1,                         0},                      /* 0x66 f */
-    {-1,                         0},                      /* 0x67 g */
-    {-1,                         0},                      /* 0x68 h */
-    {-1,                         0},                      /* 0x69 i */
-    {-1,                         0},                      /* 0x6A j */
-    {-1,                         0},                      /* 0x6B k */
-    {-1,                         0},                      /* 0x6C l */
+    {-1,                         0},                     /* 0x5B [ */
+    {-1,                         0},                     /* 0x5C \ */
+    {-1,                         0},                     /* 0x5D ] */
+    {-1,                         0},                     /* 0x5E ^ */
+    {-1,                         0},                     /* 0x5F _ */
+    {-1,                         0},                     /* 0x60 ` */
+    {-1,                         0},                     /* 0x61 a */
+    {-1,                         0},                     /* 0x62 b */
+    {-1,                         0},                     /* 0x63 c */
+    {-1,                         0},                     /* 0x64 d */
+    {-1,                         0},                     /* 0x65 e */
+    {-1,                         0},                     /* 0x66 f */
+    {-1,                         0},                     /* 0x67 g */
+    {-1,                         0},                     /* 0x68 h */
+    {-1,                         0},                     /* 0x69 i */
+    {-1,                         0},                     /* 0x6A j */
+    {-1,                         0},                     /* 0x6B k */
+    {-1,                         0},                     /* 0x6C l */
     {C_SELECT_GRAPHIC_RENDITION, MAX_COMMAND_PARAMS},    /* 0x6D m */
-    {-1,                         0},                      /* 0x6E n */
-    {-1,                         0},                      /* 0x6F o */
-    {-1,                         0},                      /* 0x70 p */
-    {-1,                         0},                      /* 0x71 q */
-    {-1,                         0},                      /* 0x72 r */
-    {-1,                         0},                      /* 0x73 s */
+    {-1,                         0},                     /* 0x6E n */
+    {-1,                         0},                     /* 0x6F o */
+    {-1,                         0},                     /* 0x70 p */
+    {-1,                         0},                     /* 0x71 q */
+    {-1,                         0},                     /* 0x72 r */
+    {-1,                         0},                     /* 0x73 s */
     {C_SET_PAGE_LENGTH,          1},                     /* 0x74 t */
     {C_SET_LINE_LENGTH,          1},                     /* 0x75 u */
-    {-1,                         0},                      /* 0x76 v */
-    {-1,                         0},                      /* 0x77 w */
+    {-1,                         0},                     /* 0x76 v */
+    {-1,                         0},                     /* 0x77 w */
     {C_SET_LEFT_OFFSET,          1},                     /* 0x78 x */
     {C_SET_TOP_OFFSET,           1},                     /* 0x79 y */
-    {-1,                         0},                      /* 0x7A z */
+    {-1,                         0},                     /* 0x7A z */
     {C_SET_RAWEVENTS,            MAX_COMMAND_PARAMS},    /* 0x7B { */
-    {-1,                         0},                      /* 0x7C | */
-    {C_RESET_RAWEVENTS,          MAX_COMMAND_PARAMS},    /* 0x7D } */
+    {-1,                         0},                     /* 0x7C | */
+    {C_RESET_RAWEVENTS,          MAX_COMMAND_PARAMS}     /* 0x7D } */
 };
 #define NUM_CSI_COMMANDS (sizeof(csi2command) / sizeof(csi2command[0]))
 

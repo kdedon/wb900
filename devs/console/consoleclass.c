@@ -60,7 +60,7 @@ static Object *console_new(Class *cl, Object *o, struct opSet *msg)
 
         unit = (struct ConUnit *)data;
 
-        SetMem(data, 0, sizeof(struct consoledata));
+        memset(data, 0, sizeof(struct consoledata));
         for (i = 0; i < CONUNIT_PEN_MAX; i ++)
         {
             data->intunit.pens[i] = i;
@@ -95,9 +95,7 @@ static Object *console_new(Class *cl, Object *o, struct opSet *msg)
             unit->cu_YROrigin + (unit->cu_YRSize * (unit->cu_YMax + 1) - 1);
 
         /* The character and cursor positions start at DEF_CHAR_XMIN and
-           DEF_CHAR_YMIN, which the SetMem() above has set */
-        _Static_assert(DEF_CHAR_XMIN == 0 && DEF_CHAR_YMIN == 0,
-            "a cleared unit must be at the default cursor position");
+           DEF_CHAR_YMIN, 0, which the memset() above has set */
 
         for (i = 0; i < MAXTABS - 1; i++)
         {
@@ -120,7 +118,7 @@ static Object *console_new(Class *cl, Object *o, struct opSet *msg)
 /**********************
 **  Console::Left()  **
 **********************/
-static VOID console_left(Class *cl, Object *o, struct P_Console_Left *msg)
+static VOID console_left(Class *cl, Object *o, struct P_Console_Move *msg)
 {
     IPTR count = msg->Num;
     IPTR minx = CHAR_XMIN(o);
@@ -168,7 +166,7 @@ static VOID console_left(Class *cl, Object *o, struct P_Console_Left *msg)
 /***********************
 **  Console::Right()  **
 ***********************/
-static VOID console_right(Class *cl, Object *o, struct P_Console_Right *msg)
+static VOID console_right(Class *cl, Object *o, struct P_Console_Move *msg)
 {
     IPTR count = msg->Num;
     IPTR minx = CHAR_XMIN(o);
@@ -218,7 +216,7 @@ static VOID console_right(Class *cl, Object *o, struct P_Console_Right *msg)
 /********************
 **  Console::Up()  **
 ********************/
-static VOID console_up(Class *cl, Object *o, struct P_Console_Up *msg)
+static VOID console_up(Class *cl, Object *o, struct P_Console_Move *msg)
 {
     IPTR count = msg->Num;
     IPTR distance = (IPTR) YCCP - CHAR_YMIN(o);
@@ -248,7 +246,7 @@ static VOID console_up(Class *cl, Object *o, struct P_Console_Up *msg)
 /**********************
 **  Console::Down()  **
 **********************/
-static VOID console_down(Class *cl, Object *o, struct P_Console_Down *msg)
+static VOID console_down(Class *cl, Object *o, struct P_Console_Move *msg)
 {
     IPTR count = msg->Num;
     IPTR distance = CHAR_YMAX(o) - (IPTR) YCCP;
@@ -451,7 +449,7 @@ static VOID console_getdefaultparams(Class *cl, Object *o,
 **  Console::NewWindowSize()  **
 *******************************/
 static VOID console_newwindowsize(Class *cl, Object *o,
-    struct P_Console_NewWindowSize *msg)
+    Msg msg)
 {
     struct ConUnit *unit;
     struct consoledata *data;
@@ -491,7 +489,7 @@ static VOID console_newwindowsize(Class *cl, Object *o,
     return;
 }
 
-IPTR console_getpencolor(Class *cl, Object *o, struct P_Console_GetColorPen *msg)
+static IPTR console_getpencolor(Class *cl, Object *o, struct P_Console_GetColorPen *msg)
 {
     struct consoledata *data = INST_DATA(cl, o);
     *msg->PenPtr = (UBYTE)data->intunit.pens[msg->ColorIdx];
@@ -518,19 +516,19 @@ AROS_UFH3S(IPTR, dispatch_consoleclass,
         break;
 
     case M_Console_Left:
-        console_left(cl, o, (struct P_Console_Left *)msg);
+        console_left(cl, o, (struct P_Console_Move *)msg);
         break;
 
     case M_Console_Right:
-        console_right(cl, o, (struct P_Console_Right *)msg);
+        console_right(cl, o, (struct P_Console_Move *)msg);
         break;
 
     case M_Console_Up:
-        console_up(cl, o, (struct P_Console_Up *)msg);
+        console_up(cl, o, (struct P_Console_Move *)msg);
         break;
 
     case M_Console_Down:
-        console_down(cl, o, (struct P_Console_Down *)msg);
+        console_down(cl, o, (struct P_Console_Move *)msg);
         break;
 
     case M_Console_DoCommand:
@@ -543,7 +541,7 @@ AROS_UFH3S(IPTR, dispatch_consoleclass,
         break;
 
     case M_Console_NewWindowSize:
-        console_newwindowsize(cl, o, (struct P_Console_NewWindowSize *)msg);
+        console_newwindowsize(cl, o, msg);
         break;
 
     default:
@@ -559,6 +557,62 @@ AROS_UFH3S(IPTR, dispatch_consoleclass,
 
 #undef ConsoleDevice
 
+/* The method stubs of consoleif.h */
+
+IPTR Console_DoCommand(Object *o, BYTE cmd, UBYTE numparams, APTR params)
+{
+    struct P_Console_DoCommand p;
+
+    p.MethodID = M_Console_DoCommand;
+    p.Command = cmd;
+    p.NumParams = numparams;
+    p.Params = (IPTR *)params;
+    return DoMethodA(o, (Msg)&p);
+}
+
+IPTR Console_Move(Object *o, ULONG mid, IPTR num)
+{
+    struct P_Console_Move p;
+
+    p.MethodID = mid;
+    p.Num = num;
+    return DoMethodA(o, (Msg)&p);
+}
+
+IPTR Console_GetDefaultParams(Object *o, BYTE cmd, IPTR *params)
+{
+    struct P_Console_GetDefaultParams p;
+
+    p.MethodID = M_Console_GetDefaultParams;
+    p.Command = cmd;
+    p.Params = params;
+    return DoMethodA(o, (Msg)&p);
+}
+
+IPTR Console_GetColorPen(Object *o, UWORD coloridx, UBYTE *penptr)
+{
+    struct P_Console_GetColorPen p;
+
+    p.MethodID = M_Console_GetColorPen;
+    p.ColorIdx = coloridx;
+    p.PenPtr = penptr;
+    return DoMethodA(o, (Msg)&p);
+}
+
+IPTR Console_HandleGadgets(Object *o, struct InputEvent *e)
+{
+    struct P_Console_HandleGadgets p;
+
+    p.MethodID = M_Console_HandleGadgets;
+    p.Event = e;
+    return DoMethodA(o, (Msg)&p);
+}
+
+IPTR Console_Method(Object *o, ULONG mid)
+{
+    return DoMethodA(o, (Msg)&mid);
+}
+
 Class *makeConsoleClass(struct ConsoleBase *ConsoleDevice)
 {
     Class *cl;
@@ -566,7 +620,7 @@ Class *makeConsoleClass(struct ConsoleBase *ConsoleDevice)
     cl = MakeClass(NULL, ROOTCLASS, NULL, sizeof(struct consoledata), 0UL);
     if (cl)
     {
-        cl->cl_Dispatcher.h_Entry = (APTR) dispatch_consoleclass;
+        cl->cl_Dispatcher.h_Entry = (ULONG (*)()) dispatch_consoleclass;
         cl->cl_Dispatcher.h_SubEntry = NULL;
 
         cl->cl_UserData = (IPTR) ConsoleDevice;

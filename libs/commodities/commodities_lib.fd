@@ -1,0 +1,40 @@
+* commodities.library in the C900 dialect of an Amiga fd file, from
+* AROS's commodities.conf.  Each function takes CxBase first; the C
+* functions are AROS_LH definitions named Commodities_N after their
+* vector.
+##base _CxBase
+##bias 30
+##public
+CreateCxObj(type,arg1,arg2)(ULONG,IPTR,IPTR) CxObj * @Commodities_5
+CxBroker(nb,error)(struct NewBroker *,LONG *) CxObj * @Commodities_6
+ActivateCxObj(co,actv)(CxObj *,LONG) LONG @Commodities_7
+DeleteCxObj(co)(CxObj *) void @Commodities_8
+DeleteCxObjAll(co)(CxObj *) void @Commodities_9
+CxObjType(co)(CxObj *) ULONG @Commodities_10
+CxObjError(co)(CxObj *) LONG @Commodities_11
+ClearCxObjError(co)(CxObj *) void @Commodities_12
+SetCxObjPri(co,pri)(CxObj *,LONG) LONG @Commodities_13
+AttachCxObj(headObj,co)(CxObj *,CxObj *) void @Commodities_14
+EnqueueCxObj(headObj,co)(CxObj *,CxObj *) void @Commodities_15
+InsertCxObj(headObj,co,pred)(CxObj *,CxObj *,CxObj *) void @Commodities_16
+RemoveCxObj(co)(CxObj *) void @Commodities_17
+##private
+cxPrivate1()()
+##public
+SetTranslate(translator,events)(CxObj *,struct InputEvent *) void @Commodities_19
+SetFilter(filter,text)(CxObj *,STRPTR) void @Commodities_20
+SetFilterIX(filter,ix)(CxObj *,IX *) void @Commodities_21
+ParseIX(desc,ix)(CONST_STRPTR,IX *) LONG @Commodities_22
+CxMsgType(cxm)(CxMsg *) ULONG @Commodities_23
+CxMsgData(cxm)(CxMsg *) APTR @Commodities_24
+CxMsgID(cxm)(CxMsg *) LONG @Commodities_25
+DivertCxMsg(cxm,headObj,returnObj)(CxMsg *,CxObj *,CxObj *) void @Commodities_26
+RouteCxMsg(cxm,co)(CxMsg *,CxObj *) void @Commodities_27
+DisposeCxMsg(cxm)(CxMsg *) void @Commodities_28
+InvertKeyMap(ansiCode,event,km)(ULONG,struct InputEvent *,struct KeyMap *) BOOL @Commodities_29
+AddIEvents(events)(struct InputEvent *) void @Commodities_30
+CopyBrokerList(CopyofList)(struct List *) LONG @Commodities_31
+FreeBrokerList(brokerList)(struct List *) void @Commodities_32
+BrokerCommand(name,command)(STRPTR,ULONG) ULONG @Commodities_33
+MatchIX(event,ix)(struct InputEvent *,IX *) BOOL @Commodities_34
+##end

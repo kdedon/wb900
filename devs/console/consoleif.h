@@ -23,7 +23,6 @@
 
 #define A_Console_Window (TAG_USER + 1)
 
-#define M_Console_Write             (TAG_USER + 1)
 #define M_Console_DoCommand         (TAG_USER + 3)
 #define M_Console_Left              (TAG_USER + 4)
 #define M_Console_Right             (TAG_USER + 5)

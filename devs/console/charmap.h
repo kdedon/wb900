@@ -5,8 +5,6 @@
 #ifndef CHARMAP_H
 #define CHARMAP_H
 
-#include <stddef.h>
-
 #include <exec/types.h>
 
 // FIXME:
@@ -25,32 +23,16 @@ struct charmap_line
     UWORD size;
     UWORD capacity;
 
-    /* The per-cell arrays, by name and as plane[] for code that treats all
-       of them alike. They share one allocation of capacity bytes each, in
-       the order of plane[]. */
-    union
-    {
-        struct
-        {
-            char *text;
-            BYTE *fgpen;
-            BYTE *bgpen;
-            BYTE *flags;
-        };
-        UBYTE *plane[CHARMAP_PLANES];
-    };
+    /* The per-cell arrays. They share one allocation of capacity bytes
+       each, in this order, and CM_PLANE() takes them by number. */
+    char *text;
+    BYTE *fgpen;
+    BYTE *bgpen;
+    BYTE *flags;
 };
 
-_Static_assert(offsetof(struct charmap_line, text) ==
-        offsetof(struct charmap_line, plane[0])
-    && offsetof(struct charmap_line, fgpen) ==
-        offsetof(struct charmap_line, plane[1])
-    && offsetof(struct charmap_line, bgpen) ==
-        offsetof(struct charmap_line, plane[2])
-    && offsetof(struct charmap_line, flags) ==
-        offsetof(struct charmap_line, plane[3])
-    && sizeof(((struct charmap_line *)0)->plane) == 4 * sizeof(UBYTE *),
-    "plane[] must cover text, fgpen, bgpen and flags");
+/* Per-cell array i of a line: text, fgpen, bgpen, flags */
+#define CM_PLANE(line, i) (((UBYTE **)&(line)->text)[i])
 
 VOID charmap_dispose_lines(struct charmap_line *line);
 struct charmap_line *charmap_dispose_line(struct charmap_line *line);

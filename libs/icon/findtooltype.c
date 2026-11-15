@@ -58,7 +58,10 @@
     while (*toolTypeArray)
     {
         /* case insensitive compare */
-        if (!Strnicmp (*toolTypeArray, typeName, typenamelen) )
+        /* The whole name: "LAG" is not "LAGTIME=2" */
+        if (!Strnicmp (*toolTypeArray, typeName, typenamelen) &&
+            ((*toolTypeArray)[typenamelen] == '=' ||
+             (*toolTypeArray)[typenamelen] == '\0'))
         {
             if ( (*toolTypeArray)[typenamelen] == '=') typenamelen++;
             return (*toolTypeArray + typenamelen);

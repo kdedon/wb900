@@ -64,7 +64,7 @@ define CCRULE
 	$(CC2) 001200000010 $(OBJ)/$(2).z1 $(3) $(OBJ)/$(2).scr 0
 endef
 
-LIBS	= utility keymap graphics layers intuition gadtools icon workbench
+LIBS	= utility keymap graphics layers intuition gadtools icon workbench commodities
 # graphics.library's display drivers (LIBS:NAME.gfxdriver)
 GFXDRIVERS = hr
 DEVS	= input console
@@ -72,7 +72,7 @@ DEVS	= input console
 console_DEVNAME = wincon
 TESTS	= $(basename $(notdir $(wildcard $(TOP)/tests/*.c)))
 # The tests that open intuition.library
-ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon workbench wbboot console
+ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin
 # The demos also made as NAME-1x.bin, in the Workbench 1.x style
 STYLED	= wbdemo wbinter gtdemo wbboot
 
@@ -158,6 +158,19 @@ $(eval $(call LIBRARY,icon,Icon,ic))
 $(icon_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility graphics intuition workbench)
 $(eval $(call LIBRARY,workbench,Workbench,wb))
 $(workbench_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility intuition icon)
+$(eval $(call LIBRARY,commodities,Commodities,cx))
+$(commodities_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility keymap)
+
+# CON: and RAW: (fs/con), a boot module: lib/startup.s (its process
+# entry), the handler and amiga.lib's calls.
+CONH_OBJS = $(patsubst $(TOP)/fs/con/%.c,$(OBJ)/fs_con/%.o,$(wildcard $(TOP)/fs/con/*.c))
+$(OBJ)/fs_con/%.o: $(TOP)/fs/con/%.c $(wildcard $(TOP)/fs/con/*.h) $(HDRS) $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility intuition gadtools input console)
+	$(call CCRULE,$<,fs_con/$*,$@)
+$(OUT)/l/con-handler: $(OBJ)/startup.o $(CONH_OBJS) $(OBJ)/amiga.o $(OBJ)/progabs.o
+	$(SYMCHECK) $(TOP)/fs/con
+	@mkdir -p $(OUT)/l
+	$(LD) -r -o $(OBJ)/fs_con.r $^
+	$(MKHUNK) --entry=start $@ $(OBJ)/fs_con.r
 
 # Test programs: lib/startup.s first, so that start opens the code hunk,
 # then the test, amiga.lib's KPrintf, port I/O and progabs.o.
@@ -165,13 +178,16 @@ $(OBJ)/t_%.o: $(TOP)/tests/%.c $(HDRS) $(patsubst %,$(OUT)/include/lvo/%_lib.h,$
 	$(call CCRULE,$<,t_$*,$@)
 
 $(OUT)/progs/%: $(OBJ)/startup.o $(OBJ)/t_%.o $(OBJ)/amiga.o $(OBJ)/portio.o $(OBJ)/progabs.o
-	$(SYMCHECK) $(TOP)/tests/$*.c $(if $(filter $(ALIBTESTS),$*),$(TOP)/lib) $(if $(filter wbboot,$*),$(WBSRC))
+	$(SYMCHECK) $(TOP)/tests/$*.c $(if $(filter $(ALIBTESTS),$*),$(TOP)/lib) $(if $(filter wbboot shellwin,$*),$(WBSRC))
 	@mkdir -p $(OUT)/progs
 	$(LD) -r -o $(OBJ)/p_$*.r $^
 	$(MKHUNK) --entry=start $@ $(OBJ)/p_$*.r
 # The tests that link amiga.lib
-ALIBTESTS = intuition gadtools gtdemo console
+ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin
 $(patsubst %,$(OUT)/progs/%,$(ALIBTESTS)): $(ALIB)
+# amiga.lib's commodities calls
+CXLIB	= $(patsubst $(TOP)/lib/%.c,$(OBJ)/lib/%.o,$(wildcard $(TOP)/lib/cx/*.c))
+$(OUT)/progs/commodities: $(OBJ)/lib/cx/hotkey.o
 
 # Programs for Workbench's disk (wb/), linked as the tests are.
 $(OBJ)/w_%.o: $(TOP)/wb/%.c $(HDRS) $(patsubst %,$(OUT)/include/lvo/%_lib.h,$(LIBS) $(DEVS))
@@ -181,9 +197,18 @@ $(OUT)/wb/%: $(OBJ)/startup.o $(OBJ)/w_%.o $(OBJ)/amiga.o $(OBJ)/portio.o $(OBJ)
 	@mkdir -p $(OUT)/wb
 	$(LD) -r -o $(OBJ)/q_$*.r $^
 	$(MKHUNK) --entry=start $@ $(OBJ)/q_$*.r
+# The commodities (wb/commodities), with amiga.lib's commodities calls
+CXTOOLS	= ClickToFront AutoPoint DepthMenu Blanker NoCapsLock
+$(OBJ)/c_%.o: $(TOP)/wb/commodities/%.c $(HDRS) $(patsubst %,$(OUT)/include/lvo/%_lib.h,$(LIBS) $(DEVS))
+	$(call CCRULE,$<,c_$*,$@)
+$(OUT)/cx/%: $(OBJ)/startup.o $(OBJ)/c_%.o $(CXLIB) $(OBJ)/amiga.o $(OBJ)/portio.o $(OBJ)/progabs.o
+	$(SYMCHECK) $(TOP)/wb/commodities/$*.c $(TOP)/lib/cx
+	@mkdir -p $(OUT)/cx
+	$(LD) -r -o $(OBJ)/c_$*.r $^
+	$(MKHUNK) --entry=start $@ $(OBJ)/c_$*.r
 # Workbench, which tests/wbboot.c starts
 WBSRC	= $(patsubst %,$(TOP)/wb/%.c,workbench drawer selftest)
-$(OUT)/progs/wbboot: $(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC))
+$(OUT)/progs/wbboot $(OUT)/progs/shellwin: $(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC))
 $(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC)): $(TOP)/wb/workbench.h
 
 # The icons of Workbench's disk: $(OUT)/wb/NAME.info, from mkinfo.py
@@ -195,6 +220,18 @@ Demos_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
 	--window=140,110,400,140
 Trashcan_INFO = --type=trashcan --art=builtin:trash --select=builtin:trash_open
 Notes_INFO = --type=project --art=builtin:project --tool=SYS:Demos/Hello
+Tools_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
+	--window=180,150,300,100
+Commodities_INFO = --type=drawer --art=builtin:drawer \
+	--select=builtin:drawer_open --window=120,200,520,110
+CX_INFO	= --type=tool --art=builtin:tool --stack=2048 --tooltype=CX_PRIORITY=0
+ClickToFront_INFO = $(CX_INFO) --tooltype=QUALIFIER=NONE --tooltype=NUMCLICKS=2
+AutoPoint_INFO = $(CX_INFO)
+DepthMenu_INFO = $(CX_INFO)
+NoCapsLock_INFO = $(CX_INFO)
+Blanker_INFO = $(CX_INFO) --tooltype=SECONDS=120 "--tooltype=BLANKKEY=ctrl alt b"
+# tests/cxtools.c's, which blanks after a second
+BlankerTest_INFO = $(CX_INFO) --tooltype=SECONDS=1 "--tooltype=BLANKKEY=ctrl alt b"
 $(OUT)/wb/%.info: $(TOP)/tools/mkinfo.py $(TOP)/wb/hello.txt $(TOP)/libs/icon/support_builtin.c
 	@mkdir -p $(OUT)/wb
 	$(MKINFO) $@ $($*_INFO)
@@ -207,6 +244,7 @@ $(OUT)/wb/%.info: $(TOP)/tools/mkinfo.py $(TOP)/wb/hello.txt $(TOP)/libs/icon/su
 DISKLIBS = $(if $(filter $(ITESTS),$(1)),$(LIBS),$(filter-out intuition gadtools icon workbench,$(LIBS)))
 DISK	= --module=$(EXEC900_OUT)/hunks/dos.library \
 	  --module=$(EXEC900_OUT)/hunks/v7fs-handler \
+	  $(if $(filter $(ITESTS),$(1)),--module=$(OUT)/l/con-handler) \
 	  $(patsubst %,--file=$(EXEC900_OUT)/hunks/%.display,lr hr lc) \
 	  --file=$(EXEC900_OUT)/hunks/gameport.dev \
 	  $(foreach l,$(call DISKLIBS,$(1)),--put=Libs/$(l).library=$(OUT)/libs/$(l).library) \
@@ -218,13 +256,23 @@ DISK	= --module=$(EXEC900_OUT)/hunks/dos.library \
 workbench_PUT = --put=Demos/Hello=$(OUT)/wb/hello --put=Demos/Hello.info=$(OUT)/wb/Hello.info
 $(OUT)/workbench.bin: $(OUT)/wb/hello $(OUT)/wb/Hello.info
 # Workbench's disk: a few drawers, a tool and a project with icons
-WBDISK	= Disk.info Demos.info Demos/Hello.info Demos/Notes.info Trashcan.info
+WBDISK	= Disk.info Demos.info Demos/Hello.info Demos/Notes.info Trashcan.info \
+	Tools.info Tools/Commodities.info $(patsubst %,Tools/Commodities/%.info,$(CXTOOLS))
+CXPUT	= $(foreach t,$(CXTOOLS),--put=Tools/Commodities/$(t)=$(OUT)/cx/$(t))
 wbboot_PUT = $(workbench_PUT) --put=Demos/Notes=$(TOP)/wb/Notes \
-	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan \
+	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan $(CXPUT) \
 	$(foreach i,$(filter-out Demos/Hello.info,$(WBDISK)),--put=$(i)=$(OUT)/wb/$(notdir $(i)))
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
+$(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin $(OUT)/shellwin.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS))
+# The commodities' test: the tools, with a quick Blanker
+cxtools_PUT = $(CXPUT) --put=Tools/Commodities/Blanker.info=$(OUT)/wb/BlankerTest.info \
+	$(foreach t,$(filter-out Blanker,$(CXTOOLS)),--put=Tools/Commodities/$(t).info=$(OUT)/wb/$(t).info)
+$(OUT)/cxtools.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(patsubst %,$(OUT)/wb/%.info,BlankerTest $(CXTOOLS))
+# Workbench's disk with the Shell
+shellwin_PUT = $(wbboot_PUT) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg
+$(OUT)/shellwin.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
 
-BINDEPS	= $(patsubst %,$(OUT)/libs/%.library,$(LIBS)) $(patsubst %,$(OUT)/libs/%.gfxdriver,$(GFXDRIVERS)) $(patsubst %,$(OUT)/devs/%.device,$(DEVS)) $(EXEC900_OUT)/exec900.sys
+BINDEPS	= $(patsubst %,$(OUT)/libs/%.library,$(LIBS)) $(patsubst %,$(OUT)/libs/%.gfxdriver,$(GFXDRIVERS)) $(patsubst %,$(OUT)/devs/%.device,$(DEVS)) $(OUT)/l/con-handler $(EXEC900_OUT)/exec900.sys
 $(OUT)/%.bin: $(OUT)/progs/% $(BINDEPS)
 	$(MKDISK) --kboot=$(KBOOT) --root=$(OUT)/progs/$* $(call DISK,$*) $@ $(EXEC900_OUT)/exec900.sys
 

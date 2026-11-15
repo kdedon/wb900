@@ -34,8 +34,6 @@
 #define CODE_COPY       'C'
 #define CODE_PASTE      'V'
 
-extern const STRPTR CONCLIP_PORTNAME;
-
 struct MyEditHookMsg
 {
     struct Message msg;
@@ -113,8 +111,14 @@ static VOID charmap_swap_line_contents(struct charmap_line *a,
 static struct Image *charmapcon_sysimage(Class *cl, struct DrawInfo *di,
     ULONG which)
 {
-    return (struct Image *)NewObject(NULL, "sysiclass",
-        SYSIA_Which, which, SYSIA_DrawInfo, (IPTR) di, TAG_END);
+    struct TagItem tags[3];
+
+    tags[0].ti_Tag = SYSIA_Which;
+    tags[0].ti_Data = which;
+    tags[1].ti_Tag = SYSIA_DrawInfo;
+    tags[1].ti_Data = (IPTR) di;
+    tags[2].ti_Tag = TAG_END;
+    return (struct Image *)NewObjectA(NULL, "sysiclass", tags);
 }
 
 /*** Allocate and attach a prop gadget to the window ***/
@@ -132,13 +136,22 @@ static VOID charmapcon_add_prop(Class *cl, Object *o)
     if (win->Flags & WFLG_BACKDROP)
     {
         /* Yes this is actually a (struct Gadget *)... */
+        struct TagItem tags[12];
+
+        tags[0].ti_Tag = GA_Top;            tags[0].ti_Data = 0;
+        tags[1].ti_Tag = GA_Left;           tags[1].ti_Data = win->Width - 10;
+        tags[2].ti_Tag = GA_Width;          tags[2].ti_Data = 10;
+        tags[3].ti_Tag = GA_Height;         tags[3].ti_Data = win->Height;
+        tags[4].ti_Tag = GA_RelVerify;      tags[4].ti_Data = TRUE;
+        tags[5].ti_Tag = GA_FollowMouse;    tags[5].ti_Data = TRUE;
+        tags[6].ti_Tag = GA_Immediate;      tags[6].ti_Data = TRUE;
+        tags[7].ti_Tag = PGA_VertPot;       tags[7].ti_Data = MAXPOT;
+        tags[8].ti_Tag = PGA_VertBody;      tags[8].ti_Data = MAXBODY;
+        tags[9].ti_Tag = PGA_Freedom;       tags[9].ti_Data = FREEVERT;
+        tags[10].ti_Tag = PGA_NewLook;      tags[10].ti_Data = TRUE;
+        tags[11].ti_Tag = TAG_END;
         if ((data->prop = pg =
-                (struct Scroll *)NewObject(NULL, "propgclass", GA_Top, 0,
-                    GA_Left, win->Width - 10, GA_Width, 10, GA_Height,
-                    win->Height, GA_RelVerify, TRUE, GA_FollowMouse, TRUE,
-                    GA_Immediate, TRUE, PGA_VertPot, MAXPOT, PGA_VertBody,
-                    MAXBODY, PGA_Freedom, FREEVERT, PGA_NewLook, TRUE,
-                    TAG_END)))
+                (struct Scroll *)NewObjectA(NULL, "propgclass", tags)))
         {
             /* And finally, add it to the window */
             AddGList(win, (struct Gadget *)pg, 0, 1, NULL);
@@ -316,7 +329,7 @@ void charmapcon_free_prop(Class *cl, Object *o)
 
 static Object *charmapcon_new(Class *cl, Object *o, struct opSet *msg)
 {
-    APTR newGfxBase = TaggedOpenLibrary(TAGGEDOPEN_GRAPHICS);
+    APTR newGfxBase = OpenLibrary("graphics.library", 0);
     if (newGfxBase == NULL)
         return NULL;
 
@@ -328,9 +341,9 @@ static Object *charmapcon_new(Class *cl, Object *o, struct opSet *msg)
         /* Clear for checking inside dispose() whether stuff was allocated.
            Basically this is bug-prevention.
          */
-        SetMem(data, 0, sizeof(struct charmapcondata));
+        memset(data, 0, sizeof(struct charmapcondata));
 
-        data->scrollback_max = 1000;    /* FIXME: Don't hardcode it */
+        data->scrollback_max = 128;     /* FIXME: Don't hardcode it */
         data->ccd_GfxBase = newGfxBase;
         charmapcon_add_prop(cl, o);
 
@@ -437,9 +450,9 @@ static struct charmap_line *charmapcon_find_line(Class *cl, Object *o,
 static VOID charmap_set_attrs(Class *cl, Object *o,
     struct charmap_line *line, ULONG x, ULONG len)
 {
-    SetMem(line->fgpen + x, CU(o)->cu_FgPen, len);
-    SetMem(line->bgpen + x, CU(o)->cu_BgPen, len);
-    SetMem(line->flags + x, CU(o)->cu_TxFlags, len);
+    memset(line->fgpen + x, CU(o)->cu_FgPen, len);
+    memset(line->bgpen + x, CU(o)->cu_BgPen, len);
+    memset(line->flags + x, CU(o)->cu_TxFlags, len);
 }
 
 /* The same, and fill the cells with spaces. */
@@ -447,7 +460,7 @@ static VOID charmap_blank(Class *cl, Object *o,
     struct charmap_line *line, ULONG x, ULONG len)
 {
     charmap_set_attrs(cl, o, line, x, len);
-    SetMem(line->text + x, ' ', len);
+    memset(line->text + x, ' ', len);
 }
 
 /* Move len cells of a line from column 'from' to column 'to'. The two
@@ -458,7 +471,7 @@ static VOID charmap_move_cells(struct charmap_line *line, ULONG to,
     LONG i;
 
     for (i = 0; i < CHARMAP_PLANES; i++)
-        memmove(line->plane[i] + to, line->plane[i] + from, len);
+        memmove(CM_PLANE(line, i) + to, CM_PLANE(line, i) + from, len);
 }
 
 static VOID charmap_ascii(Class *cl, Object *o, ULONG xcp, ULONG ycp,
@@ -598,7 +611,7 @@ static VOID charmapcon_scroll_to(Class *cl, Object *o, ULONG y)
      * (though we could double buffer... Not sure that's worth the
      * memory cost)
      */
-    if (abs(off) > CHAR_YMAX(o))
+    if ((off < 0 ? -off : off) > CHAR_YMAX(o))
     {
         charmapcon_refresh(cl, o, 0);
         Console_RenderCursor(o);
@@ -751,9 +764,6 @@ static VOID charmapcon_docommand(Class *cl, Object *o,
     IPTR *params = msg->Params;
     struct charmapcondata *data = INST_DATA(cl, o);
 
-    EnterFunc(bug
-        ("CharMapCon::DoCommand(o=%p, cmd=%d, params=%p) x=%d, y=%d, ymax=%d\n",
-            o, msg->Command, params, XCP, YCP, CHAR_YMAX(o)));
 
     // This is a bit of a hack: Set position to bottom in order to prevent
     // output while scrolled.
@@ -774,11 +784,6 @@ static VOID charmapcon_docommand(Class *cl, Object *o,
 
     switch (msg->Command)
     {
-    case C_ASCII:
-        charmapcon_clear_selection(cl, o);
-        charmap_ascii(cl, o, XCP, YCP, (char *)&params[0], 1);
-        break;
-
     case C_ASCII_STRING:
         charmapcon_clear_selection(cl, o);
         charmap_ascii(cl, o, XCP, YCP, (char *)params[0], (int)params[1]);
@@ -917,7 +922,7 @@ static VOID charmapcon_refresh_lines(Class *cl, Object *o, LONG fromLine,
     {
         scratch = AllocRaster(scratchWidth, scratchHeight);
         if (scratch)
-            rp->TmpRas = InitTmpRas(&localTmpRas, scratch, scratchSize);
+            rp->TmpRas = INITTMPRAS(&localTmpRas, scratch, scratchSize);
     }
 
     if (cursor_in_range)
@@ -1246,7 +1251,7 @@ static VOID charmapcon_copy(Class *cl, Object *o, Msg copymsg)
     {
         /* AROS conclip format */
         
-        SetMem( &replyport, 0, sizeof( replyport ) );
+        memset( &replyport, 0, sizeof( replyport ) );
 
         replyport.mp_Node.ln_Type = NT_MSGPORT;
         replyport.mp_Flags = PA_SIGNAL;
@@ -1640,7 +1645,7 @@ Class *makeCharMapConClass(struct ConsoleBase *ConsoleDevice)
         sizeof(struct charmapcondata), 0UL);
     if (cl)
     {
-        cl->cl_Dispatcher.h_Entry = (APTR) dispatch_charmapconclass;
+        cl->cl_Dispatcher.h_Entry = (ULONG (*)()) dispatch_charmapconclass;
         cl->cl_Dispatcher.h_SubEntry = NULL;
 
         cl->cl_UserData = (IPTR) ConsoleDevice;

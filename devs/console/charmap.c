@@ -69,14 +69,14 @@ VOID charmap_resize(struct ConsoleBase *ConsoleDevice, struct charmap_line *line
         if (newsize > size)
         {
             for (i = 0; i < CHARMAP_PLANES; i++)
-                SetMem(line->plane[i] + size, 0, newsize - size);
+                memset(CM_PLANE(line, i) + size, 0, newsize - size);
         }
         line->size = newsize;
         return;
     }
 
     for (i = 0; i < CHARMAP_PLANES; i++)
-        old[i] = line->plane[i];
+        old[i] = CM_PLANE(line, i);
 
     if (newsize)
     {
@@ -101,8 +101,8 @@ VOID charmap_resize(struct ConsoleBase *ConsoleDevice, struct charmap_line *line
         /* The arrays follow each other in the one allocation */
         for (i = 0; i < CHARMAP_PLANES; i++)
         {
-            line->plane[i] = buffer;
-            SetMem(buffer, 0, newsize);
+            CM_PLANE(line, i) = buffer;
+            memset(buffer, 0, newsize);
             buffer += newcapacity;
         }
         line->size = newsize;
@@ -111,15 +111,15 @@ VOID charmap_resize(struct ConsoleBase *ConsoleDevice, struct charmap_line *line
     else
     {
         for (i = 0; i < CHARMAP_PLANES; i++)
-            line->plane[i] = 0;
+            CM_PLANE(line, i) = 0;
         line->size = 0;
         line->capacity = 0;
     }
 
     for (i = 0; i < CHARMAP_PLANES; i++)
     {
-        if (old[i] && line->plane[i])
-            memcpy(line->plane[i], old[i], size);
+        if (old[i] && CM_PLANE(line, i))
+            memcpy(CM_PLANE(line, i), old[i], size);
     }
 
     /* text is the start of the old allocation */
