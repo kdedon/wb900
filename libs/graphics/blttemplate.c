@@ -17,21 +17,17 @@ struct bt_render_data {
     WORD   srcx;
 };
 
-static ULONG blttemplate_render(APTR btr_data, WORD srcx, WORD srcy,
+static void blttemplate_render(APTR btr_data, WORD srcx, WORD srcy,
                                 struct BitMap *bm, struct Rectangle *rect,
                                 struct GfxPens *pens, struct GfxBase *GfxBase)
 {
     struct bt_render_data *btrd = btr_data;
-    WORD                   width  = rect->MaxX - rect->MinX + 1;
-    WORD                   height = rect->MaxY - rect->MinY + 1;
     WORD                   x = srcx + btrd->srcx;
     UBYTE                 *template = btrd->template + btrd->modulo * srcy;
 
     /* INVERSVID in the pens' draw mode inverts the template */
     pens->gp_Ptrn = NULL;
     GFX_DRIVER(bm)->gd_Template(bm, rect, template, x, btrd->modulo, pens);
-
-    return (ULONG)width * height;
 }
 
 /*****************************************************************************

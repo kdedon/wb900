@@ -1,6 +1,6 @@
 # Requested MWC compiler changes
 
-Target: commodore-900-toolchain, cc0 front end (cc1 where noted). Motivation: HAZARDS.md. Each later ask's heading gives its status; 13 is open.
+Target: commodore-900-toolchain, cc0 front end (cc1 where noted). Motivation: HAZARDS.md. Each later ask's heading gives its status; 13, 17 and 18 are open.
 
 1–4 landed on toolchain main as 4bf4702, 2026-11-14 (prototypes bbcf7d6, long switch 8a9a078, `//` 20be671, mixed declarations 5027c09). Existing code stays byte-identical; native and host builds match.
 
@@ -213,6 +213,25 @@ struct S { char readonly; };	/* cc0: class not allowed in structure body */
 ```
 
 cc0 is built with `READONLY`, making `readonly` (and `alien` with `ALIEN`) a storage class; standard C has neither. Not blocking: libs/asl renamed AROS's listview field `isreadonly`. Expected: both are ordinary identifiers.
+
+## 17. Wrong code: `long` with `unsigned int` is unsigned (opened 2026-11-15; landed in toolchain cd3e7d4)
+
+```c
+long h(long dx, unsigned c) { return dx / c; }		/* h(-100, 49) is not -2 */
+long m(long dx) { return (dx * 0xFFFF) / 7L; }		/* m(-1) is not -9362 */
+```
+
+With a 16-bit int, C89 converts the `unsigned int` to `long`, which holds all its values, so both are signed. cc2 divides unsigned (no EXTSL before DIVL; `long / 7L` alone gets one). Not blocking: intuition's prop knob dragged past its container's start jumped to the far end; propgadgets.c now casts both operands to LONG.
+
+## 18. 16-bit multiply and divide go through the 32-bit instructions (opened 2026-11-15)
+
+```c
+unsigned short q(unsigned short a, unsigned short b) { return a / b; }
+long p(short a, short b) { return (long)a * b; }
+unsigned long u(unsigned short a, unsigned short b) { return (unsigned long)a * b; }
+```
+
+cc2 gives `q` a DIVL (zero-extended to 64 bits, about 740 clocks) and `p` and `u` a MULTL (about 300), where DIV (32 by 16, about 107) and MULT (16 by 16 to 32, about 70) give the same result: for `p` always, for `u` and `q` when the operands are under 32768 or the code corrects for the sign. Row offsets (`(ULONG)y * BytesPerRow`) and line steps in graphics.library spent 10-20% of a line's setup there. Not blocking: libs/graphics/gfxasm.s has `gfx_MulW` and `gfx_MulDiv`. Expected: MULT for a product of two 16-bit operands widened to long, and DIV where the divisor and quotient are known to fit.
 
 ## Out of scope (handled by the converter or by hand)
 

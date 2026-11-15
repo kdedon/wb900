@@ -3,8 +3,9 @@
 / never crosses a 64 KB segment: the callers split rows there, so only
 / the offset words step.  r6-r13 are the caller's and are saved.
 
-	.globl	gfx_FillRows_, gfx_FillRect_, gfx_TmplRows_, gfx_CopyRows_, gfx_ShiftRows_
-	.globl	gfx_LineRun_, gfx_WCopy_, gfx_Bits_
+	.globl	gfx_FillRows_, gfx_FillRect_, gfx_TmplRows_, gfx_TmplRows1_
+	.globl	gfx_CopyRows_, gfx_ShiftRows_
+	.globl	gfx_LineRun_, gfx_WCopy_, gfx_Bits_, gfx_MulW_, gfx_MulDiv_, gfx_Glyphs_, gfx_FastChars_
 
 	.shri
 
@@ -297,14 +298,15 @@ wrmw:
 	ld	(rr2), r0
 9:	ret
 
-/ gfx_TmplRows(job): rows of a template, job (gfxformat.c) the words
+/ gfx_TmplRows(job): rows of a template at 4 bits a pixel, job
+/ (gfxformat.c) the words
 /  0 d (long)	4 dstep	6 rows	8 src (long)	12 srcmod
 /  14 tb	16 n	18 f	20 b	22 m	24 lm	26 rm
 /  28 mode	30 nib (long)
 / d, rows and src step through the rows.  Each row's template words
 / are the bits from bit tb (-15 on) of src, read up to the byte after
-/ the last: with nib NULL (1 bit a pixel) one a word of d, else 16 a
-/ group of 4 words, each 8 bits looked up in nib's longs.  Then n words
+/ the last, 16 a group of 4 words, each 8 bits looked up in nib's
+/ longs.  Then n words
 / of d, the first under lm and the last under rm, from the template
 / words t under the mask m by mode: 0 JAM2, ((f & t) ^ b) (f is APen ^
 / BPen); 1 JAM1, f where t; 4 complement where t; with 2 added, where
@@ -327,12 +329,9 @@ tr1:	ldl	rr12, rr14(128)
 	ld	rr12(6), r0
 / the template words: r1 of them from tb (r9) of src (rr4) to rr2
 	ld	r1, rr12(16)
-	ldl	rr6, rr12(30)
-	test	r6
-	jr	z, tr2
 	add	r1, $3
 	srl	r1, $2
-tr2:	ld	r9, rr12(14)
+	ld	r9, rr12(14)
 	ldl	rr4, rr12(8)
 	ldl	rr2, rr14
 	test	r9
@@ -359,12 +358,10 @@ tr4:	ldb	rh6, rl0
 	inc	r3, $2
 	inc	r5, $2
 	djnz	r1, tr4
-/ chunky: each template byte to 2 words of masks through nib (rr6)
+/ each template byte to 2 words of masks through nib (rr6)
 tr5:	ldl	rr12, rr14(128)
 	ldl	rr6, rr12(30)
 	ldl	rr4, rr14
-	test	r6
-	jp	z, tr7
 	ld	r0, rr12(28)
 	test	r0
 	jr	nz, tr60
@@ -486,7 +483,7 @@ tr6:	ld	r0, (rr4)
 	ldl	rr4, rr14
 	add	r5, $64
 / the words of d from the template words at rr4
-tr7:	ldl	rr2, rr12(0)
+	ldl	rr2, rr12(0)
 	ld	r1, rr12(16)
 	ld	r6, rr12(18)
 	ld	r7, rr12(20)
@@ -580,6 +577,311 @@ tr8:	ldl	rr12, rr14(128)
 	ldl	rr12(8), rr2
 	jp	tr1
 tr9:	add	r15, $136
+	ldm	r6, (rr14), $8
+	add	r15, $16
+	ret
+
+/ gfx_TmplRows1(job): gfx_TmplRows for 1 bit a pixel, a word of d from
+/ each template word as it is read.  The frame: 0 d, 4 src, 8 dstep,
+/ 10 srcmod, 12 rows, 14 n, 16 the first word's mask, 18 m, 20 the last
+/ word's, 22 tb when negative (the first word from 2 bytes), 24 the
+/ byte of the template words after the first, 26 the mode: 0 JAM2 under
+/ all of m, 1 JAM2, 2 JAM1, 3 complement.  r8 is the template words'
+/ shift, r10 f and r11 b, or with JAM1 and complement all 1s for a
+/ template taken where not set.
+gfx_TmplRows1_:
+	sub	r15, $16
+	ldm	(rr14), r6, $8
+	sub	r15, $28
+	ldl	rr12, rr14(48)
+	ld	r0, rr12(6)
+	test	r0
+	jp	z, t10
+	ld	rr14(12), r0
+	ldl	rr2, rr12(0)
+	ldl	rr14(0), rr2
+	ldl	rr2, rr12(8)
+	ldl	rr14(4), rr2
+	ld	r0, rr12(4)
+	ld	rr14(8), r0
+	ld	r0, rr12(12)
+	ld	rr14(10), r0
+	ld	r9, rr12(16)
+	ld	rr14(14), r9
+	ld	r1, rr12(22)
+	ld	rr14(18), r1
+	ld	r2, rr12(26)
+	and	r2, r1
+	ld	rr14(20), r2
+	ld	r0, rr12(24)
+	and	r0, r1
+	cp	r9, $1
+	jr	ne, 1f
+	and	r0, r2
+1:	ld	rr14(16), r0
+	ld	r0, rr12(14)
+	clr	r2
+	test	r0
+	jr	pl, 2f
+	ld	r2, r0
+	add	r0, $16
+2:	ld	rr14(22), r2
+	ld	r8, r0
+	and	r8, $7
+	srl	r0, $3
+	ld	rr14(24), r0
+	ld	r10, rr12(18)
+	ld	r11, rr12(20)
+	ld	r0, rr12(28)
+	clr	r2
+	test	r0
+	jr	nz, 3f
+	cp	r1, $0xffff
+	jr	eq, 5f
+	inc	r2, $1
+	jr	5f
+3:	ld	r2, $2
+	bit	r0, $2
+	jr	z, 4f
+	inc	r2, $1
+4:	clr	r11
+	bit	r0, $1
+	jr	z, 5f
+	com	r11
+5:	ld	rr14(26), r2
+/ a row: the first template word
+t1:	ldl	rr2, rr14(0)
+	ldl	rr4, rr14(4)
+	ld	r9, rr14(14)
+	ld	r12, rr14(16)
+	ld	r1, rr14(22)
+	test	r1
+	jr	z, 6f
+	ldb	rh6, (rr4)
+	ldb	rl6, rr4(1)
+	sdl	r6, r1
+	ld	r1, rr14(24)
+	add	r5, r1
+	ldb	rl0, (rr4)
+	jr	7f
+6:	ld	r1, rr14(24)
+	add	r5, r1
+	ldb	rl0, (rr4)
+	ldb	rh6, rl0
+	ldb	rl6, rr4(1)
+	ldb	rl0, rr4(2)
+	ldb	rh7, rl0
+	sdll	rr6, r8
+	inc	r5, $2
+7:	ld	r1, rr14(26)
+	test	r1
+	jr	z, t2fa
+	dec	r1, $1
+	jp	z, t2a
+	dec	r1, $1
+	jp	z, t1a
+	jp	tca
+/ JAM2 under all of m: the middle words are only written
+t2fa:
+	and	r6, r10
+	xor	r6, r11
+	ld	r13, (rr2)
+	xor	r6, r13
+	and	r6, r12
+	xor	r13, r6
+	ld	(rr2), r13
+	inc	r3, $2
+	dec	r9, $1
+	jp	z, t9
+	ld	r12, rr14(18)
+	dec	r9, $1
+	jr	z, t2fc
+t2fb:
+	ldb	rh6, rl0
+	ldb	rl6, rr4(1)
+	ldb	rl0, rr4(2)
+	ldb	rh7, rl0
+	sdll	rr6, r8
+	inc	r5, $2
+	and	r6, r10
+	xor	r6, r11
+	ld	(rr2), r6
+	inc	r3, $2
+	djnz	r9, t2fb
+t2fc:	ld	r12, rr14(20)
+	ldb	rh6, rl0
+	ldb	rl6, rr4(1)
+	ldb	rl0, rr4(2)
+	ldb	rh7, rl0
+	sdll	rr6, r8
+	inc	r5, $2
+	and	r6, r10
+	xor	r6, r11
+	ld	r13, (rr2)
+	xor	r6, r13
+	and	r6, r12
+	xor	r13, r6
+	ld	(rr2), r13
+	inc	r3, $2
+	jp	t9
+/ JAM2
+t2a:
+	and	r6, r10
+	xor	r6, r11
+	ld	r13, (rr2)
+	xor	r6, r13
+	and	r6, r12
+	xor	r13, r6
+	ld	(rr2), r13
+	inc	r3, $2
+	dec	r9, $1
+	jp	z, t9
+	ld	r12, rr14(18)
+	dec	r9, $1
+	jr	z, t2c
+t2b:
+	ldb	rh6, rl0
+	ldb	rl6, rr4(1)
+	ldb	rl0, rr4(2)
+	ldb	rh7, rl0
+	sdll	rr6, r8
+	inc	r5, $2
+	and	r6, r10
+	xor	r6, r11
+	ld	r13, (rr2)
+	xor	r6, r13
+	and	r6, r12
+	xor	r13, r6
+	ld	(rr2), r13
+	inc	r3, $2
+	djnz	r9, t2b
+t2c:	ld	r12, rr14(20)
+	ldb	rh6, rl0
+	ldb	rl6, rr4(1)
+	ldb	rl0, rr4(2)
+	ldb	rh7, rl0
+	sdll	rr6, r8
+	inc	r5, $2
+	and	r6, r10
+	xor	r6, r11
+	ld	r13, (rr2)
+	xor	r6, r13
+	and	r6, r12
+	xor	r13, r6
+	ld	(rr2), r13
+	inc	r3, $2
+	jp	t9
+/ JAM1
+t1a:
+	xor	r6, r11
+	and	r6, r12
+	jr	z, t1s1
+	ld	r13, (rr2)
+	ld	r1, r13
+	xor	r1, r10
+	and	r1, r6
+	xor	r13, r1
+	ld	(rr2), r13
+t1s1:	inc	r3, $2
+	dec	r9, $1
+	jp	z, t9
+	ld	r12, rr14(18)
+	dec	r9, $1
+	jr	z, t1c
+t1b:
+	ldb	rh6, rl0
+	ldb	rl6, rr4(1)
+	ldb	rl0, rr4(2)
+	ldb	rh7, rl0
+	sdll	rr6, r8
+	inc	r5, $2
+	xor	r6, r11
+	and	r6, r12
+	jr	z, t1s2
+	ld	r13, (rr2)
+	ld	r1, r13
+	xor	r1, r10
+	and	r1, r6
+	xor	r13, r1
+	ld	(rr2), r13
+t1s2:	inc	r3, $2
+	djnz	r9, t1b
+t1c:	ld	r12, rr14(20)
+	ldb	rh6, rl0
+	ldb	rl6, rr4(1)
+	ldb	rl0, rr4(2)
+	ldb	rh7, rl0
+	sdll	rr6, r8
+	inc	r5, $2
+	xor	r6, r11
+	and	r6, r12
+	jr	z, t1s3
+	ld	r13, (rr2)
+	ld	r1, r13
+	xor	r1, r10
+	and	r1, r6
+	xor	r13, r1
+	ld	(rr2), r13
+t1s3:	inc	r3, $2
+	jp	t9
+/ complement
+tca:
+	xor	r6, r11
+	and	r6, r12
+	jr	z, tcs1
+	ld	r13, (rr2)
+	xor	r13, r6
+	ld	(rr2), r13
+tcs1:	inc	r3, $2
+	dec	r9, $1
+	jp	z, t9
+	ld	r12, rr14(18)
+	dec	r9, $1
+	jr	z, tcc
+tcb:
+	ldb	rh6, rl0
+	ldb	rl6, rr4(1)
+	ldb	rl0, rr4(2)
+	ldb	rh7, rl0
+	sdll	rr6, r8
+	inc	r5, $2
+	xor	r6, r11
+	and	r6, r12
+	jr	z, tcs2
+	ld	r13, (rr2)
+	xor	r13, r6
+	ld	(rr2), r13
+tcs2:	inc	r3, $2
+	djnz	r9, tcb
+tcc:	ld	r12, rr14(20)
+	ldb	rh6, rl0
+	ldb	rl6, rr4(1)
+	ldb	rl0, rr4(2)
+	ldb	rh7, rl0
+	sdll	rr6, r8
+	inc	r5, $2
+	xor	r6, r11
+	and	r6, r12
+	jr	z, tcs3
+	ld	r13, (rr2)
+	xor	r13, r6
+	ld	(rr2), r13
+tcs3:	inc	r3, $2
+	jp	t9
+/ the next row
+t9:	ldl	rr2, rr14(0)
+	ld	r0, rr14(8)
+	add	r3, r0
+	ldl	rr14(0), rr2
+	ldl	rr4, rr14(4)
+	ld	r0, rr14(10)
+	add	r5, r0
+	ldl	rr14(4), rr4
+	ld	r0, rr14(12)
+	dec	r0, $1
+	ld	rr14(12), r0
+	jp	nz, t1
+t10:	add	r15, $28
 	ldm	r6, (rr14), $8
 	add	r15, $16
 	ret
@@ -966,3 +1268,130 @@ gfx_Bits_:
 	ld	r8, rr14(4)
 	add	r15, $6
 9:	ret
+
+/ gfx_MulW(a, b): a * b, both 0-32767, as a long.
+gfx_MulW_:
+	ld	r1, rr14(4)
+	ld	r3, rr14(6)
+	mult	rr0, r3
+	ret
+
+/ gfx_MulDiv(a, b, c, d, rem): (a * b + c) / d, a and b 0-32767, the sum
+/ not negative, d 1-32767 and the quotient under 32768; the remainder to
+/ rem unless it is NULL.
+gfx_MulDiv_:
+	ld	r1, rr14(4)
+	ld	r3, rr14(6)
+	mult	rr0, r3
+	ldl	rr2, rr14(8)
+	addl	rr0, rr2
+	ld	r3, rr14(12)
+	div	rr0, r3
+	ldl	rr2, rr14(14)
+	testl	rr2
+	jr	z, 1f
+	ld	(rr2), r0
+1:	ret
+
+/ gfx_FastChars(job): whether each glyph of the text of a gfx_Glyphs
+/ job is 8 wide from a byte, and with the kerning at 28 and the spacing
+/ at 32 (NULL: none), unkerned and 8 apart.
+gfx_FastChars_:
+	sub	r15, $16
+	ldm	(rr14), r6, $8
+	ldl	rr12, rr14(20)
+	ldl	rr8, rr12(4)
+	ld	r7, rr12(16)
+	ld	r6, rr12(24)
+	ldl	rr10, rr12(12)
+	test	r7
+	jr	z, 8f
+1:	ldb	rl0, (rr8)
+	inc	r9, $1
+	cpb	rl0, rh6
+	jr	ult, 2f
+	cpb	rl0, rl6
+	jr	ugt, 2f
+	subb	rl0, rh6
+	clrb	rh0
+	ld	r1, r0
+	jr	3f
+2:	ld	r1, rr12(26)
+3:	add	r1, r1
+	ld	r2, r1
+	add	r2, r2
+	ld	r0, rr10(r2)
+	and	r0, $7
+	jr	nz, 7f
+	inc	r2, $2
+	ld	r0, rr10(r2)
+	cp	r0, $8
+	jr	ne, 7f
+	ldl	rr2, rr12(28)
+	testl	rr2
+	jr	z, 4f
+	ld	r0, rr2(r1)
+	test	r0
+	jr	nz, 7f
+4:	ldl	rr2, rr12(32)
+	testl	rr2
+	jr	z, 5f
+	ld	r0, rr2(r1)
+	cp	r0, $8
+	jr	ne, 7f
+5:	djnz	r7, 1b
+8:	ld	r1, $1
+	jr	9f
+7:	clr	r1
+9:	ldm	r6, (rr14), $8
+	add	r15, $16
+	ret
+
+/ gfx_Glyphs(job): the template of a fixed 8-pixel font, a glyph a byte
+/ column (text.c).  The job's words: 0 the template, 4 the text, 8 the
+/ font data, 12 its locations, 16 the count, 18 bpr, 20 rows, 22 modulo,
+/ 24 lo << 8 | hi, 26 the glyph of a character outside them.
+gfx_Glyphs_:
+	sub	r15, $16
+	ldm	(rr14), r6, $8
+	ldl	rr12, rr14(20)
+	ldl	rr10, rr12(0)
+	ldl	rr8, rr12(4)
+	ld	r7, rr12(16)
+	test	r7
+	jr	z, 9f
+/ the glyph's index, times 4
+1:	ldl	rr12, rr14(20)
+	ld	r6, rr12(24)
+	ldb	rl0, (rr8)
+	inc	r9, $1
+	cpb	rl0, rh6
+	jr	ult, 2f
+	cpb	rl0, rl6
+	jr	ugt, 2f
+	subb	rl0, rh6
+	clrb	rh0
+	ld	r1, r0
+	jr	3f
+2:	ld	r1, rr12(26)
+3:	sll	r1, $2
+/ its bits from bit 0 of a byte: rr2, down the rows to rr4
+	ldl	rr2, rr12(12)
+	ld	r0, rr2(r1)
+	srl	r0, $3
+	ldl	rr2, rr12(8)
+	add	r3, r0
+	ldl	rr4, rr10
+	ld	r1, rr12(20)
+	ld	r6, rr12(18)
+	ld	r12, rr12(22)
+4:	ldb	rl0, (rr2)
+	ldb	(rr4), rl0
+	add	r3, r12
+	add	r5, r6
+	djnz	r1, 4b
+	inc	r11, $1
+	djnz	r7, 1b
+9:	ldm	r6, (rr14), $8
+	add	r15, $16
+	ret

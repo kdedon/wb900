@@ -18,7 +18,7 @@ struct draw_render_data {
     UWORD ptrn;     /* the line pattern, bit 15 for (x1, y1) */
 };
 
-static ULONG draw_render(APTR draw_rd, WORD srcx, WORD srcy,
+static void draw_render(APTR draw_rd, WORD srcx, WORD srcy,
                          struct BitMap *bm, struct Rectangle *rect,
                          struct GfxPens *pens, struct GfxBase *GfxBase)
 {
@@ -29,8 +29,6 @@ static ULONG draw_render(APTR draw_rd, WORD srcx, WORD srcy,
                             drd->x2 + rect->MinX - srcx,
                             drd->y2 + rect->MinY - srcy,
                             drd->ptrn, pens);
-
-    return 0;
 }
 
 /*****************************************************************************

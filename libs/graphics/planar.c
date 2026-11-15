@@ -58,20 +58,57 @@ static void pl_WritePixel(struct BitMap *bm, WORD x, WORD y,
 
 static void pl_ReadRow(struct BitMap *bm, WORD x, WORD y, UWORD n, UBYTE *pix)
 {
-    while (n-- > 0)
-        *pix++ = pl_ReadPixel(bm, x++, y);
+    ULONG o = (ULONG)y * bm->BytesPerRow + (x >> 3);
+    UBYTE first = 0x80 >> (x & 7), bit, v, *s;
+    UWORD i, k, j;
+    PLANEPTR pl;
+
+    for (k = 0; k < n; k++)
+        pix[k] = 0;
+    for (i = 0; i < bm->Depth; i++) {
+        pl = bm->Planes[i];
+        v = 1 << i;
+        if (pl == NULL)
+            continue;
+        if (pl == (PLANEPTR)-1) {
+            for (k = 0; k < n; k++)
+                pix[k] |= v;
+            continue;
+        }
+        s = pl_at(bm, i, o);
+        for (k = 0, j = 0, bit = first; k < n; k++, bit >>= 1) {
+            if (bit == 0) {
+                bit = 0x80;
+                s = pl_at(bm, i, o + ++j);
+            }
+            if (*s & bit)
+                pix[k] |= v;
+        }
+    }
 }
 
 static void pl_WriteRow(struct BitMap *bm, WORD x, WORD y, UWORD n,
     const UBYTE *pix, UBYTE mask)
 {
-    struct GfxPens p;
+    ULONG o = (ULONG)y * bm->BytesPerRow + (x >> 3);
+    UBYTE first = 0x80 >> (x & 7), bit, v, *d;
+    UWORD i, k, j;
 
-    p.gp_DrMd = JAM1;
-    p.gp_Mask = mask;
-    while (n-- > 0) {
-        p.gp_APen = *pix++;
-        pl_WritePixel(bm, x++, y, &p);
+    for (i = 0; i < bm->Depth; i++) {
+        v = 1 << i;
+        if (!(mask & v) || NOPLANE(bm->Planes[i]))
+            continue;
+        d = pl_at(bm, i, o);
+        for (k = 0, j = 0, bit = first; k < n; k++, bit >>= 1) {
+            if (bit == 0) {
+                bit = 0x80;
+                d = pl_at(bm, i, o + ++j);
+            }
+            if (pix[k] & v)
+                *d |= bit;
+            else
+                *d &= ~bit;
+        }
     }
 }
 

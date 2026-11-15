@@ -47,6 +47,7 @@ struct WorkbenchBase
     struct Library          LibNode;
 
     struct MsgPort          wb_HandlerPort;            /* The handler's message port */
+    struct MsgPort          wb_AppReplyPort;           /* AppMessages come back here */
     struct MsgPort         *wb_WorkbenchPort;          /* The workbench application's message port */
     struct SignalSemaphore  wb_WorkbenchPortSemaphore; /* Arbitrates initializetion access to the port above */
     

@@ -14,4 +14,8 @@
 #define HRMONO_1024_ID		(HR_MONITOR_ID | 0x0100)	/* 1024x1024x1 */
 #define HRCOLOR_ID		(HR_MONITOR_ID | 0x0201)	/* 640x400x4 RGBI */
 
+/* The LC card: modes its driver programs */
+#define LC_MONITOR_ID		0x00110000L
+#define LCMONO_200_ID		(LC_MONITOR_ID | 0x0000)	/* 640x200x1 */
+
 #endif

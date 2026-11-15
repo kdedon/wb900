@@ -285,7 +285,7 @@ struct clipblit_render_data {
     WORD                         yDest;
 };
 
-static ULONG clipblit_render(APTR data, WORD srcx, WORD srcy,
+static void clipblit_render(APTR data, WORD srcx, WORD srcy,
                              struct BitMap *srcbm, struct Rectangle *rect,
                              struct GfxPens *pens, struct GfxBase *GfxBase)
 {
@@ -296,8 +296,6 @@ static ULONG clipblit_render(APTR data, WORD srcx, WORD srcy,
                       rect->MaxX - rect->MinX + 1,
                       rect->MaxY - rect->MinY + 1,
                       crd->minterm);
-
-    return 0;
 }
 
 void internal_ClipBlit(struct RastPort *srcRP,

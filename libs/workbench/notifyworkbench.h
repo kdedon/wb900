@@ -15,7 +15,8 @@ enum WBNOTIFY_Action
 
 enum WBNOTIFY_Target
 {
-    WBNOTIFY_AppIcon
+    WBNOTIFY_AppIcon,
+    WBNOTIFY_AppMenuItem
 };
 
 BOOL NotifyWorkbench(enum WBNOTIFY_Action action, enum WBNOTIFY_Target target, struct WorkbenchBase * WorkbenchBase);

@@ -30,4 +30,7 @@ UnregisterWorkbench(messageport)(struct MsgPort *) BOOL @Workbench_24
 UpdateWorkbenchObjectA(name,type,tags)(STRPTR,LONG,struct TagItem *) BOOL @Workbench_25
 SendAppWindowMessage(win,numfiles,files,windowclass,mousex,mousey,seconds,micros)(struct Window *,ULONG,char **,UWORD,WORD,WORD,ULONG,ULONG) BOOL @Workbench_26
 GetNextAppIcon(lastdiskobj,text)(struct DiskObject *,char *) struct DiskObject * @Workbench_27
+SendAppIconMessage(diskobj,numfiles,files,class,mousex,mousey,seconds,micros)(struct DiskObject *,ULONG,char **,UWORD,WORD,WORD,ULONG,ULONG) BOOL @Workbench_28
+GetNextAppMenuItem(last,text,key)(struct AppMenuItem *,char *,char *) struct AppMenuItem * @Workbench_29
+SendAppMenuItemMessage(item,numfiles,files,seconds,micros)(struct AppMenuItem *,ULONG,char **,ULONG,ULONG) BOOL @Workbench_30
 ##end

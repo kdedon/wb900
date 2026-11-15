@@ -35,6 +35,7 @@ struct HandlerContext
     ULONG           hc_RelayReplySignal;   /* Signal bit field for the above */
     struct MsgPort *hc_IntuitionPort;      /* Messages from Intuition */
     ULONG           hc_IntuitionSignal;    /* Signal bit field for the above */
+    ULONG           hc_AppReplySignal;     /* Replied AppMessages */
     
     ULONG           hc_Signals;            /* Mask from all signals above */
     struct List    hc_HeldRelayMsgs;        /* Relay messages stored here if no workbench application is available */
@@ -153,6 +154,15 @@ LONG WorkbenchHandler(STRPTR args, ULONG argsLength)
             
         }
         
+        /*== AppMessages the applications replied ==========================*/
+        if (signals & hc->hc_AppReplySignal)
+        {
+            struct AppMessage *am;
+
+            while ((am = (struct AppMessage *)GetMsg(&WorkbenchBase->wb_AppReplyPort)) != NULL)
+                FreeAppMessage(am);
+        }
+
         /*== Messages from Intuition =======================================*/
         if (signals & hc->hc_IntuitionSignal)
         {
@@ -185,6 +195,7 @@ static BOOL __Initialize_WB
            (hc->hc_StartupReplyPort   = CreateMsgPort()) != NULL
         && (hc->hc_RelayReplyPort = CreateMsgPort()) != NULL
         && (hc->hc_IntuitionPort      = CreateMsgPort()) != NULL
+        && (WorkbenchBase->wb_AppReplyPort.mp_SigBit = AllocSignal(-1)) != (UBYTE)-1
     )
     {
         NewList(&hc->hc_HeldRelayMsgs);
@@ -197,8 +208,10 @@ static BOOL __Initialize_WB
         hc->hc_StartupReplySignal = 1UL << hc->hc_StartupReplyPort->mp_SigBit;
         hc->hc_RelayReplySignal   = 1UL << hc->hc_RelayReplyPort->mp_SigBit;
         hc->hc_IntuitionSignal    = 1UL << hc->hc_IntuitionPort->mp_SigBit;
+        hc->hc_AppReplySignal     = 1UL << WorkbenchBase->wb_AppReplyPort.mp_SigBit;
         
         hc->hc_Signals = hc->hc_CommandSignal
+                       | hc->hc_AppReplySignal
                        | hc->hc_StartupReplySignal
                        | hc->hc_RelayReplySignal
                        | hc->hc_IntuitionSignal;
@@ -206,9 +219,11 @@ static BOOL __Initialize_WB
         /* We're now ready to accept messages ------------------------------*/
         WorkbenchBase->wb_HandlerPort.mp_SigTask = FindTask(NULL);
         WorkbenchBase->wb_HandlerPort.mp_Flags   = PA_SIGNAL;
+        WorkbenchBase->wb_AppReplyPort.mp_SigTask = FindTask(NULL);
+        WorkbenchBase->wb_AppReplyPort.mp_Flags  = PA_SIGNAL;
         
         /* Make sure to process messages that arrived before we were ready -*/
-        Signal(FindTask(NULL), SIGBREAKF_CTRL_F);
+        Signal(FindTask(NULL), SIGBREAKF_CTRL_F | hc->hc_AppReplySignal);
         
         /* Register ourselves with Intuition -------------------------------*/
         AlohaWorkbench(hc->hc_IntuitionPort);

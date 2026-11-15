@@ -56,7 +56,8 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
  * (pidx + r) & pmask of tab; with a all 0 nothing is read.
  * gfx_FillRect: n words of rows rows bpr bytes apart, d = (d & a) ^ x,
  * the first word under lm and the last under rm (n 1: lm only).
- * gfx_TmplRows: the rows of a template by job (gfxformat.c).
+ * gfx_TmplRows: the rows of a template by job (gfxformat.c), 4 bits a
+ * pixel; gfx_TmplRows1 the same at 1 bit a pixel.
  * gfx_CopyRows: n words of rows rows, the first under lm and the last
  * under rm, rows dstep and sstep bytes apart, upwards or (dir < 0)
  * downwards along a row.  gfx_ShiftRows: the same with each word from
@@ -72,6 +73,7 @@ void gfx_FillRows(UWORD *d, UWORD n, UWORD rows, UWORD bpr,
 void gfx_FillRect(UWORD *d, UWORD n, UWORD rows, UWORD bpr, UWORD a,
     UWORD x, UWORD lm, UWORD rm);
 void gfx_TmplRows(APTR job);
+void gfx_TmplRows1(APTR job);
 void gfx_CopyRows(UWORD *d, const UWORD *s, UWORD n, UWORD rows,
     WORD dstep, WORD sstep, UWORD lm, UWORD rm, WORD dir);
 void gfx_ShiftRows(UWORD *d, const UWORD *s, UWORD n, UWORD rows,
@@ -79,6 +81,17 @@ void gfx_ShiftRows(UWORD *d, const UWORD *s, UWORD n, UWORD rows,
 void gfx_LineRun(APTR job, WORD xstep, UWORD count);
 void gfx_WCopy(UWORD *d, const UWORD *s, UWORD n);
 void gfx_Bits(UWORD *out, const UBYTE *s, UWORD sh, UWORD n);
+
+/* a * b, both 0-32767; (a * b + c) / d with a, b and d 0-32767, the
+   sum not negative and the quotient under 32768, its remainder to rem
+   unless NULL */
+ULONG gfx_MulW(UWORD a, UWORD b);
+UWORD gfx_MulDiv(UWORD a, UWORD b, LONG c, UWORD d, UWORD *rem);
+
+/* The template of a fixed 8-pixel font by job (text.c); whether its
+   glyphs are all of that font's kind */
+void gfx_Glyphs(APTR job);
+BOOL gfx_FastChars(APTR job);
 
 /* The minterm's upper nibble on source b and destination c */
 #define MINTERM(mt, b, c) \

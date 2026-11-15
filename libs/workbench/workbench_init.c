@@ -65,6 +65,9 @@ static struct Library *wbinit(struct Library *lib, APTR seg, APTR sysbase)
     WorkbenchBase->wb_HandlerPort.mp_SigBit  = SIGBREAKB_CTRL_F;
     WorkbenchBase->wb_HandlerPort.mp_Flags   = PA_IGNORE;
     NewList(&(WorkbenchBase->wb_HandlerPort.mp_MsgList));
+    WorkbenchBase->wb_AppReplyPort.mp_Node.ln_Type = NT_MSGPORT;
+    WorkbenchBase->wb_AppReplyPort.mp_Flags = PA_IGNORE;
+    NewList(&(WorkbenchBase->wb_AppReplyPort.mp_MsgList));
 
     /* Initialize miscellanous variables -----------------------------------*/
     WorkbenchBase->wb_DefaultStackSize = 2048;

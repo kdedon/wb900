@@ -118,6 +118,12 @@ struct GfxDriver
     void	(*gd_FreeDisplay)(struct GfxDriver *gd, struct BitMap *bm);
     /* Show bm (from gd_AllocDisplay), or give the display up (NULL) */
     BOOL	(*gd_Show)(struct GfxDriver *gd, struct BitMap *bm);
+    /*
+     * A display drawn in RAM: put on the display what drawing into bm
+     * changed, once a drawing call and any pointer update are done.
+     * NULL: drawing shows at once.
+     */
+    void	(*gd_Flush)(struct GfxDriver *gd, struct BitMap *bm);
 };
 
 /*

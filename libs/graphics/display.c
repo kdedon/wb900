@@ -28,6 +28,8 @@ struct GfxDriver *gfx_Display(struct GfxBase *GfxBase)
         FrameBufBase = OpenResource(FRAMEBUFNAME);
         if (FrameBufBase && GetFBInfo()->fbi_Card == FBC_HR)
             gb->drvlib = OpenLibrary("hr.gfxdriver", 0);
+        else if (FrameBufBase && GetFBInfo()->fbi_Card == FBC_LC)
+            gb->drvlib = OpenLibrary("lc.gfxdriver", 0);
         if (gb->drvlib)
         {
             gb->display = GFX_GETDRIVER(gb->drvlib, formats);

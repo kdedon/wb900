@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 /*
  * workbench.library: a registered Workbench port gets the handler's
- * messages for AppIcons, UpdateWorkbench() and drawers to open; an
- * AppWindow gets its AppMessage; and OpenWorkbenchObjectA() launches
+ * messages for AppIcons, AppMenuItems, UpdateWorkbench() and drawers to
+ * open; AppIcons, AppMenuItems and an AppWindow get their AppMessages;
+ * and OpenWorkbenchObjectA() launches
  * the Hello tool with a WBStartup message, which the tool replies when
  * it ends.
  */
@@ -88,35 +89,79 @@ static void expect(enum WBHM_Type type, LONG utype, char *name, char *what)
 	ReplyMsg((struct Message *)m);
 }
 
+/* The AppMessage of type on the port, replied; with its one file's name */
+static void appmsg(struct MsgPort *mp, UWORD type, IPTR id, LONG n, char *name,
+    char *what)
+{
+	struct AppMessage *am;
+	int i;
+
+	for (i = 0; i < 100 && (am = (struct AppMessage *)GetMsg(mp)) == NULL;
+	    i++)
+		Delay(1);
+	check(am != NULL && am->am_Type == type && am->am_ID == id &&
+	    am->am_NumArgs == n && (n == 0 ||
+	    ends((char *)am->am_ArgList[0].wa_Name, name)), what);
+	if (am != NULL)
+		ReplyMsg((struct Message *)am);
+}
+
 static void appicons(void)
 {
+	static char *files[] = { "SYS:Demos/Hello" };
 	struct DiskObject *icon = GetDefDiskObject(WBTOOL);
+	struct MsgPort *mp = CreateMsgPort();
 	struct AppIcon *ai;
 	char text[32];
 
-	ai = AddAppIconA(1, 2, "AppIcon", port, NULL, icon, NULL);
+	ai = AddAppIconA(1, 2, "AppIcon", mp, NULL, icon, NULL);
 	check(ai != NULL, "AddAppIconA");
 	expect(WBHM_TYPE_UPDATE, WBAPPICON, NULL, "AppIcon added");
 	check(GetNextAppIcon(NULL, text) == icon && ends(text, "AppIcon") &&
 	    GetNextAppIcon(icon, text) == NULL, "GetNextAppIcon");
+	check(SendAppIconMessage(icon, 0, NULL, AMCLASSICON_Open, 0, 0, 0, 0),
+	    "SendAppIconMessage");
+	appmsg(mp, AMTYPE_APPICON, 1, 0, NULL, "AppIcon opened");
+	check(SendAppIconMessage(icon, 1, files, 0, 0, 0, 0, 0),
+	    "SendAppIconMessage with a file");
+	appmsg(mp, AMTYPE_APPICON, 1, 1, "Hello", "file on the AppIcon");
 	check(RemoveAppIcon(ai), "RemoveAppIcon");
 	expect(WBHM_TYPE_UPDATE, WBAPPICON, NULL, "AppIcon removed");
 	check(GetNextAppIcon(NULL, text) == NULL, "no AppIcon");
+	check(!SendAppIconMessage(icon, 0, NULL, 0, 0, 0, 0, 0),
+	    "no message to a removed AppIcon");
 	FreeDiskObject(icon);
+	DeleteMsgPort(mp);
 }
 
 static void appmenus(void)
 {
+	static char *files[] = { "SYS:Demos/Hello" };
+	struct MsgPort *mp = CreateMsgPort();
 	struct AppMenuItem *m1, *m2;
 	struct TagItem t[2];
+	char text[APPMENUTEXT], key[2];
 
 	t[0].ti_Tag = WBAPPMENUA_CommandKeyString;	t[0].ti_Data = (IPTR)"K";
 	t[1].ti_Tag = TAG_DONE;
-	m1 = AddAppMenuItemA(1, 0, "One", port, t);
-	m2 = AddAppMenuItemA(2, 0, "Two", port, NULL);
+	m1 = AddAppMenuItemA(1, 0, "One", mp, t);
+	m2 = AddAppMenuItemA(2, 0, "Two", mp, NULL);
 	check(m1 != NULL && m2 != NULL, "AddAppMenuItemA");
+	expect(WBHM_TYPE_UPDATE, AMTYPE_APPMENUITEM, NULL, "AppMenuItem added");
+	expect(WBHM_TYPE_UPDATE, AMTYPE_APPMENUITEM, NULL, "AppMenuItem added");
+	check(GetNextAppMenuItem(NULL, text, key) == m1 && ends(text, "One") &&
+	    key[0] == 'K' && GetNextAppMenuItem(m1, text, key) == m2 &&
+	    ends(text, "Two") && key[0] == 0 &&
+	    GetNextAppMenuItem(m2, text, key) == NULL, "GetNextAppMenuItem");
+	check(SendAppMenuItemMessage(m2, 1, files, 0, 0),
+	    "SendAppMenuItemMessage");
+	appmsg(mp, AMTYPE_APPMENUITEM, 2, 1, "Hello", "AppMenuItem picked");
 	check(RemoveAppMenuItem(m2) && RemoveAppMenuItem(m1),
 	    "RemoveAppMenuItem");
+	expect(WBHM_TYPE_UPDATE, AMTYPE_APPMENUITEM, NULL, "AppMenuItem removed");
+	expect(WBHM_TYPE_UPDATE, AMTYPE_APPMENUITEM, NULL, "AppMenuItem removed");
+	check(GetNextAppMenuItem(NULL, text, key) == NULL, "no AppMenuItem");
+	DeleteMsgPort(mp);
 }
 
 /* The AppWindow's port: a process that checks one AppMessage */

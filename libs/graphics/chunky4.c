@@ -39,20 +39,32 @@ static void ch_WritePixel(struct BitMap *bm, WORD x, WORD y,
 
 static void ch_ReadRow(struct BitMap *bm, WORD x, WORD y, UWORD n, UBYTE *pix)
 {
-    while (n-- > 0)
-        *pix++ = ch_ReadPixel(bm, x++, y);
+    ULONG o = (ULONG)y * bm->BytesPerRow + (x >> 1);
+    UBYTE *s = ch_at(bm, o);
+
+    for (; n > 0; n--, x++) {
+        if (x & 1)
+            *pix++ = *s & 0xF;
+        else
+            *pix++ = *s >> 4;
+        if ((x & 1) && n > 1)
+            s = ch_at(bm, ++o);
+    }
 }
 
 static void ch_WriteRow(struct BitMap *bm, WORD x, WORD y, UWORD n,
     const UBYTE *pix, UBYTE mask)
 {
-    struct GfxPens p;
+    ULONG o = (ULONG)y * bm->BytesPerRow + (x >> 1);
+    UBYTE *d = ch_at(bm, o), m = mask & 0xF;
 
-    p.gp_DrMd = JAM1;
-    p.gp_Mask = mask;
-    while (n-- > 0) {
-        p.gp_APen = *pix++;
-        ch_WritePixel(bm, x++, y, &p);
+    for (; n > 0; n--, x++, pix++) {
+        if (x & 1)
+            *d = (*d & ~m) | (*pix & m);
+        else
+            *d = (*d & ~(m << 4)) | ((*pix << 4) & (m << 4));
+        if ((x & 1) && n > 1)
+            d = ch_at(bm, ++o);
     }
 }
 

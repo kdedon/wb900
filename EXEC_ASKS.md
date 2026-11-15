@@ -34,12 +34,19 @@ Opened 2026-11-14; status from exec816-0f and the c900/exec900 log. The user app
 | 25 | console.device: read the console ring (below) | open | — |
 | 26 | ExecBase: idle time, for a CPU load (below) | open | — |
 | 27 | `Close()`: clear the `pr_ConsoleTask` that the handle's `Open()` set (below) | **Landed** d2a5278b: Close clears the console its handle set; Open("*") afterwards fails with ERROR_DEVICE_NOT_MOUNTED | done |
+| 28 | `InLoadSeg`: read a hunk's RELOC32 offsets in blocks (below) | open | — |
 
 ### 16. Semaphore and Forbid cost
 
 An uncontended `ObtainSemaphore` + `ReleaseSemaphore` took ~1.5k cycles at 6 MHz (`obtain` calls `xForbid`, `take`, `xPermit`; `xReleaseSem` calls `xForbid`, `xPermit`), a `Forbid`/`Permit` pair ~330. graphics.library takes the layer and pointer locks around every primitive, so a window open did ~420 obtains and 900 Forbid/Permit pairs: 12% of its 5.1M cycles. Repro: wbdemo's win2-open under the profiling emulator.
 
 Asked for: an assembler fast path for the free, own-nested and shared cases (count and owner set with interrupts off, no calls), else the queue as now; `Forbid`/`Permit` without the C frame.
+
+### 28. LoadSeg's relocation reads
+
+`xInLoadSeg` reads each RELOC32 offset with `lsget`: a `read` call through the funcarray for 4 bytes, which dos's `dlsread` serves from its buffer with a `CopyMem`. That is about 5,000 clocks a relocation: loading hr.gfxdriver (2,172 bytes, 97 relocations) took 0.65M of the 0.9M clocks of the first `OpenScreen()`, and intuition.library has 2,091 relocations, about 1.7 s at 6 MHz. Repro: wbdemo's screen-open under the profiling emulator; the calls come from `xInLoadSeg` +0x8a and +0xbc.
+
+Asked for: read the offsets in blocks (`lsread` of up to, say, 64 longs into a local buffer) or inline the buffered get.
 
 ### 19. The name console.device
 

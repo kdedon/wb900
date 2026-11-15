@@ -51,7 +51,9 @@ static void sprite_show(struct SoftSprite *ss, struct GfxBase *GfxBase)
     UWORD mod = img->BytesPerRow, h = img->Rows;
     struct GfxPens p;
     struct Rectangle r, sr;
-    WORD dx, dy, k;
+    UBYTE pix[3], *t, *u, *v;
+    WORD dx, dy, k, j;
+    UWORD n, i;
 
     if (!sprite_clip(ss, &r, GfxBase))
         return;
@@ -65,10 +67,27 @@ static void sprite_show(struct SoftSprite *ss, struct GfxBase *GfxBase)
     p.gp_DrMd = JAM1;
     p.gp_Mask = 0xFF;
     p.gp_Ptrn = NULL;
-    for (k = 1; k < 4; k++) {
-        p.gp_APen = BM_PIXEL(bm, 16 + k);
-        gd->gd_Template(bm, &r, ss->ss_Tmpl + (ULONG)((k - 1) * h + dy) * mod,
-            dx, mod, &p);
+    for (k = 0; k < 3; k++)
+        pix[k] = BM_PIXEL(bm, 17 + k);
+    /* a pass a pixel: pens of one pixel merge into the fourth template */
+    n = (r.MaxY - r.MinY + 1) * mod;
+    for (k = 0; k < 3; k++) {
+        if ((k > 0 && pix[k] == pix[0]) || (k > 1 && pix[k] == pix[1]))
+            continue;
+        t = ss->ss_Tmpl + (ULONG)(k * h + dy) * mod;
+        for (j = k + 1, u = NULL; j < 3; j++)
+            if (pix[j] == pix[k]) {
+                if (!u) {
+                    u = ss->ss_Tmpl + (ULONG)(3 * h + dy) * mod;
+                    for (i = 0; i < n; i++)
+                        u[i] = t[i];
+                }
+                v = ss->ss_Tmpl + (ULONG)(j * h + dy) * mod;
+                for (i = 0; i < n; i++)
+                    u[i] |= v[i];
+            }
+        p.gp_APen = pix[k];
+        gd->gd_Template(bm, &r, u ? u : t, dx, mod, &p);
     }
     ss->ss_Shown = TRUE;
 }
@@ -86,16 +105,23 @@ static void sprite_hide(struct SoftSprite *ss, struct GfxBase *GfxBase)
         r.MinY - ss->ss_Y, bm, &r, 0xC0, 0xFF);
 }
 
+/* Put drawing into bm on the display, for a display drawn in RAM */
+static void sprite_flush(struct BitMap *bm)
+{
+    if (bm && IS_GFXBM(bm) && GFXBM(bm)->gb_Driver->gd_Flush)
+        GFXBM(bm)->gb_Driver->gd_Flush(GFXBM(bm)->gb_Driver, bm);
+}
+
 /*
  * The templates of sprite pens 1 to 3 of img, one after another, rows of
- * img's BytesPerRow
+ * img's BytesPerRow, and room for a fourth
  */
 static UBYTE *sprite_tmpl(struct BitMap *img, ULONG *size)
 {
     UWORD bpr = img->BytesPerRow, h = img->Rows, y, i;
     UBYTE *t, *a, *b, *c, *p0, *p1;
 
-    *size = (ULONG)bpr * h * 3;
+    *size = (ULONG)bpr * h * 4;
     t = AllocMem(*size, MEMF_ANY);
     if (!t)
         return NULL;
@@ -121,11 +147,14 @@ BOOL gfx_SpriteBefore(struct BitMap *bm, struct Rectangle *r, struct GfxBase *Gf
 {
     struct SoftSprite *ss = &PrivGBase(GfxBase)->sprite;
     struct Rectangle sr;
+    BOOL flush = IS_GFXBM(bm) && GFXBM(bm)->gb_Driver->gd_Flush != NULL;
 
-    if (bm != ss->ss_BitMap)
+    if (bm != ss->ss_BitMap && !flush)
         return FALSE;
     ObtainSemaphore(&ss->ss_Lock);
-    if (ss->ss_Shown) {
+    if (flush)
+        ss->ss_Flush = bm;
+    if (bm == ss->ss_BitMap && ss->ss_Shown) {
         sprite_rect(ss, &sr);
         if (_AndRectRect(&sr, r, &sr))
             sprite_hide(ss, GfxBase);
@@ -139,6 +168,10 @@ void gfx_SpriteAfter(struct GfxBase *GfxBase)
 
     if (!ss->ss_Shown && ss->ss_Sprite)
         sprite_show(ss, GfxBase);
+    if (ss->ss_Flush && ss->ss_Lock.ss_NestCount == 1) {
+        sprite_flush(ss->ss_Flush);
+        ss->ss_Flush = NULL;
+    }
     ReleaseSemaphore(&ss->ss_Lock);
 }
 
@@ -271,7 +304,7 @@ void gfx_SpriteAfter(struct GfxBase *GfxBase)
     AROS_LIBFUNC_INIT
 
     struct SoftSprite *ss = &PrivGBase(GfxBase)->sprite;
-    struct BitMap *bm = NULL, *save = NULL, *img;
+    struct BitMap *bm = NULL, *save = NULL, *img, *oldbm;
     UBYTE *tmpl = NULL;
     ULONG size = 0;
 
@@ -290,6 +323,7 @@ void gfx_SpriteAfter(struct GfxBase *GfxBase)
     }
 
     ObtainSemaphore(&ss->ss_Lock);
+    oldbm = ss->ss_BitMap;
     if (ss->ss_Shown)
         sprite_hide(ss, GfxBase);
     if (ss->ss_Save) {
@@ -312,6 +346,9 @@ void gfx_SpriteAfter(struct GfxBase *GfxBase)
         newsprite->es_SimpleSprite.y = ss->ss_Y;
         sprite_show(ss, GfxBase);
     }
+    sprite_flush(oldbm);
+    if (bm != oldbm)
+        sprite_flush(bm);
     ReleaseSemaphore(&ss->ss_Lock);
     return TRUE;
 
@@ -353,6 +390,7 @@ void gfx_SpriteAfter(struct GfxBase *GfxBase)
         ss->ss_X = x;
         ss->ss_Y = y;
         sprite_show(ss, GfxBase);
+        sprite_flush(ss->ss_BitMap);
     }
     ReleaseSemaphore(&ss->ss_Lock);
 

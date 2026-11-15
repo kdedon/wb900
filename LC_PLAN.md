@@ -1,6 +1,6 @@
 # LC card Workbench: plan
 
-Date: 2026-11-15. Status: plan, nothing built.
+Date: 2026-11-15. Status: phases 1-3 built and passing on the port model; phase 4 images ready for the board. See [Built](#built-2026-11-15).
 
 ## Decisions
 
@@ -211,3 +211,53 @@ Source: C900_MiSTer rtl/vendor/vdc856x and rtl/lc_display.
 - **Interlace:** implemented in the core, but untested at 400/480 lines. The scaler gets no field flag, so expect bob. Stay non-interlaced.
 - **Output:** the aspect is the shared OSD option (4:3 gives non-square pixels). The palette is fixed CGA with index bits R=8 G=4 B=2 I=1: 0 000000, 2 0000C4, 7 4EF3F3, 15 FFFFFF, C C47E00 brown.
 - **Testing:** no 8568 is planned for either emulator. Test against our C port model, then the board.
+
+## Answered by exec816 (2026-11-15)
+
+- **Mouse:** gameport.dev picks the serial backend (U74 A, held exclusively) when the card is not HR, with HR's interface: an event per half packet, Y down positive, three buttons. It loads only if the disk's `Modules` lists it; software cannot read the OSD bit. Its board test is pending, so the first LC images leave it out.
+- **Interrupts:** `Disable()` masks VI and NVI. There is no NVI-only call. A VI-off section may take 1 ms.
+- **FreeFB:** `cd_Reset` rewrites every writable register (R37 included), reloads the font and clears the planes. While lent, only the NVI's status read and a crash takeover touch the 8568.
+- **Mode:** the owner may reprogram the whole chip and must leave it idle with no INTR pending. The driver owns the LC mode list.
+- The kernel's console is now textcon.device; console.device is the window console.
+
+## Built (2026-11-15)
+
+| Part | Where |
+|---|---|
+| Port layer (assembly) | `libs/lc/lcport.s` |
+| Driver, 6.1 KB code, 1.8 KB BSS, 16 KB shadow | `libs/lc/lc.c` → `LIBS:lc.gfxdriver` |
+| `gd_Flush`, card table, LC mode ID | `gfxdriver.h`, `softsprite.c`, `display.c`, `hrmodeid.h` |
+| 8568 port model, port-access shims | `tests/lc/vdcmodel.c`, `tests/lc/vdcio.s` |
+| Tests | `tests/lcvdc.c` (phase 1), `lcgfx.c` (2, 3), `lcwb.c` (Workbench) |
+| Board | `lcdemo.bin`, `wbboot-lc.bin` |
+
+The tests run the driver's own `lcport.s`: the Makefile turns each port instruction into a call to the model. A fake framebuf.resource reports an LC card, and a patched `Enable()` counts pieces that end with the chip busy.
+
+### Deviations
+
+- **Dirty tracking:** up to 3 byte spans a row (1.4 KB), merged across gaps of 2 bytes or less, instead of a bitmap. The 6 MHz CPU never scans bits.
+- **Fills** do not flush first, as pushes read the shadow. Partial edge bytes of fills and copies are pushed beside each row's block, without a seek.
+- **`hrmodeid.h`** keeps its name and gains `LC_MONITOR_ID` and `LCMONO_200_ID`.
+- **Push rate:** with c900-c0's slots (about 20 R31 bytes a display line) a push is CPU-bound at about 8.2 µs a byte. The tests still price it at 15 µs.
+
+### Measured port actions (lcgfx, lcwb), priced at the plan's rates
+
+| Operation | Plan | Estimate |
+|---|---|---|
+| Full-screen clear | 17 ms | 16.6 ms (block fill) |
+| Text line, 80 chars JAM2 | 10 ms | 9.6 ms (640 bytes, 1 seek) |
+| Scroll, full width, 8 rows | 32 ms | 32-33 ms |
+| Scroll, 40-byte window | 30 ms | 23 ms |
+| Window move 300x100, aligned | 8 ms | 14 ms: each row needs R18/R19, R32/R33 and R30 |
+| Window move 300x100, unaligned | 60 ms | 60 ms |
+| Pointer move | 1.1 ms | 0.8-1.0 ms (lcwb through input.device: 1.2 ms) |
+| Window open 320x120 | 50 ms | 50 ms |
+| Full-screen push | 0.25 s | 0.24 s |
+| Allocating the display | n/a | 33 ms (init fill, then AllocBitMap's clear) |
+
+### Open points
+
+- **Window drags** through intuition push the whole window (about 84 ms for 320x120): layers moves a layer through its backup bitmaps, so the driver sees a RAM-to-display copy. A display-to-display blit in layers would take the VDC copy (about 15 ms).
+- **Mouse:** add gameport.dev to the LC images' `Modules` once exec816's serial backend has passed on the board.
+- **Board timing:** `lcdemo.bin` prints each case's E-clock time against the plan.
+

@@ -40,29 +40,29 @@ do                                  \
  * coordinates) gets what the operation would put at (srcx, srcy) of its
  * own coordinates, with pens already mapped for bm.
  */
-typedef ULONG (*RENDERFUNC)(APTR, WORD, WORD, struct BitMap *, struct Rectangle *,
-                            struct GfxPens *, struct GfxBase *);
+typedef void (*RENDERFUNC)(APTR, WORD, WORD, struct BitMap *, struct Rectangle *,
+                           struct GfxPens *, struct GfxBase *);
 typedef LONG (*PIXELFUNC)(APTR, struct BitMap *, WORD, WORD, struct GfxPens *,
                           struct GfxBase *);
 
 /* The pens, draw mode, mask and area pattern of a RastPort */
 void GetRPPens(struct RastPort *rp, struct GfxPens *p);
 
-ULONG do_render_func(struct RastPort *rp, Point *src, struct Rectangle *rr,
-                     RENDERFUNC render_func, APTR funcdata, struct GfxBase *GfxBase);
+void do_render_func(struct RastPort *rp, Point *src, struct Rectangle *rr,
+                    RENDERFUNC render_func, APTR funcdata, struct GfxBase *GfxBase);
 
-ULONG do_render_with_pens(struct RastPort *rp, Point *src, struct Rectangle *rr,
-                          RENDERFUNC render_func, APTR funcdata, struct GfxPens *pens,
-                          struct GfxBase *GfxBase);
+void do_render_with_pens(struct RastPort *rp, Point *src, struct Rectangle *rr,
+                         RENDERFUNC render_func, APTR funcdata, struct GfxPens *pens,
+                         struct GfxBase *GfxBase);
 
 LONG do_pixel_func(struct RastPort *rp, WORD x, WORD y,
                    PIXELFUNC render_func, APTR funcdata, struct GfxBase *GfxBase);
 
-ULONG fillrect_render(APTR funcdata, WORD srcx, WORD srcy,
-                      struct BitMap *bm, struct Rectangle *rect,
-                      struct GfxPens *pens, struct GfxBase *GfxBase);
+void fillrect_render(APTR funcdata, WORD srcx, WORD srcy,
+                     struct BitMap *bm, struct Rectangle *rect,
+                     struct GfxPens *pens, struct GfxBase *GfxBase);
 
-LONG fillrect_pendrmd(struct RastPort *rp, WORD x1, WORD y1, WORD x2, WORD y2,
+void fillrect_pendrmd(struct RastPort *rp, WORD x1, WORD y1, WORD x2, WORD y2,
                       UBYTE pen, UBYTE drmd, struct GfxBase *GfxBase);
 
 void int_bltbitmap(struct BitMap *srcBitMap, WORD xSrc, WORD ySrc,
@@ -86,9 +86,9 @@ struct bitmap_render_data {
     struct BitMap             *srcbm;
 };
 
-ULONG bitmap_render(APTR bitmap_rd, WORD srcx, WORD srcy, struct BitMap *dstbm,
-                    struct Rectangle *rect, struct GfxPens *pens,
-                    struct GfxBase *GfxBase);
+void bitmap_render(APTR bitmap_rd, WORD srcx, WORD srcy, struct BitMap *dstbm,
+                   struct Rectangle *rect, struct GfxPens *pens,
+                   struct GfxBase *GfxBase);
 
 /****************************************************************************************/
 

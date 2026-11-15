@@ -63,7 +63,7 @@
     for (classPtr = (Class *)intuitionBase->ClassList.mlh_Head; ((struct Node *)classPtr)->ln_Succ; classPtr = (Class *)((struct Node *)classPtr)->ln_Succ)
     {
 
-        if (!strcmp (classPtr->cl_ID, classID))
+        if (classPtr->cl_ID[0] == classID[0] && !strcmp (classPtr->cl_ID, classID))
             goto found;
     }
 

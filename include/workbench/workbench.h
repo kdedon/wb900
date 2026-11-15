@@ -123,6 +123,9 @@ struct AppMessage
     ULONG          am_Reserved[8];
 };
 
+/* GetNextAppMenuItem()'s text buffer */
+#define APPMENUTEXT             32
+
 /* Definition for am_Version */
 #define AM_VERSION              1
 

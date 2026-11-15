@@ -16,13 +16,15 @@ BOOL NotifyWorkbench(enum WBNOTIFY_Action action, enum WBNOTIFY_Target target,
     struct WBCommandMessage *wbcm     = NULL;
     struct WBHandlerMessage *wbhm     = NULL;
 
-    if ((target == WBNOTIFY_AppIcon) && ((action == WBNOTIFY_Create) || (action == WBNOTIFY_Delete)))
+    if ((action == WBNOTIFY_Create) || (action == WBNOTIFY_Delete))
     {
         if ((wbcm = CreateWBCM(WBCM_TYPE_RELAY)) != NULL
                 && (wbhm = CreateWBHM(WBHM_TYPE_UPDATE)) != NULL)
         {
             wbhm->wbhm_Data.Update.Name = NULL;
-            wbhm->wbhm_Data.Update.Type = WBAPPICON;
+            /* the Workbench lists the AppIcons or AppMenuItems again */
+            wbhm->wbhm_Data.Update.Type = target == WBNOTIFY_AppIcon ?
+                WBAPPICON : AMTYPE_APPMENUITEM;
             wbcm->wbcm_Data.Relay.Message = wbhm;
 
             PutMsg(&(WorkbenchBase->wb_HandlerPort), (struct Message *) wbcm);

@@ -66,7 +66,7 @@ endef
 
 LIBS	= utility keymap graphics layers intuition gadtools icon workbench commodities asl
 # graphics.library's display drivers (LIBS:NAME.gfxdriver)
-GFXDRIVERS = hr
+GFXDRIVERS = hr lc
 DEVS	= input console
 TESTS	= $(basename $(notdir $(wildcard $(TOP)/tests/*.c)))
 # The tests that open intuition.library
@@ -143,6 +143,40 @@ $(console_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility graphics intuit
 # The HR driver writes the card's control port.
 hr_LINK = $(OBJ)/portio.o
 $(eval $(call MODULE,hr,HR,hr,libs,gfxdriver))
+$(eval $(call MODULE,lc,LC,lc,libs,gfxdriver))
+# The LC driver's port layer with each port access a call into the 8568
+# model (tests/lc), for the tests that run the driver without the card
+LCMODEL	= $(OBJ)/lcm/lcport.o $(OBJ)/lcm/vdcio.o $(OBJ)/lcm/vdcmodel.o
+$(OBJ)/lcm/lcport.s: $(TOP)/libs/lc/lcport.s
+	@mkdir -p $(OBJ)/lcm
+	sed -e 's/inb\trl0, @r2$$/call\tlcm_inb_/' -e 's/outb\t@r2, rl1$$/call\tlcm_outa_/' \
+	    -e 's/outb\t@r3, rl1$$/call\tlcm_outd_/' -e 's/outib\t@r3, @rr4, r1$$/call\tlcm_outi_/' $< >$@
+	! grep -E '^[^/]*\b(inb|outb|outib)\b' $@
+$(OBJ)/lcm/%.o: $(OBJ)/lcm/%.s
+	$(AS) -g -o $@ $<
+$(OBJ)/lcm/%.o: $(TOP)/tests/lc/%.s
+	@mkdir -p $(OBJ)/lcm
+	$(AS) -g -o $@ $<
+$(OBJ)/lcm/%.o: $(TOP)/tests/lc/%.c $(wildcard $(TOP)/tests/lc/*.h) $(HDRS)
+	$(call CCRULE,$<,lcm/$*,$@)
+$(OUT)/progs/lcvdc: $(LCMODEL)
+# The driver on the model, behind a framebuf.resource of an LC card
+LCTEST	= $(LCMODEL) $(OBJ)/lcm/lctest.o $(OBJ)/lc/lc.o $(OBJ)/lc/vec.o
+$(OUT)/progs/lcgfx: $(LCTEST)
+# lcwb: the Workbench screen on it, in the 1.x style
+ITESTS	+= lcwb
+$(OUT)/progs/lcwb: $(LCTEST) $(ALIB)
+lcwb_PUT = --put=Devs/system-configuration=$(OUT)/devs/system-configuration
+$(OUT)/lcwb.bin: $(OUT)/devs/system-configuration
+# lcdemo: the card on the board, timed; wbboot-lc.bin: its Workbench, in
+# the 1.x style
+ITESTS	+= lcdemo
+$(OUT)/progs/lcdemo: $(ALIB)
+lcdemo_PUT = $(lcwb_PUT)
+$(OUT)/lcdemo.bin: $(OUT)/devs/system-configuration
+all: $(OUT)/wbboot-lc.bin
+$(OUT)/wbboot-lc.bin: $(OUT)/wbboot-1x.bin
+	cp $< $@
 intuition_LINK = $(ALIB)
 intuition_SRC = $(TOP)/lib
 $(eval $(call LIBRARY,intuition,Intuition,it))
@@ -300,7 +334,8 @@ WBDISK	= Disk.info Demos.info Demos/Hello.info Demos/Notes.info Demos/ReadMe.inf
 CXPUT	= $(foreach t,$(CXTOOLS),--put=Tools/Commodities/$(t)=$(OUT)/cx/$(t))
 wbboot_PUT = $(workbench_PUT) --put=Demos/Notes=$(TOP)/wb/Notes \
 	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan $(CXPUT) $(UTILPUT) \
-	$(foreach i,$(filter-out Demos/Hello.info,$(WBDISK)),--put=$(i)=$(OUT)/wb/$(notdir $(i)))
+	$(foreach i,$(filter-out Demos/Hello.info,$(WBDISK)),--put=$(i)=$(OUT)/wb/$(notdir $(i))) \
+	--module=$(EXEC900_OUT)/hunks/ram-handler
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin $(OUT)/shellwin.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS)
 # More's test: the utilities and the Shell

@@ -181,9 +181,11 @@ static void text(void)
 	struct TextAttr ta;
 	struct TextFont *f;
 	struct TextExtent te;
-	UBYTE *p, *glyph;
+	struct TextFont f2;
+	static WORD space[256], kern[256];
+	UBYTE *p, *glyph, str[5];
 	ULONG loc;
-	int y, ok;
+	int x, y, k, ok;
 
 	ta.ta_Name = (STRPTR)"topaz.font";
 	ta.ta_YSize = 8;
@@ -230,6 +232,46 @@ static void text(void)
 		ok &= row == (UWORD)(0xFFFF & ~(glyph[y * tf->tf_Modulo] << 5));
 	}
 	check(ok, "Text JAM1 shifted");
+
+	/* glyphs from both ends of the font and from outside it */
+	str[0] = tf->tf_LoChar;
+	str[1] = tf->tf_HiChar;
+	str[2] = tf->tf_LoChar - 1;
+	str[3] = 'q';
+	str[4] = tf->tf_LoChar + 1;
+	SetRast(&rp, 0);
+	SetABPenDrMd(&rp, 1, 0, JAM2);
+	Move(&rp, 0, 6);
+	Text(&rp, (STRPTR)str, 5);
+	for (ok = 1, x = 0; x < 5; x++) {
+		k = str[x] < tf->tf_LoChar || str[x] > tf->tf_HiChar ?
+		    tf->tf_HiChar - tf->tf_LoChar + 1 : str[x] - tf->tf_LoChar;
+		loc = ((ULONG *)tf->tf_CharLoc)[k];
+		glyph = (UBYTE *)tf->tf_CharData + (loc >> 16) / 8;
+		for (y = 0; y < 8; y++)
+			ok &= p[y * 8 + x] == glyph[y * tf->tf_Modulo];
+	}
+	check(ok, "Text glyphs");
+
+	/* a glyph spaced or kerned otherwise goes the long way */
+	f2 = *tf;
+	for (x = 0; x < 256; x++) {
+		space[x] = 8;
+		kern[x] = 0;
+	}
+	space['q' - tf->tf_LoChar] = 9;
+	f2.tf_CharSpace = (APTR)space;
+	SetFont(&rp, &f2);
+	Move(&rp, 0, 6);
+	Text(&rp, "qq", 2);
+	check(rp.cp_x == 18 && TextLength(&rp, "qq", 2) == 18, "Text spaced");
+	space['q' - tf->tf_LoChar] = 8;
+	kern['q' - tf->tf_LoChar] = 1;
+	f2.tf_CharKern = (APTR)kern;
+	Move(&rp, 0, 6);
+	Text(&rp, "qq", 2);
+	check(rp.cp_x == 18 && TextLength(&rp, "qq", 2) == 18, "Text kerned");
+	SetFont(&rp, f);
 	CloseFont(f);
 	FreeBitMap(bm);
 }
@@ -687,6 +729,9 @@ static void rowcases(struct BitMap *bm, WORD ox, WORD oy, char *name)
 	    1, 0, all);
 	tmplcase(&rp, ox, oy, name, 5, 40, 4, 1, 5, JAM2 | INVERSVID, 6 & all,
 	    1, all);
+	tmplcase(&rp, ox, oy, name, 2, 9, 0, 17, 12, JAM1 | INVERSVID, 3 & all,
+	    0, all);
+	tmplcase(&rp, ox, oy, name, 6, 1, 1, 70, 6, COMPLEMENT, 1, 0, all);
 	blitcase(&rp, ox, oy, name, 2, 1, 7, 1, 40, 8, 0xC0, all);
 	blitcase(&rp, ox, oy, name, 9, 2, 2, 2, 50, 8, 0xC0, all);
 	blitcase(&rp, ox, oy, name, 16, 1, 32, 3, 30, 7, 0xC0, all);
@@ -696,6 +741,10 @@ static void rowcases(struct BitMap *bm, WORD ox, WORD oy, char *name)
 	blitcase(&rp, ox, oy, name, 0, 0, 0, 1, 72, 11, 0xC0, all);
 	blitcase(&rp, ox, oy, name, 3, 0, 14, 2, 40, 8, 0xC0, all);
 	blitcase(&rp, ox, oy, name, 30, 3, 19, 3, 37, 6, 0xC0, all);
+	blitcase(&rp, ox, oy, name, 2, 1, 18, 1, 40, 8, 0x30, all);
+	blitcase(&rp, ox, oy, name, 1, 2, 6, 2, 50, 8, 0x30, all);
+	blitcase(&rp, ox, oy, name, 16, 1, 0, 1, 40, 8, 0x30, all);
+	blitcase(&rp, ox, oy, name, 3, 0, 14, 2, 40, 8, 0x30, all);
 	linecase(&rp, ox, oy, name, JAM1, 5 & all | 1, 0, 0xFFFF, all);
 	linecase(&rp, ox, oy, name, JAM1, 6 & all | 1, 0, 0xF0C3, all);
 	linecase(&rp, ox, oy, name, JAM2, 3 & all, 6 & all, 0xE4D1, all);
@@ -734,6 +783,132 @@ static void blitedge(struct BitMap *src, struct BitMap *dst, char *name)
 	if (!ok)
 		xKPrintf("FAIL graphics: %s BltBitMap from the left edge\n", name);
 	fails += !ok;
+}
+
+/* Pixel x of row y of a planar bitmap, from its planes */
+static UBYTE rawpix(struct BitMap *bm, WORD x, WORD y)
+{
+	UBYTE v = 0;
+	WORD i;
+
+	for (i = 0; i < bm->Depth; i++)
+		if ((bm->Planes[i][y * bm->BytesPerRow + (x >> 3)] >>
+		    (7 - (x & 7))) & 1)
+			v |= 1 << i;
+	return v;
+}
+
+/* Pixel x of row y of a chunky bitmap */
+static UBYTE rawnib(struct BitMap *bm, WORD x, WORD y)
+{
+	UBYTE b = bm->Planes[0][y * bm->BytesPerRow + (x >> 1)];
+
+	return (x & 1) ? b & 15 : b >> 4;
+}
+
+static UBYTE flip1[256], flip2[256], flip7[256];
+
+/*
+ * BltBitMap of pens from a planar image to a planar bitmap whose pixels
+ * are its pens inverted, as on the mono display, and from such a bitmap
+ * to an image, each pixel checked against the minterm on the pens.
+ */
+static void flipcase(struct BitMap *src, struct BitMap *dst, WORD sx,
+    WORD dx, UBYTE mt, UBYTE mask, char *name)
+{
+	UBYTE *sp = IS_GFXBM(src) ? GFXBM(src)->gb_PixTab : NULL;
+	UBYTE *dp = IS_GFXBM(dst) ? GFXBM(dst)->gb_PixTab : NULL;
+	UBYTE old[6][48], all = (1 << dst->Depth) - 1, s, d, w;
+	WORD x, y, ok = TRUE;
+
+	/* the planes above the source's depth stay */
+	if (src->Depth < dst->Depth)
+		mask &= (1 << src->Depth) - 1;
+	for (y = 0; y < 6; y++)
+		for (x = 0; x < 48; x++)
+			old[y][x] = rawpix(dst, x, y);
+	BltBitMap(src, sx, 1, dst, dx, 2, 21, 3, mt, mask, NULL);
+	for (y = 0; y < 6; y++)
+		for (x = 0; x < 48; x++) {
+			w = old[y][x];
+			if (x >= dx && x < dx + 21 && y >= 2 && y < 5) {
+				s = rawpix(src, x - dx + sx, y - 1);
+				if (sp)
+					s ^= sp[0];
+				d = dp ? w ^ dp[0] : w;
+				d = minterm(mt, s, d, all);
+				d = dp ? d ^ dp[0] : d;
+				w = (w & ~mask) | (d & mask);
+			}
+			ok &= rawpix(dst, x, y) == w;
+		}
+	if (!ok)
+		xKPrintf("FAIL graphics: %s BltBitMap %02x from %d to %d\n", name,
+		    mt, sx, dx);
+	fails += !ok;
+}
+
+static void flips(void)
+{
+	static UBYTE mts[] = { 0xC0, 0x30, 0x60, 0x80, 0xE0, 0x50 };
+	struct BitMap *a, *b, *c, *pl;
+	WORD i, k, x, y, ok;
+
+	for (i = 0; i < 256; i++) {
+		flip1[i] = (i & 1) ^ 1;
+		flip2[i] = (i & 3) ^ 3;
+		flip7[i] = (i & 15) ^ 7;
+	}
+	a = AllocBitMap(48, 6, 1, BMF_CLEAR, NULL);
+	b = AllocBitMap(48, 6, 2, BMF_CLEAR, NULL);
+	pl = AllocBitMap(48, 6, 2, BMF_CLEAR, NULL);
+	c = chunky(48, 6);
+	if (a == NULL || b == NULL || pl == NULL || c == NULL)
+		return;
+	for (y = 0; y < 6; y++)
+		for (x = 0; x < 6; x++) {
+			a->Planes[0][y * a->BytesPerRow + x] = rnd();
+			b->Planes[0][y * b->BytesPerRow + x] = rnd();
+			b->Planes[1][y * b->BytesPerRow + x] = rnd();
+			pl->Planes[0][y * pl->BytesPerRow + x] = rnd();
+			pl->Planes[1][y * pl->BytesPerRow + x] = rnd();
+		}
+	GFXBM(a)->gb_PixTab = flip1;
+	GFXBM(b)->gb_PixTab = flip2;
+	for (i = 0; i < sizeof(mts); i++)
+		for (k = 0; k < 4; k++) {
+			flipcase(pl, a, k * 5, 3 + k * 7, mts[i], 0xFF, "to flipped 1");
+			flipcase(pl, b, k * 3, 16 - k * 5, mts[i], 0xFF, "to flipped 2");
+			flipcase(pl, b, k, 8 + k, mts[i], 0x01, "under a mask to flipped 2");
+			flipcase(a, pl, k * 4, 9 - k, mts[i], 0xFF, "from flipped 1");
+			flipcase(b, a, 16 + k, k * 8, mts[i], 0xFF, "between flipped");
+		}
+	GFXBM(a)->gb_PixTab = NULL;
+	GFXBM(b)->gb_PixTab = NULL;
+
+	/* planar pens to chunky pixels through a table, and back */
+	GFXBM(c)->gb_PixTab = flip7;
+	for (k = 0; k < 4; k++) {
+		for (y = 0; y < 6; y++)
+			for (x = 0; x < c->BytesPerRow; x++)
+				c->Planes[0][y * c->BytesPerRow + x] = 0;
+		BltBitMap(pl, k * 3, 0, c, 5 + k * 3, 1, 19, 4, 0xC0, 0xFF, NULL);
+		for (ok = 1, y = 0; y < 4; y++)
+			for (x = 0; x < 19; x++)
+				ok &= rawnib(c, 5 + k * 3 + x, 1 + y) ==
+				    (flip7[rawpix(pl, k * 3 + x, y)] & 3);
+		check(ok, "planar to chunky through a pixel table");
+		BltBitMap(c, 5 + k * 3, 1, b, 9 - k, 0, 19, 4, 0xC0, 0xFF, NULL);
+		for (ok = 1, y = 0; y < 4; y++)
+			for (x = 0; x < 19; x++)
+				ok &= rawpix(b, 9 - k + x, y) == rawpix(pl, k * 3 + x, y);
+		check(ok, "chunky through a pixel table to planar");
+	}
+	GFXBM(c)->gb_PixTab = NULL;
+	FreeBitMap(a);
+	FreeBitMap(b);
+	FreeBitMap(pl);
+	FreeBitMap(c);
 }
 
 static void rows(void)
@@ -1192,6 +1367,8 @@ static void pointer(void)
 	/* rows: colour 2, colour 1, colour 3 over two pixels */
 	static UWORD data[] = { 0, 0, 0x0000, 0xC000, 0xC000, 0x0000,
 	    0xC000, 0xC000, 0, 0 };
+	static UBYTE pixtab[256];
+	int x;
 
 	bm = AllocBitMap(64, 32, 1, BMF_CLEAR, NULL);
 	es = AllocSpriteDataA((struct BitMap *)data, old);
@@ -1227,6 +1404,20 @@ static void pointer(void)
 	check(raw(bm, 8, 4) == 1 && raw(bm, 9, 5) == 0 &&
 	    raw(bm, 9, 6) == 0 && raw(bm, 40, 21) == 1,
 	    "MoveSprite restores");
+	/* through a pixel table that gives pens 17 and 19 one pixel */
+	for (x = 0; x < 256; x++)
+		pixtab[x] = x == 18 || (x & 1);
+	pixtab[17] = pixtab[19] = 0;
+	GFXBM(bm)->gb_PixTab = pixtab;
+	SetAPen(&rp, 1);
+	RectFill(&rp, 30, 11, 50, 16);
+	MoveSprite(&vp, &es->es_SimpleSprite, 40, 10);
+	check(raw(bm, 40, 10) == 1 && raw(bm, 42, 10) == 0 &&
+	    raw(bm, 40, 11) == 0 && raw(bm, 41, 12) == 0 &&
+	    raw(bm, 42, 12) == 1 && raw(bm, 40, 13) == 1,
+	    "pointer through a pixel table");
+	MoveSprite(&vp, &es->es_SimpleSprite, 40, 20);
+	GFXBM(bm)->gb_PixTab = NULL;
 	check(ChangeExtSpriteA(&vp, es, NULL, NULL) &&
 	    raw(bm, 40, 21) == 0, "pointer taken away");
 	FreeSpriteData(es);
@@ -1250,6 +1441,7 @@ int main(void)
 	bigchunky();
 	bigplanar();
 	rows();
+	flips();
 	regions();
 	views();
 	modes();

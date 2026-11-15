@@ -5,6 +5,7 @@
 */
 
 #include "workbench_intern.h"
+#include "notifyworkbench.h"
 #include <workbench/workbench.h>
 
 /*****************************************************************************
@@ -64,8 +65,7 @@
 
     FreeVec(appMenuItem);
 
-    /* NotifyWorkbench(WBNOTIFY_Delete, WBNOTIFY_AppMenuItem, WorkbenchBase);
-     */
+    NotifyWorkbench(WBNOTIFY_Delete, WBNOTIFY_AppMenuItem, WorkbenchBase);
 
     return TRUE;
 

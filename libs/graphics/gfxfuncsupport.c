@@ -25,34 +25,44 @@ void GetRPPens(struct RastPort *rp, struct GfxPens *p)
     p->gp_PtrnMask = (1 << rows) - 1;
 }
 
-/* What stays the same for every piece of one render operation */
+/* What stays the same for every piece of one render operation, and its
+   pens as pixels of the pixel table last drawn through */
 struct render_call {
     RENDERFUNC       render_func;
     APTR             funcdata;
     struct GfxPens  *pens;
     struct GfxBase  *GfxBase;
+    struct GfxPens   mapped;
+    UBYTE           *tab;
+    BOOL             valid;
 };
 
-static ULONG CallRenderFunc(struct render_call *rc, WORD srcx, WORD srcy,
-                            struct BitMap *bm, struct Rectangle *rect)
+static void CallRenderFunc(struct render_call *rc, WORD srcx, WORD srcy,
+                           struct BitMap *bm, struct Rectangle *rect)
 {
-    struct GfxPens pens;
+    UBYTE *tab = IS_GFXBM(bm) ? GFXBM(bm)->gb_PixTab : NULL;
 
-    pens = *rc->pens;
-    pens.gp_APen = BM_PIXEL(bm, pens.gp_APen);
-    pens.gp_BPen = BM_PIXEL(bm, pens.gp_BPen);
+    if(!rc->valid || tab != rc->tab) {
+        rc->mapped = *rc->pens;
+        if(tab) {
+            rc->mapped.gp_APen = tab[rc->mapped.gp_APen];
+            rc->mapped.gp_BPen = tab[rc->mapped.gp_BPen];
+        }
+        rc->tab = tab;
+        rc->valid = TRUE;
+    }
 
-    return rc->render_func(rc->funcdata, srcx, srcy, bm, rect, &pens, rc->GfxBase);
+    rc->render_func(rc->funcdata, srcx, srcy, bm, rect, &rc->mapped, rc->GfxBase);
 }
 
-ULONG do_render_func(struct RastPort *rp, Point *src, struct Rectangle *rr,
-                     RENDERFUNC render_func, APTR funcdata, struct GfxBase *GfxBase)
+void do_render_func(struct RastPort *rp, Point *src, struct Rectangle *rr,
+                    RENDERFUNC render_func, APTR funcdata, struct GfxBase *GfxBase)
 {
     struct GfxPens pens;
 
     GetRPPens(rp, &pens);
 
-    return do_render_with_pens(rp, src, rr, render_func, funcdata, &pens, GfxBase);
+    do_render_with_pens(rp, src, rr, render_func, funcdata, &pens, GfxBase);
 }
 
 /*
@@ -61,12 +71,12 @@ ULONG do_render_func(struct RastPort *rp, Point *src, struct Rectangle *rr,
  * area in screen coordinates; the parts of it outside the layer's bounds
  * are rendered at superbitmap coordinates (rastport coordinates).
  */
-static ULONG render_outside_super(struct Layer *L, struct Rectangle *torender,
+static void render_outside_super(struct Layer *L, struct Rectangle *torender,
                                   struct render_call *rc, WORD srcx, WORD srcy)
 {
     struct GfxBase *GfxBase = rc->GfxBase;
     struct Rectangle parts[4];
-    ULONG pixwritten = 0, n = 0, i;
+    ULONG n = 0, i;
     LONG  sbw = GetBitMapAttr(L->SuperBitMap, BMA_WIDTH);
     LONG  sbh = GetBitMapAttr(L->SuperBitMap, BMA_HEIGHT);
 
@@ -120,30 +130,29 @@ static ULONG render_outside_super(struct Layer *L, struct Rectangle *torender,
         xoffset = (sb.MinX - L->Scroll_X + L->bounds.MinX) - torender->MinX;
         yoffset = (sb.MinY - L->Scroll_Y + L->bounds.MinY) - torender->MinY;
 
-        pixwritten += CallRenderFunc(rc, srcx + xoffset, srcy + yoffset, L->SuperBitMap, &sb);
+        CallRenderFunc(rc, srcx + xoffset, srcy + yoffset, L->SuperBitMap, &sb);
     }
 
-    return pixwritten;
 }
 
-ULONG do_render_with_pens(struct RastPort *rp, Point *src, struct Rectangle *rr,
-                          RENDERFUNC render_func, APTR funcdata, struct GfxPens *pens,
-                          struct GfxBase *GfxBase)
+void do_render_with_pens(struct RastPort *rp, Point *src, struct Rectangle *rr,
+                         RENDERFUNC render_func, APTR funcdata, struct GfxPens *pens,
+                         struct GfxBase *GfxBase)
 {
 
     struct BitMap       *bm = rp->BitMap;
     struct Layer        *L = rp->Layer;
     WORD                 srcx, srcy;
-    LONG                 pixwritten = 0;
     struct render_call   rc;
     BOOL                 sprite;
 
-    if((rr->MaxX < rr->MinX) || (rr->MaxY < rr->MinY)) return 0;
+    if((rr->MaxX < rr->MinX) || (rr->MaxY < rr->MinY)) return;
 
     rc.render_func      = render_func;
     rc.funcdata         = funcdata;
     rc.pens             = pens;
     rc.GfxBase          = GfxBase;
+    rc.valid            = FALSE;
 
     if(NULL != src) {
         srcx = src->x;
@@ -160,81 +169,73 @@ ULONG do_render_with_pens(struct RastPort *rp, Point *src, struct Rectangle *rr,
 
         GetRPClipRectangleForBitMap(bm, &bm_rect, GfxBase);
         if(!(_AndRectRect(rr, &bm_rect, &torender))) {
-            return 0;
+            return;
         }
 
         srcx += (torender.MinX - rr->MinX);
         srcy += (torender.MinY - rr->MinY);
 
         sprite = gfx_SpriteBefore(bm, &torender, GfxBase);
-        pixwritten = CallRenderFunc(&rc, srcx, srcy, bm, &torender);
+        CallRenderFunc(&rc, srcx, srcy, bm, &torender);
         if(sprite)
             gfx_SpriteAfter(GfxBase);
     } else {
-        struct ClipRect *CR;
-        WORD xrel;
-        WORD yrel;
+        register struct ClipRect *CR;
+        register WORD x0, y0, x1, y1;
         struct Rectangle torender, intersect;
 
         LockLayerRom(L);
         /* the RastPort's BitMap is read under the layer lock, nothing may change it now */
         bm = rp->BitMap;
 
-        xrel = L->bounds.MinX;
-        yrel = L->bounds.MinY;
-
-        torender.MinX = rr->MinX + xrel - L->Scroll_X;
-        torender.MinY = rr->MinY + yrel - L->Scroll_Y;
-        torender.MaxX = rr->MaxX + xrel - L->Scroll_X;
-        torender.MaxY = rr->MaxY + yrel - L->Scroll_Y;
+        x0 = L->bounds.MinX - L->Scroll_X;
+        y0 = L->bounds.MinY - L->Scroll_Y;
+        x1 = rr->MaxX + x0;
+        y1 = rr->MaxY + y0;
+        x0 += rr->MinX;
+        y0 += rr->MinY;
+        torender.MinX = x0;
+        torender.MinY = y0;
+        torender.MaxX = x1;
+        torender.MaxY = y1;
 
         /* the pointer is locked, and taken out if it is in the way, once for all cliprects */
         sprite = _AndRectRect(&torender, &L->bounds, &intersect) &&
                  gfx_SpriteBefore(bm, &intersect, GfxBase);
 
-        CR = L->ClipRect;
+        for(CR = L->ClipRect; NULL != CR; CR = CR->Next) {
+            WORD sx, sy;
 
-        for(; NULL != CR; CR = CR->Next) {
-            /* Does this cliprect intersect with area to rectfill ? */
-            if(_AndRectRect(&CR->bounds, &torender, &intersect)) {
-                WORD xoffset, yoffset;
+            /* the part of the area in this cliprect */
+            if(CR->bounds.MinX > x1 || CR->bounds.MaxX < x0 ||
+               CR->bounds.MinY > y1 || CR->bounds.MaxY < y0)
+                continue;
+            intersect.MinX = CR->bounds.MinX > x0 ? CR->bounds.MinX : x0;
+            intersect.MinY = CR->bounds.MinY > y0 ? CR->bounds.MinY : y0;
+            intersect.MaxX = CR->bounds.MaxX < x1 ? CR->bounds.MaxX : x1;
+            intersect.MaxY = CR->bounds.MaxY < y1 ? CR->bounds.MaxY : y1;
+            sx = srcx + intersect.MinX - x0;
+            sy = srcy + intersect.MinY - y0;
 
-                xoffset = intersect.MinX - torender.MinX;
-                yoffset = intersect.MinY - torender.MinY;
-
-                if(NULL == CR->lobs) {
-                    pixwritten += CallRenderFunc(&rc, srcx + xoffset, srcy + yoffset, bm, &intersect);
-                } else {
-                    /* Render into offscreen cliprect bitmap */
-                    if(L->Flags & LAYERSIMPLE)
-                        continue;
-                    else if(L->Flags & LAYERSUPER) {
-                        /* Render into the superbitmap. RastPort coordinates are
-                           superbitmap coordinates; the layer shows the superbitmap
-                           from (Scroll_X, Scroll_Y). */
-                        intersect.MinX = intersect.MinX - L->bounds.MinX + L->Scroll_X;
-                        intersect.MinY = intersect.MinY - L->bounds.MinY + L->Scroll_Y;
-                        intersect.MaxX = intersect.MaxX - L->bounds.MinX + L->Scroll_X;
-                        intersect.MaxY = intersect.MaxY - L->bounds.MinY + L->Scroll_Y;
-                        pixwritten += CallRenderFunc(&rc, srcx + xoffset, srcy + yoffset, L->SuperBitMap, &intersect);
-                    } else {
-
-                        intersect.MinX = intersect.MinX - CR->bounds.MinX + CR_BMOFFX(CR);
-                        intersect.MinY = intersect.MinY - CR->bounds.MinY + CR_BMOFFY(CR);
-                        intersect.MaxX = intersect.MaxX - CR->bounds.MinX + CR_BMOFFX(CR);
-                        intersect.MaxY = intersect.MaxY - CR->bounds.MinY + CR_BMOFFY(CR);
-
-                        pixwritten += CallRenderFunc(&rc, srcx + xoffset, srcy + yoffset, CR->BitMap, &intersect);
-                    }
-
-                } /* if (CR->lobs == NULL) */
-
-            } /* if (cliprect intersects with area to render into) */
-
+            if(NULL == CR->lobs) {
+                CallRenderFunc(&rc, sx, sy, bm, &intersect);
+            } else if(L->Flags & LAYERSIMPLE) {
+                /* a simple refresh layer loses what it hides */
+            } else if(L->Flags & LAYERSUPER) {
+                /* Render into the superbitmap. RastPort coordinates are
+                   superbitmap coordinates; the layer shows the superbitmap
+                   from (Scroll_X, Scroll_Y). */
+                TranslateRect(&intersect, L->Scroll_X - L->bounds.MinX, L->Scroll_Y - L->bounds.MinY);
+                CallRenderFunc(&rc, sx, sy, L->SuperBitMap, &intersect);
+            } else {
+                /* Render into offscreen cliprect bitmap */
+                TranslateRect(&intersect, CR_BMOFFX(CR) - CR->bounds.MinX, CR_BMOFFY(CR) - CR->bounds.MinY);
+                CallRenderFunc(&rc, sx, sy, CR->BitMap, &intersect);
+            }
         } /* for (each cliprect in the layer) */
 
         if(L->Flags & LAYERSUPER) {
-            pixwritten += render_outside_super(L, &torender, &rc, srcx, srcy);
+            render_outside_super(L, &torender, &rc, srcx, srcy);
         }
 
         if(sprite)
@@ -242,7 +243,6 @@ ULONG do_render_with_pens(struct RastPort *rp, Point *src, struct Rectangle *rr,
         UnlockLayerRom(L);
     } /* if (rp->Layer) */
 
-    return pixwritten;
 }
 
 /****************************************************************************************/
@@ -365,18 +365,16 @@ LONG do_pixel_func(struct RastPort *rp
 
 /****************************************************************************************/
 
-ULONG fillrect_render(APTR funcdata, WORD srcx, WORD srcy,
-                      struct BitMap *bm, struct Rectangle *rect,
-                      struct GfxPens *pens, struct GfxBase *GfxBase)
+void fillrect_render(APTR funcdata, WORD srcx, WORD srcy,
+                     struct BitMap *bm, struct Rectangle *rect,
+                     struct GfxPens *pens, struct GfxBase *GfxBase)
 {
     GFX_DRIVER(bm)->gd_Fill(bm, rect, pens);
-
-    return (rect->MaxX - rect->MinX + 1) * (rect->MaxY - rect->MinY + 1);
 }
 
 /****************************************************************************************/
 
-LONG fillrect_pendrmd(struct RastPort *rp, WORD x1, WORD y1, WORD x2, WORD y2,
+void fillrect_pendrmd(struct RastPort *rp, WORD x1, WORD y1, WORD x2, WORD y2,
                       UBYTE pen, UBYTE drmd, struct GfxBase *GfxBase)
 {
     struct GfxPens   pens;
@@ -392,7 +390,7 @@ LONG fillrect_pendrmd(struct RastPort *rp, WORD x1, WORD y1, WORD x2, WORD y2,
     rr.MaxX = x2;
     rr.MaxY = y2;
 
-    return do_render_with_pens(rp, NULL, &rr, fillrect_render, NULL, &pens, GfxBase);
+    do_render_with_pens(rp, NULL, &rr, fillrect_render, NULL, &pens, GfxBase);
 }
 
 /****************************************************************************************/
@@ -401,23 +399,40 @@ LONG fillrect_pendrmd(struct RastPort *rp, WORD x1, WORD y1, WORD x2, WORD y2,
 #define BLTCHUNK 64
 
 /*
- * The minterm on pixels for mt on pens, when each pen's pixel is the pen
- * with all or none of the depth bits flipped; else FALSE.
+ * The bits a pixel table flips, when each pen's pixel is the pen with
+ * all or none of the depth bits flipped; else -1.  No table flips none.
  */
-static BOOL pixminterm(UBYTE mt, const UBYTE *pix, UWORD depth, UBYTE *pmt)
+static WORD pixflip(const UBYTE *pix, UWORD depth)
 {
-    UWORD all = (1 << depth) - 1, k = pix[0] & all, i;
+    UWORD all = (1 << depth) - 1, k, i;
 
+    if(!pix)
+        return 0;
+    k = pix[0] & all;
     if(k != 0 && k != all)
-        return FALSE;
+        return -1;
     for(i = 1; i <= all; i++)
         if((pix[i] & all) != (i ^ k))
-            return FALSE;
-    /* flipped: (b, c) takes mt's bit for (~b, ~c), inverted */
-    *pmt = k ? ((((mt & 0x10) ? 0 : 0x80) | ((mt & 0x20) ? 0 : 0x40) |
-                 ((mt & 0x40) ? 0 : 0x20) | ((mt & 0x80) ? 0 : 0x10)) |
-                (mt & 0x0F)) : mt;
-    return TRUE;
+            return -1;
+    return k;
+}
+
+/*
+ * The minterm on pixels for mt on pens, with source (fs) or destination
+ * (fd) pixels the pens inverted: term 2b + c is fd ^ mt's term
+ * 2(b ^ fs) + (c ^ fd).
+ */
+static UBYTE flipminterm(UBYTE mt, BOOL fs, BOOL fd)
+{
+    UBYTE n = mt >> 4;
+
+    if(fd)
+        n = ((n & 5) << 1) | ((n >> 1) & 5);
+    if(fs)
+        n = ((n & 3) << 2) | ((n >> 2) & 3);
+    if(fd)
+        n ^= 15;
+    return (n << 4) | (mt & 0x0F);
 }
 
 /*
@@ -434,20 +449,18 @@ void int_bltbitmap(struct BitMap *srcBitMap, WORD xSrc, WORD ySrc,
 {
     struct GfxDriver *sd = GFX_DRIVER(srcBitMap);
     struct GfxDriver *dd = GFX_DRIVER(dstBitMap);
-    ULONG srcdepth = GetBitMapAttr(srcBitMap, BMA_DEPTH);
+    UWORD srcdepth = srcBitMap->Depth, dstdepth = dstBitMap->Depth;
     UBYTE *spix = IS_GFXBM(srcBitMap) ? GFXBM(srcBitMap)->gb_PixTab : NULL;
     UBYTE *dpix = IS_GFXBM(dstBitMap) ? GFXBM(dstBitMap)->gb_PixTab : NULL;
     UBYTE sbuf[BLTCHUNK], dbuf[BLTCHUNK], spen[16], dpen[16];
     struct Rectangle r, sr;
-    BOOL ssprite, dsprite, up, left;
+    BOOL ssprite, dsprite, up, left, direct;
     WORD x, y, n, i, yy, xx;
-    UBYTE pmt;
-
     /*
      * A blit covers min(src, dst) planes, so a source shallower than the
      * destination leaves the planes above its own depth alone.
      */
-    if(srcdepth < GetBitMapAttr(dstBitMap, BMA_DEPTH))
+    if(srcdepth < dstdepth)
         mask &= (1 << srcdepth) - 1;
 
     /* The pointer leaves both areas while they are read and written */
@@ -476,12 +489,17 @@ void int_bltbitmap(struct BitMap *srcBitMap, WORD xSrc, WORD ySrc,
         goto done;
     }
 
-    /* Through a pixel table the minterm goes to one on pixels */
-    if(sd->gd_Format == dd->gd_Format && spix == dpix &&
-       (!dpix || minterm == 0xC0 ||
-        pixminterm(minterm, dpix, GetBitMapAttr(dstBitMap, BMA_DEPTH), &pmt))) {
-        if(dpix && minterm != 0xC0)
-            minterm = pmt;
+    /* Through pixel tables that flip all bits or none, the minterm goes to one on pixels */
+    direct = sd->gd_Format == dd->gd_Format;
+    if(direct && (spix != dpix || minterm != 0xC0)) {
+        WORD ks = pixflip(spix, srcdepth);
+        WORD kd = pixflip(dpix, dstdepth);
+
+        direct = ks >= 0 && kd >= 0;
+        if(direct)
+            minterm = flipminterm(minterm, ks != 0, kd != 0);
+    }
+    if(direct) {
         dd->gd_Copy(srcBitMap, xSrc, ySrc, dstBitMap, &r, minterm, mask);
         goto done;
     }
@@ -739,16 +757,13 @@ void GetRPClipRectangleForBitMap(struct BitMap *bm, struct Rectangle *r,
 
 /****************************************************************************************/
 
-ULONG bitmap_render(APTR bitmap_rd, WORD srcx, WORD srcy, struct BitMap *dstbm,
-                    struct Rectangle *rect, struct GfxPens *pens,
-                    struct GfxBase *GfxBase)
+void bitmap_render(APTR bitmap_rd, WORD srcx, WORD srcy, struct BitMap *dstbm,
+                   struct Rectangle *rect, struct GfxPens *pens,
+                   struct GfxBase *GfxBase)
 {
     struct bitmap_render_data *brd = bitmap_rd;
-    WORD                       width  = rect->MaxX - rect->MinX + 1;
-    WORD                       height = rect->MaxY - rect->MinY + 1;
 
     int_bltbitmap(brd->srcbm, srcx, srcy, dstbm, rect->MinX, rect->MinY,
-                  width, height, brd->minterm, pens->gp_Mask, GfxBase);
-
-    return (ULONG)width * height;
+                  rect->MaxX - rect->MinX + 1, rect->MaxY - rect->MinY + 1,
+                  brd->minterm, pens->gp_Mask, GfxBase);
 }

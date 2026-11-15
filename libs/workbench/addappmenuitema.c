@@ -11,6 +11,7 @@
 
 
 #include "workbench_intern.h"
+#include "notifyworkbench.h"
 
 BOOL keyUsed(STRPTR key, struct WorkbenchBase *WorkbenchBase);
 
@@ -123,8 +124,7 @@ BOOL keyUsed(STRPTR key, struct WorkbenchBase *WorkbenchBase);
     AddTail(&(WorkbenchBase->wb_AppMenuItems), (struct Node *)appMenuItem);
     UnlockWorkbench();
 
-    /* NotifyWorkbench(WBNOTIFY_Create, WBNOTIFY_AppMenuItem, WorkbenchBase);
-     */
+    NotifyWorkbench(WBNOTIFY_Create, WBNOTIFY_AppMenuItem, WorkbenchBase);
     
     return appMenuItem;
 

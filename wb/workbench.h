@@ -38,16 +38,30 @@ struct WBIcon {
 	WORD		 in_X, in_Y;	/* frame's top left, inner coordinates */
 	struct Rectangle in_Box;	/* GetIconRectangleA()'s, from in_X, in_Y */
 	BOOL		 in_Selected;
+	UBYTE		 in_Mark;	/* appicons()'s */
+	struct DiskObject *in_App;	/* an AppIcon's, of which in_Obj is a copy */
 	char		 in_Name[NAMELEN];	/* file, or volume with ':' */
 };
 
-/* A drawer window, or the backdrop with the disks (ww_Path NULL) */
+#define HSCROLL		0
+#define VSCROLL		1
+
+/*
+ * A drawer window, or the backdrop with the disks (ww_Path NULL).  Icon
+ * positions are in the drawer's area, of which the window shows the part
+ * at ww_OffX, ww_OffY; ww_Virt bounds the icons and that part.
+ */
 struct WBWin {
 	struct MinNode	 ww_Node;
 	struct Window	*ww_Win;
 	STRPTR		 ww_Path;
 	struct MinList	 ww_Icons;
 	BOOL		 ww_ShowAll;
+	WORD		 ww_OffX, ww_OffY;
+	struct Rectangle ww_Virt;
+	struct Gadget	 ww_Scroll[2];	/* HSCROLL, VSCROLL; none on the backdrop */
+	struct PropInfo	 ww_Prop[2];
+	struct Image	 ww_Knob[2];
 	char		 ww_Title[NAMELEN];
 };
 
@@ -87,6 +101,11 @@ void lasso(struct WBWin *ww, struct Rectangle *r);
 void moveicons(struct WBWin *ww, WORD dx, WORD dy);
 void outline(struct WBWin *ww, WORD dx, WORD dy);
 void update(STRPTR name);
+void appicons(void);
+void removeicon(struct WBWin *ww, struct WBIcon *in);
+void addicon(struct WBWin *ww, STRPTR name, LONG x, LONG y);
+void setscroll(struct WBWin *ww);
+void scroll(struct WBWin *ww);
 
 /* workbench.c */
 extern struct MsgPort *idport;

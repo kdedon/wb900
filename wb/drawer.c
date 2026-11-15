@@ -3,20 +3,21 @@
  * Workbench's windows: the backdrop with the disks and the drawer
  * windows, their icons, and drawing them.  Icons are kept in their
  * window's list in drawing order; a window's inner area starts at 0, 0
- * (drawer windows are GimmeZeroZero, the backdrop has no border).
+ * (drawer windows are GimmeZeroZero, the backdrop has no border).  The
+ * backdrop has the disks and the AppIcons, and drawer windows scroll.
  */
 #include "workbench.h"
 
 #define IDCMPFLAGS (IDCMP_CLOSEWINDOW | IDCMP_MOUSEBUTTONS | \
 	IDCMP_MOUSEMOVE | IDCMP_MENUPICK | IDCMP_REFRESHWINDOW | \
-	IDCMP_NEWSIZE | IDCMP_ACTIVEWINDOW)
+	IDCMP_NEWSIZE | IDCMP_ACTIVEWINDOW | IDCMP_GADGETDOWN | IDCMP_GADGETUP)
 
 /* Columns of the icon grid */
 #define COLW	72
 #define GAP	6
 
 static struct TagItem drawtags[] = {
-	{ ICONDRAWA_Frameless, TRUE }, { ICONDRAWA_EraseBackground, TRUE },
+	{ ICONDRAWA_Frameless, TRUE }, { ICONDRAWA_EraseBackground, FALSE },
 	{ TAG_DONE, 0 }
 };
 
@@ -209,6 +210,7 @@ static void scanvolumes(struct WBWin *ww)
 		}
 		UnLock(lock);
 	}
+	appicons();
 }
 
 void scan(struct WBWin *ww)
@@ -222,15 +224,53 @@ void scan(struct WBWin *ww)
 
 void cleanup(struct WBWin *ww)
 {
+	ww->ww_OffX = ww->ww_OffY = 0;
 	arrange(ww, TRUE);
 	redraw(ww);
+}
+
+/* Prop gadgets in the right and bottom borders */
+static void addscrollers(struct WBWin *ww)
+{
+	struct Window *w = ww->ww_Win;
+	struct Gadget *g;
+	WORD i;
+
+	for (i = HSCROLL; i <= VSCROLL; i++) {
+		g = &ww->ww_Scroll[i];
+		g->GadgetType = GTYP_PROPGADGET | GTYP_GZZGADGET;
+		g->Activation = GACT_IMMEDIATE | GACT_RELVERIFY | GACT_FOLLOWMOUSE;
+		g->Flags = GFLG_GADGHNONE;
+		g->GadgetRender = (APTR)&ww->ww_Knob[i];
+		g->SpecialInfo = (APTR)&ww->ww_Prop[i];
+		ww->ww_Prop[i].Flags = AUTOKNOB | PROPNEWLOOK |
+		    (i == HSCROLL ? FREEHORIZ : FREEVERT);
+		ww->ww_Prop[i].HorizBody = ww->ww_Prop[i].VertBody = MAXBODY;
+	}
+	g = &ww->ww_Scroll[HSCROLL];
+	g->NextGadget = &ww->ww_Scroll[VSCROLL];
+	g->Activation |= GACT_BOTTOMBORDER;
+	g->Flags |= GFLG_RELBOTTOM | GFLG_RELWIDTH;
+	g->LeftEdge = w->BorderLeft;
+	g->TopEdge = 3 - w->BorderBottom;
+	g->Width = -w->BorderLeft - w->BorderRight - 2;
+	g->Height = w->BorderBottom - 4;
+	g = &ww->ww_Scroll[VSCROLL];
+	g->Activation |= GACT_RIGHTBORDER;
+	g->Flags |= GFLG_RELRIGHT | GFLG_RELHEIGHT;
+	g->LeftEdge = 4 - w->BorderRight;
+	g->TopEdge = w->BorderTop + 1;
+	g->Width = w->BorderRight - 6;
+	g->Height = -w->BorderTop - w->BorderBottom - 2;
+	AddGList(w, &ww->ww_Scroll[HSCROLL], -1, 2, NULL);
+	RefreshGList(&ww->ww_Scroll[HSCROLL], w, NULL, 2);
 }
 
 struct WBWin *openwin(STRPTR path, struct DiskObject *dobj)
 {
 	struct WBWin *ww;
 	struct NewWindow *nw = NULL;
-	struct TagItem t[16];
+	struct TagItem t[22];
 	WORD i = 0;
 
 	if ((ww = AllocVec(sizeof(*ww), MEMF_CLEAR)) == NULL)
@@ -248,6 +288,9 @@ struct WBWin *openwin(STRPTR path, struct DiskObject *dobj)
 		t[i++].ti_Data = scr->Height - scr->BarHeight - 1;
 		t[i].ti_Tag = WA_Backdrop;	t[i++].ti_Data = TRUE;
 		t[i].ti_Tag = WA_Borderless;	t[i++].ti_Data = TRUE;
+		/* the screen's background */
+		t[i].ti_Tag = WA_BackFill;
+		t[i++].ti_Data = (IPTR)scr->LayerInfo.BlankHook;
 	} else if (path == NULL) {
 		/* the disks in a window of their own */
 		root = ww;
@@ -259,6 +302,8 @@ struct WBWin *openwin(STRPTR path, struct DiskObject *dobj)
 		t[i].ti_Tag = WA_DragBar;	t[i++].ti_Data = TRUE;
 		t[i].ti_Tag = WA_DepthGadget;	t[i++].ti_Data = TRUE;
 		t[i].ti_Tag = WA_SizeGadget;	t[i++].ti_Data = TRUE;
+		t[i].ti_Tag = WA_SizeBRight;	t[i++].ti_Data = TRUE;
+		t[i].ti_Tag = WA_SizeBBottom;	t[i++].ti_Data = TRUE;
 		t[i].ti_Tag = WA_GimmeZeroZero;	t[i++].ti_Data = TRUE;
 	} else {
 		strncpy(ww->ww_Title, FilePart(path), NAMELEN - 1);
@@ -271,6 +316,8 @@ struct WBWin *openwin(STRPTR path, struct DiskObject *dobj)
 			nw = &dobj->do_DrawerData->dd_NewWindow;
 			ww->ww_ShowAll = dobj->do_DrawerData->dd_Flags ==
 			    DDFLAGS_SHOWALL;
+			ww->ww_OffX = dobj->do_DrawerData->dd_CurrentX;
+			ww->ww_OffY = dobj->do_DrawerData->dd_CurrentY;
 		}
 		t[i].ti_Tag = WA_Left;
 		t[i++].ti_Data = nw && nw->LeftEdge < scr->Width - 80 ?
@@ -287,8 +334,16 @@ struct WBWin *openwin(STRPTR path, struct DiskObject *dobj)
 		t[i].ti_Tag = WA_DragBar;	t[i++].ti_Data = TRUE;
 		t[i].ti_Tag = WA_DepthGadget;	t[i++].ti_Data = TRUE;
 		t[i].ti_Tag = WA_SizeGadget;	t[i++].ti_Data = TRUE;
+		t[i].ti_Tag = WA_SizeBRight;	t[i++].ti_Data = TRUE;
+		t[i].ti_Tag = WA_SizeBBottom;	t[i++].ti_Data = TRUE;
 		t[i].ti_Tag = WA_GimmeZeroZero;	t[i++].ti_Data = TRUE;
 		t[i].ti_Tag = WA_Activate;	t[i++].ti_Data = TRUE;
+	}
+	if (ww != root || !wbbackdrop) {
+		t[i].ti_Tag = WA_MinWidth;	t[i++].ti_Data = 96;
+		t[i].ti_Tag = WA_MinHeight;	t[i++].ti_Data = 64;
+		t[i].ti_Tag = WA_MaxWidth;	t[i++].ti_Data = (ULONG)~0;
+		t[i].ti_Tag = WA_MaxHeight;	t[i++].ti_Data = (ULONG)~0;
 	}
 	t[i].ti_Tag = WA_CustomScreen;	t[i++].ti_Data = (IPTR)scr;
 	t[i].ti_Tag = WA_SimpleRefresh;	t[i++].ti_Data = TRUE;
@@ -304,6 +359,8 @@ struct WBWin *openwin(STRPTR path, struct DiskObject *dobj)
 	}
 	ww->ww_Win->UserPort = idport;
 	ModifyIDCMP(ww->ww_Win, IDCMPFLAGS);
+	if (!(ww->ww_Win->Flags & WFLG_BACKDROP))
+		addscrollers(ww);
 	windowmenus(ww->ww_Win);
 	AddTail((struct List *)&wins, (struct Node *)ww);
 	scan(ww);
@@ -374,16 +431,27 @@ void drawicon(struct WBWin *ww, struct WBIcon *in)
 	char lbl[NAMELEN];
 
 	label(in, lbl);
-	DrawIconStateA(ww->ww_Win->RPort, in->in_Obj, lbl, in->in_X, in->in_Y,
+	DrawIconStateA(ww->ww_Win->RPort, in->in_Obj, lbl,
+	    in->in_X - ww->ww_OffX, in->in_Y - ww->ww_OffY,
 	    in->in_Selected ? IDS_SELECTED : IDS_NORMAL, drawtags);
 }
 
-static BOOL overlaps(struct WBIcon *in, struct Rectangle *r)
+/* The icon's box in the window */
+static void box(struct WBWin *ww, struct WBIcon *in, struct Rectangle *r)
 {
-	return in->in_X + in->in_Box.MinX <= r->MaxX &&
-	    in->in_X + in->in_Box.MaxX >= r->MinX &&
-	    in->in_Y + in->in_Box.MinY <= r->MaxY &&
-	    in->in_Y + in->in_Box.MaxY >= r->MinY;
+	r->MinX = in->in_X - ww->ww_OffX + in->in_Box.MinX;
+	r->MinY = in->in_Y - ww->ww_OffY + in->in_Box.MinY;
+	r->MaxX = in->in_X - ww->ww_OffX + in->in_Box.MaxX;
+	r->MaxY = in->in_Y - ww->ww_OffY + in->in_Box.MaxY;
+}
+
+static BOOL overlaps(struct WBWin *ww, struct WBIcon *in, struct Rectangle *r)
+{
+	struct Rectangle b;
+
+	box(ww, in, &b);
+	return b.MinX <= r->MaxX && b.MaxX >= r->MinX &&
+	    b.MinY <= r->MaxY && b.MaxY >= r->MinY;
 }
 
 /* The icons in r */
@@ -392,8 +460,16 @@ static void drawrect(struct WBWin *ww, struct Rectangle *r)
 	struct WBIcon *in;
 
 	FOREACH(struct WBIcon *, in, &ww->ww_Icons)
-		if (overlaps(in, r))
+		if (overlaps(ww, in, r))
 			drawicon(ww, in);
+}
+
+/* The background of r: the backdrop's is the screen's */
+static void erase(struct WBWin *ww, struct Rectangle *r)
+{
+	if (r->MaxX >= 0 && r->MaxY >= 0)
+		EraseRect(ww->ww_Win->RPort, r->MinX < 0 ? 0 : r->MinX,
+		    r->MinY < 0 ? 0 : r->MinY, r->MaxX, r->MaxY);
 }
 
 void redraw(struct WBWin *ww)
@@ -401,10 +477,120 @@ void redraw(struct WBWin *ww)
 	struct Window *w = ww->ww_Win;
 	struct WBIcon *in;
 
-	SetAPen(w->RPort, 0);
-	RectFill(w->RPort, 0, 0, w->GZZWidth - 1, w->GZZHeight - 1);
+	EraseRect(w->RPort, 0, 0, w->GZZWidth - 1, w->GZZHeight - 1);
 	FOREACH(struct WBIcon *, in, &ww->ww_Icons)
 		drawicon(ww, in);
+	setscroll(ww);
+}
+
+/* A scroller's knob for pos of total, of which view shows */
+static void setprop(struct WBWin *ww, WORD i, LONG pos, LONG total, LONG view)
+{
+	struct PropInfo *pi = &ww->ww_Prop[i];
+	UWORD body = MAXBODY, pot = 0;
+
+	if (total > view) {
+		body = (ULONG)view * MAXBODY / total;
+		pot = (ULONG)pos * MAXPOT / (total - view);
+	}
+	if (i == HSCROLL && (pi->HorizPot != pot || pi->HorizBody != body))
+		NewModifyProp(&ww->ww_Scroll[i], ww->ww_Win, NULL, pi->Flags,
+		    pot, 0, body, MAXBODY, 1);
+	if (i == VSCROLL && (pi->VertPot != pot || pi->VertBody != body))
+		NewModifyProp(&ww->ww_Scroll[i], ww->ww_Win, NULL, pi->Flags,
+		    0, pot, MAXBODY, body, 1);
+}
+
+/* The drawer's extent and the scrollers that show it */
+void setscroll(struct WBWin *ww)
+{
+	struct Window *w = ww->ww_Win;
+	struct Rectangle *v = &ww->ww_Virt;
+	struct WBIcon *in;
+	WORD x0, y0, x1, y1;
+
+	v->MinX = ww->ww_OffX;
+	v->MinY = ww->ww_OffY;
+	v->MaxX = ww->ww_OffX + w->GZZWidth - 1;
+	v->MaxY = ww->ww_OffY + w->GZZHeight - 1;
+	FOREACH(struct WBIcon *, in, &ww->ww_Icons) {
+		x0 = in->in_X + in->in_Box.MinX - GAP;
+		y0 = in->in_Y + in->in_Box.MinY - GAP;
+		x1 = in->in_X + in->in_Box.MaxX + GAP;
+		y1 = in->in_Y + in->in_Box.MaxY + GAP;
+		if (x0 < v->MinX)
+			v->MinX = x0;
+		if (y0 < v->MinY)
+			v->MinY = y0;
+		if (x1 > v->MaxX)
+			v->MaxX = x1;
+		if (y1 > v->MaxY)
+			v->MaxY = y1;
+	}
+	if (ww->ww_Scroll[HSCROLL].SpecialInfo == NULL)
+		return;
+	setprop(ww, HSCROLL, ww->ww_OffX - v->MinX, v->MaxX - v->MinX + 1,
+	    w->GZZWidth);
+	setprop(ww, VSCROLL, ww->ww_OffY - v->MinY, v->MaxY - v->MinY + 1,
+	    w->GZZHeight);
+}
+
+/*
+ * Show the drawer from x, y: what stays is moved, the icons in the strips
+ * that come in are drawn, and parts that were hidden are repaired
+ */
+static void scrollto(struct WBWin *ww, WORD x, WORD y)
+{
+	struct Window *w = ww->ww_Win;
+	WORD dx = x - ww->ww_OffX, dy = y - ww->ww_OffY;
+	struct Rectangle r;
+
+	if (dx == 0 && dy == 0)
+		return;
+	ww->ww_OffX = x;
+	ww->ww_OffY = y;
+	ScrollRasterBF(w->RPort, dx, dy, 0, 0, w->GZZWidth - 1,
+	    w->GZZHeight - 1);
+	r.MinY = 0;
+	r.MaxY = w->GZZHeight - 1;
+	if (dx > 0) {
+		r.MinX = w->GZZWidth - dx;
+		r.MaxX = w->GZZWidth - 1;
+		drawrect(ww, &r);
+	} else if (dx < 0) {
+		r.MinX = 0;
+		r.MaxX = -dx - 1;
+		drawrect(ww, &r);
+	}
+	r.MinX = 0;
+	r.MaxX = w->GZZWidth - 1;
+	if (dy > 0) {
+		r.MinY = w->GZZHeight - dy;
+		r.MaxY = w->GZZHeight - 1;
+		drawrect(ww, &r);
+	} else if (dy < 0) {
+		r.MinY = 0;
+		r.MaxY = -dy - 1;
+		drawrect(ww, &r);
+	}
+	if (w->WLayer->Flags & LAYERREFRESH)
+		refresh(ww);
+}
+
+/* Follow the scrollers' knobs over the extent setscroll() found */
+void scroll(struct WBWin *ww)
+{
+	struct Window *w = ww->ww_Win;
+	struct Rectangle *v = &ww->ww_Virt;
+	LONG sw = v->MaxX - v->MinX + 1 - w->GZZWidth;
+	LONG sh = v->MaxY - v->MinY + 1 - w->GZZHeight;
+	WORD x = ww->ww_OffX, y = ww->ww_OffY;
+
+	if (sw > 0)
+		x = v->MinX + (ULONG)ww->ww_Prop[HSCROLL].HorizPot * sw / MAXPOT;
+	if (sh > 0)
+		y = v->MinY + (ULONG)ww->ww_Prop[VSCROLL].VertPot * sh / MAXPOT;
+	scrollto(ww, x, y);
 }
 
 /* Only the icons in the damage */
@@ -429,7 +615,7 @@ struct WBIcon *hit(struct WBWin *ww, WORD x, WORD y)
 	for (in = (struct WBIcon *)ww->ww_Icons.mlh_TailPred;
 	    in->in_Node.mln_Pred != NULL;
 	    in = (struct WBIcon *)in->in_Node.mln_Pred)
-		if (overlaps(in, &r))
+		if (overlaps(ww, in, &r))
 			return in;
 	return NULL;
 }
@@ -460,7 +646,7 @@ void lasso(struct WBWin *ww, struct Rectangle *r)
 	struct WBIcon *in;
 
 	FOREACH(struct WBIcon *, in, &ww->ww_Icons)
-		if (overlaps(in, r))
+		if (overlaps(ww, in, r))
 			selecticon(ww, in, TRUE);
 }
 
@@ -470,16 +656,18 @@ void outline(struct WBWin *ww, WORD dx, WORD dy)
 	struct RastPort *rp = &scr->RastPort;
 	struct Window *w = ww->ww_Win;
 	struct WBIcon *in;
+	struct Rectangle r;
 	WORD x0, y0, x1, y1;
 
 	SetDrMd(rp, COMPLEMENT);
 	FOREACH(struct WBIcon *, in, &ww->ww_Icons) {
 		if (!in->in_Selected)
 			continue;
-		x0 = w->LeftEdge + w->BorderLeft + in->in_X + in->in_Box.MinX + dx;
-		y0 = w->TopEdge + w->BorderTop + in->in_Y + in->in_Box.MinY + dy;
-		x1 = x0 + in->in_Box.MaxX - in->in_Box.MinX;
-		y1 = y0 + in->in_Box.MaxY - in->in_Box.MinY;
+		box(ww, in, &r);
+		x0 = w->LeftEdge + w->BorderLeft + r.MinX + dx;
+		y0 = w->TopEdge + w->BorderTop + r.MinY + dy;
+		x1 = x0 + r.MaxX - r.MinX;
+		y1 = y0 + r.MaxY - r.MinY;
 		Move(rp, x0, y0);
 		Draw(rp, x1, y0);
 		Draw(rp, x1, y1);
@@ -489,30 +677,140 @@ void outline(struct WBWin *ww, WORD dx, WORD dy)
 	SetDrMd(rp, JAM1);
 }
 
-/* Move the selected icons by dx, dy: erase each and draw what it covered */
+/*
+ * Move the selected icons by dx, dy: erase each and draw what it covered.
+ * A moved icon has a position, which Snapshot saves.
+ */
 void moveicons(struct WBWin *ww, WORD dx, WORD dy)
 {
-	struct RastPort *rp = ww->ww_Win->RPort;
 	struct WBIcon *in;
 	struct Rectangle r;
 
 	FOREACH(struct WBIcon *, in, &ww->ww_Icons) {
 		if (!in->in_Selected)
 			continue;
-		r.MinX = in->in_X + in->in_Box.MinX;
-		r.MinY = in->in_Y + in->in_Box.MinY;
-		r.MaxX = in->in_X + in->in_Box.MaxX;
-		r.MaxY = in->in_Y + in->in_Box.MaxY;
+		box(ww, in, &r);
 		in->in_X += dx;
 		in->in_Y += dy;
-		SetAPen(rp, 0);
-		RectFill(rp, r.MinX < 0 ? 0 : r.MinX, r.MinY < 0 ? 0 : r.MinY,
-		    r.MaxX, r.MaxY);
+		in->in_Obj->do_CurrentX = in->in_X;
+		in->in_Obj->do_CurrentY = in->in_Y;
+		erase(ww, &r);
 		drawrect(ww, &r);
 	}
 	FOREACH(struct WBIcon *, in, &ww->ww_Icons)
 		if (in->in_Selected)
 			drawicon(ww, in);
+	setscroll(ww);
+}
+
+/*
+ * The backdrop's AppIcons as workbench.library lists them: the new ones
+ * go below the icons in its column, the removed ones are erased
+ */
+void appicons(void)
+{
+	static char text[PATHLEN];
+	struct DiskObject *d = NULL;
+	struct WBIcon *in, *next;
+	struct Rectangle r;
+	WORD y = GAP, iw, bw;
+
+	if (root == NULL)
+		return;
+	FOREACH(struct WBIcon *, in, &root->ww_Icons) {
+		in->in_Mark = in->in_App != NULL;
+		if (in->in_Y + in->in_Box.MaxY + GAP > y)
+			y = in->in_Y + in->in_Box.MaxY + GAP;
+	}
+	while ((d = GetNextAppIcon(d, text)) != NULL) {
+		FOREACH(struct WBIcon *, in, &root->ww_Icons)
+			if (in->in_App == d)
+				break;
+		if (in->in_Node.mln_Succ != NULL)
+			in->in_Mark = 0;
+		else if ((in = newicon(root, text, DupDiskObjectA(d, NULL))) !=
+		    NULL) {
+			in->in_App = d;
+			in->in_Mark = 2;
+		}
+	}
+	iw = root->ww_Win->GZZWidth;
+	for (in = (struct WBIcon *)root->ww_Icons.mlh_Head;
+	    (next = (struct WBIcon *)in->in_Node.mln_Succ) != NULL; in = next) {
+		if (in->in_Mark == 1) {
+			box(root, in, &r);
+			Remove((struct Node *)in);
+			FreeDiskObject(in->in_Obj);
+			FreeVec(in);
+			erase(root, &r);
+			drawrect(root, &r);
+		} else if (in->in_Mark == 2) {
+			if (in->in_Obj->do_CurrentX == NO_ICON_POSITION ||
+			    in->in_Obj->do_CurrentY == NO_ICON_POSITION) {
+				bw = in->in_Box.MaxX - in->in_Box.MinX + 1;
+				in->in_X = iw - GAP - COLW / 2 - bw / 2 -
+				    in->in_Box.MinX;
+				in->in_Y = y;
+				y += in->in_Box.MaxY - in->in_Box.MinY + 1 + GAP;
+			}
+			drawicon(root, in);
+		}
+	}
+	setscroll(root);
+}
+
+/* Take the icon out of the window */
+void removeicon(struct WBWin *ww, struct WBIcon *in)
+{
+	struct Rectangle r;
+
+	box(ww, in, &r);
+	Remove((struct Node *)in);
+	FreeDiskObject(in->in_Obj);
+	FreeVec(in);
+	erase(ww, &r);
+	drawrect(ww, &r);
+}
+
+/*
+ * The object name, new in the drawer: its icon at x, y, or for
+ * NO_ICON_POSITION where its .info says or below the others
+ */
+void addicon(struct WBWin *ww, STRPTR name, LONG x, LONG y)
+{
+	char path[PATHLEN];
+	struct DiskObject *dobj;
+	struct WBIcon *in;
+	WORD y0 = GAP;
+
+	FOREACH(struct WBIcon *, in, &ww->ww_Icons)
+		if (Stricmp(in->in_Name, name) == 0) {
+			removeicon(ww, in);
+			break;
+		}
+	strcpy(path, ww->ww_Path);
+	if (!AddPart(path, name, PATHLEN))
+		return;
+	if ((dobj = GetDiskObject(path)) == NULL && ww->ww_ShowAll)
+		dobj = GetDiskObjectNew(path);
+	if (dobj == NULL)
+		return;
+	if (x != NO_ICON_POSITION) {
+		dobj->do_CurrentX = x;
+		dobj->do_CurrentY = y;
+	}
+	FOREACH(struct WBIcon *, in, &ww->ww_Icons)
+		if (in->in_Y + in->in_Box.MaxY + GAP > y0)
+			y0 = in->in_Y + in->in_Box.MaxY + GAP;
+	if ((in = newicon(ww, name, dobj)) == NULL)
+		return;
+	if (dobj->do_CurrentX == NO_ICON_POSITION ||
+	    dobj->do_CurrentY == NO_ICON_POSITION) {
+		in->in_X = GAP - in->in_Box.MinX;
+		in->in_Y = y0;
+	}
+	drawicon(ww, in);
+	setscroll(ww);
 }
 
 /* An object changed: look at its drawer again */

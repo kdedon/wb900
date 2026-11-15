@@ -7,28 +7,34 @@
 #include <graphics/rastport.h>
 
 #include "gfxfuncsupport.h"
+#include "gfxformat.h"
 
 void BltTemplateBasedText(struct RastPort *rp, CONST_STRPTR text, ULONG len,
                           struct GfxBase *GfxBase);
 
-/* Whether every glyph of text is 8 wide from a byte, unkerned, 8 apart */
-static BOOL fastchars(CONST_STRPTR text, UWORD len, struct TextFont *tf)
-{
-    register UWORD *cl = (UWORD *)tf->tf_CharLoc, *w;
-    register UWORD idx, last = NUMCHARS(tf) - 1;
-    register UBYTE c, lo = tf->tf_LoChar, hi = tf->tf_HiChar;
-    WORD *ck = (WORD *)tf->tf_CharKern, *cs = (WORD *)tf->tf_CharSpace;
+/* gfx_Glyphs' job */
+struct glyphjob {
+    UBYTE       *gj_Ras;
+    CONST_STRPTR gj_Text;
+    UBYTE       *gj_Data;
+    UWORD       *gj_Loc;
+    UWORD        gj_Len, gj_Bpr, gj_H, gj_Mod, gj_LoHi, gj_Last;
+    WORD        *gj_Kern, *gj_Space;
+};
 
-    for (; len > 0; len--)
-    {
-        c = *text++;
-        idx = (c < lo || c > hi) ? last : c - lo;
-        w = cl + (idx << 1);
-        if (w[1] != 8 || (w[0] & 7) || (ck && ck[idx] != 0) ||
-            (cs && cs[idx] != 8))
-            return FALSE;
-    }
-    return TRUE;
+/* The job of len glyphs of text in tf */
+static void glyphjob(struct glyphjob *gj, CONST_STRPTR text, UWORD len,
+                     struct TextFont *tf)
+{
+    gj->gj_Text = text;
+    gj->gj_Data = tf->tf_CharData;
+    gj->gj_Loc = (UWORD *)tf->tf_CharLoc;
+    gj->gj_Len = len;
+    gj->gj_Mod = tf->tf_Modulo;
+    gj->gj_LoHi = (tf->tf_LoChar << 8) | tf->tf_HiChar;
+    gj->gj_Last = NUMCHARS(tf) - 1;
+    gj->gj_Kern = (WORD *)tf->tf_CharKern;
+    gj->gj_Space = (WORD *)tf->tf_CharSpace;
 }
 
 /*
@@ -36,31 +42,19 @@ static BOOL fastchars(CONST_STRPTR text, UWORD len, struct TextFont *tf)
  * byte i of each row of bpr bytes from glyph i; a byte after the last
  * glyph is cleared.
  */
-static void fastglyphs(UBYTE *raster, CONST_STRPTR text, UWORD len,
-                       struct TextFont *tf, UWORD bpr, UWORD h)
+static void fastglyphs(UBYTE *raster, struct glyphjob *gj, UWORD bpr,
+                       UWORD h)
 {
-    register UBYTE *d, *g;
-    register UWORD n, mod = tf->tf_Modulo;
-    UWORD *cl = (UWORD *)tf->tf_CharLoc;
-    UBYTE *chardata = tf->tf_CharData;
-    UBYTE lo = tf->tf_LoChar, hi = tf->tf_HiChar, c;
-    UWORD i, idx, last = NUMCHARS(tf) - 1;
+    register UBYTE *d;
+    register UWORD n;
 
-    if (bpr > len)
-        for (d = raster + len, n = h; n > 0; n--, d += bpr)
+    if (bpr > gj->gj_Len)
+        for (d = raster + gj->gj_Len, n = h; n > 0; n--, d += bpr)
             *d = 0;
-    for (i = 0; i < len; i++)
-    {
-        c = text[i];
-        idx = (c < lo || c > hi) ? last : c - lo;
-        g = chardata + (cl[idx * 2] >> 3);
-        for (d = raster + i, n = h; n > 0; n--)
-        {
-            *d = *g;
-            d += bpr;
-            g += mod;
-        }
-    }
+    gj->gj_Ras = raster;
+    gj->gj_Bpr = bpr;
+    gj->gj_H = h;
+    gfx_Glyphs(gj);
 }
 
 
@@ -123,11 +117,12 @@ void BltTemplateBasedText(struct RastPort *rp, CONST_STRPTR text, ULONG len,
                           struct GfxBase *GfxBase)
 {
     struct TextExtent    te;
+    struct glyphjob      gj;
     struct TextFont     *tf;
     WORD                 raswidth, raswidth16, raswidth_bpr, rasheight, x, y, gx;
     UBYTE               *raster;
     BOOL                 is_bold, is_italic, fastfont;
-    BOOL                 allocated = FALSE;
+    BOOL                 allocated = FALSE, kept = FALSE;
     ULONG                rassize;
 
     tf = rp->Font;
@@ -137,7 +132,10 @@ void BltTemplateBasedText(struct RastPort *rp, CONST_STRPTR text, ULONG len,
                rp->TxSpacing == 0;
 
     if (fastfont)
-        fastfont = fastchars(text, len, tf);
+    {
+        glyphjob(&gj, text, len, tf);
+        fastfont = gfx_FastChars(&gj);
+    }
 
     if (fastfont)
     {
@@ -162,8 +160,20 @@ void BltTemplateBasedText(struct RastPort *rp, CONST_STRPTR text, ULONG len,
         raster = rp->TmpRas->RasPtr;
     else
     {
-        raster = AllocRaster(raswidth, rasheight);
-        allocated = raster != NULL;
+        if (rassize <= TEXTRAS)
+        {
+            Forbid();
+            kept = !PrivGBase(GfxBase)->textrasbusy;
+            PrivGBase(GfxBase)->textrasbusy = TRUE;
+            Permit();
+        }
+        if (kept)
+            raster = PrivGBase(GfxBase)->textras;
+        else
+        {
+            raster = AllocRaster(raswidth, rasheight);
+            allocated = raster != NULL;
+        }
     }
 
     if(raster) {
@@ -181,7 +191,7 @@ void BltTemplateBasedText(struct RastPort *rp, CONST_STRPTR text, ULONG len,
          * instead of running the generic bit-copy loop for every pixel. */
         if (fastfont)
         {
-            fastglyphs(raster, text, len, tf, raswidth_bpr, rasheight);
+            fastglyphs(raster, &gj, raswidth_bpr, rasheight);
             x += len * 8;
         }
         else while(len--) {
@@ -361,6 +371,8 @@ void BltTemplateBasedText(struct RastPort *rp, CONST_STRPTR text, ULONG len,
 
         if (allocated)
             FreeRaster(raster, raswidth, rasheight);
+        if (kept)
+            PrivGBase(GfxBase)->textrasbusy = FALSE;
 
     } /* if ((raster = AllocRaster(raswidth, rasheight))) */
 

@@ -95,7 +95,8 @@ static UWORD runrows(ULONG o, UWORD len, LONG step, UWORD rows)
     if (o < 0x10000L && o + len > 0x10000L)
         return 0;
     /* the rows from o to the last are on one side of 0x10000 */
-    last = o + (LONG)(rows - 1) * step;
+    last = gfx_MulW(rows - 1, (UWORD)(step < 0 ? -step : step));
+    last = step < 0 ? o - last : o + last;
     if (o >= 0x10000L ? last >= 0x10000L : last + len <= 0x10000L)
         return rows;
     if (step > 0)
@@ -180,7 +181,7 @@ static void fillcols(const struct GfxPens *p, const struct GfxPlane *pl,
         if (k > 0) {
             gfx_FillRows((UWORD *)PL_AT(pl, o), cnt, k, bpr, tab, tpm,
                 tall ? 0 : y);
-            o += (ULONG)k * bpr;
+            o += gfx_MulW(k, bpr);
             y += k;
             rows -= k;
             continue;
@@ -216,7 +217,7 @@ static void fillspan(const struct GfxPlane *pl, ULONG o, UWORD n, UWORD rows,
         k = runrows(o, n << 1, bpr, rows);
         if (k > 0) {
             fillrect((UWORD *)PL_AT(pl, o), n, k, bpr, a, x, lm, rm);
-            o += (ULONG)k * bpr;
+            o += gfx_MulW(k, bpr);
             rows -= k;
             continue;
         }
@@ -247,7 +248,7 @@ void gfx_Fill(struct BitMap *bm, const struct Rectangle *r,
     lm = 0xFFFF >> (bx0 & 15);
     rm = 0xFFFF << (15 - (bx1 & 15));
     rows = r->MaxY - r->MinY + 1;
-    o = (ULONG)r->MinY * bpr + (w0 << 1);
+    o = gfx_MulW(r->MinY, bpr) + (w0 << 1);
     if (p->gp_Ptrn == NULL) {
         t = (dm & INVERSVID) ? 0 : 0xFFFF;
         for (q = pl; np > 0; np--, q++) {
@@ -265,7 +266,7 @@ void gfx_Fill(struct BitMap *bm, const struct Rectangle *r,
             if (a == 0xFFFF && x == 0)
                 continue;
             if (q->pl_Hi == NULL ||
-                    (ULONG)r->MaxY * bpr + ((w0 + n) << 1) <= 0x10000L)
+                    o + gfx_MulW(rows - 1, bpr) + (n << 1) <= 0x10000L)
                 fillrect((UWORD *)(q->pl_Lo + (UWORD)o), n, rows, bpr,
                     a, x, lm, rm);
             else
@@ -333,7 +334,7 @@ static void getbits(UWORD *out, const UBYTE *s, WORD b, UWORD n, UWORD qend)
         out[k] = bits16(s, b + (WORD)(k << 4), qend);
 }
 
-/* gfx_TmplRows' job; its modes */
+/* gfx_TmplRows' and gfx_TmplRows1's job; its modes */
 struct tmpljob {
     UWORD	*tj_D;
     WORD	 tj_DStep;
@@ -374,8 +375,11 @@ static void tmplrows(struct tmpljob *tj, UWORD *d, UWORD rows,
         tj->tj_Rows = rows - last;
         tj->tj_Src = src;
         tj->tj_TB = tb;
-        gfx_TmplRows(tj);
-        d = (UWORD *)((UBYTE *)d + (ULONG)tj->tj_DStep * (rows - 1));
+        if (tj->tj_Nib)
+            gfx_TmplRows(tj);
+        else
+            gfx_TmplRows1(tj);
+        d = (UWORD *)((UBYTE *)d + gfx_MulW(tj->tj_DStep, rows - 1));
         src += tj->tj_SrcMod * (rows - 1);
     }
     if (last) {
@@ -391,7 +395,10 @@ static void tmplrows(struct tmpljob *tj, UWORD *d, UWORD rows,
         tj->tj_Rows = 1;
         tj->tj_Src = lb;
         tj->tj_TB = tb;
-        gfx_TmplRows(tj);
+        if (tj->tj_Nib)
+            gfx_TmplRows(tj);
+        else
+            gfx_TmplRows1(tj);
     }
 }
 
@@ -445,7 +452,7 @@ void gfx_Template(struct BitMap *bm, const struct Rectangle *r,
         for (c = 0; c < n; c += cnt) {
             cnt = n - c < TPASS ? n - c : TPASS;
             tb = tx + (WORD)(c * ppw);
-            o = (ULONG)r->MinY * bpr + ((w0 + c) << 1);
+            o = gfx_MulW(r->MinY, bpr) + ((w0 + c) << 1);
             s = src;
             y = r->MinY;
             for (rows = r->MaxY - r->MinY + 1; rows > 0; rows -= k) {
@@ -464,7 +471,7 @@ void gfx_Template(struct BitMap *bm, const struct Rectangle *r,
                         tb + (WORD)(n1 * ppw), cnt - n1, 0xFFFF,
                         c + cnt == n ? rm : 0xFFFF, y == r->MaxY, qlen);
                 }
-                o += (ULONG)k * bpr;
+                o += gfx_MulW(k, bpr);
                 s += srcmod * k;
                 y += k;
             }
@@ -634,9 +641,11 @@ void gfx_Copy(struct BitMap *src, WORD sx, WORD sy, struct BitMap *dst,
     dstep = up ? -(LONG)dbpr : dbpr;
     /* right to left on the same row when the destination is right of it */
     cj.cj_Left = src == dst && r->MinY == sy && r->MinX > sx;
-    /* whole rows of words: the same bits of the source words, or shifted;
-       right to left only from a source bit at or after the destination's */
-    aligned = minterm == 0xC0 && (cj.cj_TB >= 0 || !cj.cj_Left);
+    /* whole rows of words, copied, and for 0x30 then inverted: the same
+       bits of the source words, or shifted; right to left only from a
+       source bit at or after the destination's */
+    aligned = (minterm == 0xC0 || minterm == 0x30) &&
+        (cj.cj_TB >= 0 || !cj.cj_Left);
 
     for (i = 0, pi = 0; i < np; i++) {
         /* the source plane of the destination's, or its constant */
@@ -652,8 +661,8 @@ void gfx_Copy(struct BitMap *src, WORD sx, WORD sy, struct BitMap *dst,
         cj.cj_Const = pp == (PLANEPTR)-1 ? 0xFFFF : 0;
         cj.cj_Lo = pp == (PLANEPTR)-1 ? NULL : pp;
         cj.cj_Hi = pp == src->Planes[0] ? shi : NULL;
-        so = (ULONG)(up ? sy + h - 1 : sy) * sbpr + (sw << 1);
-        dof = (ULONG)(up ? r->MaxY : r->MinY) * dbpr + (w0 << 1);
+        so = gfx_MulW(up ? sy + h - 1 : sy, sbpr) + (sw << 1);
+        dof = gfx_MulW(up ? r->MaxY : r->MinY, dbpr) + (w0 << 1);
         for (rows = h; rows > 0; rows -= k) {
             k = 1;
             if (aligned && cj.cj_Lo && dp[i].pl_M == 0xFFFF) {
@@ -673,8 +682,12 @@ void gfx_Copy(struct BitMap *src, WORD sx, WORD sy, struct BitMap *dst,
                         gfx_ShiftRows(d, s, cj.cj_N, k, (WORD)dstep,
                             (WORD)sstep, cj.cj_TB, cj.cj_LM, cj.cj_RM,
                             cj.cj_Left ? -1 : 1);
-                    so += sstep * k;
-                    dof += dstep * k;
+                    if (minterm == 0x30)
+                        fillrect(up ? (UWORD *)((UBYTE *)d -
+                            gfx_MulW(k - 1, dbpr)) : d, cj.cj_N, k, dbpr,
+                            0xFFFF, 0xFFFF, cj.cj_LM, cj.cj_RM);
+                    so = up ? so - gfx_MulW(k, sbpr) : so + gfx_MulW(k, sbpr);
+                    dof = up ? dof - gfx_MulW(k, dbpr) : dof + gfx_MulW(k, dbpr);
                     continue;
                 }
                 k = 1;
@@ -701,13 +714,14 @@ struct linejob {
 };
 
 /*
- * A line of dM steps on its major axis and dm on its minor one: the
- * minor steps after i steps; the first step with at least k; the last
- * with at most k.  The blitter's line mode steps diagonally on a tie.
+ * A line of dM steps on its major axis and dm on its minor one, dM under
+ * 16384: the minor steps after i steps; the first step with at least k;
+ * the last with at most k.  The blitter's line mode steps diagonally on
+ * a tie.
  */
 static WORD fstep(WORD dM, WORD dm, WORD i)
 {
-    return (WORD)((2 * (ULONG)dm * i + dM) / (2 * (ULONG)dM));
+    return gfx_MulDiv(2 * dm, i, dM, 2 * dM, NULL);
 }
 
 static WORD firstf(WORD dM, WORD dm, WORD k)
@@ -716,7 +730,7 @@ static WORD firstf(WORD dM, WORD dm, WORD k)
         return 0;
     if (dm == 0 || k > dm)
         return dM + 1;
-    return (WORD)((2 * (ULONG)dM * k - dM + 2 * dm - 1) / (2 * (ULONG)dm));
+    return gfx_MulDiv(2 * dM, k, 2 * dm - dM - 1, 2 * dm, NULL);
 }
 
 static WORD lastf(WORD dM, WORD dm, WORD k)
@@ -725,7 +739,7 @@ static WORD lastf(WORD dM, WORD dm, WORD k)
         return -1;
     if (dm == 0 || k >= dm)
         return dM;
-    return (WORD)((2 * (ULONG)dM * (k + 1) - dM - 1) / (2 * (ULONG)dm));
+    return gfx_MulDiv(2 * dM, k + 1, -dM - 1, 2 * dm, NULL);
 }
 
 /* What stays the same for the pieces of a line */
@@ -749,15 +763,17 @@ static WORD lastrow(const struct line *ln, WORD yl)
 static void linerun(const struct line *ln, const struct GfxPlane *pl,
     struct linejob *lj, WORD s, WORD e)
 {
-    WORD f = fstep(ln->dM, ln->dm, s), x, y;
-    UWORD rot = s & 15;
+    UWORD r, rot = s & 15;
+    ULONG o;
+    WORD f = gfx_MulDiv(2 * ln->dm, s, ln->dM, 2 * ln->dM, &r), x, y;
     UBYTE pm = (UBYTE)pl->pl_M;
 
     x = ln->x0 + ln->sx * (ln->steep ? f : s);
     y = ln->y0 + ln->sy * (ln->steep ? s : f);
-    lj->lj_Err = (WORD)(2 * (LONG)ln->dm * (s + 1) - ln->dM -
-        2 * (LONG)ln->dM * f);
-    lj->lj_At = PL_AT(pl, (ULONG)y * ln->bpr + (((ULONG)x * ln->bpp) >> 3));
+    /* 2 dm (s + 1) - dM - 2 dM f, from the remainder of f */
+    lj->lj_Err = r + 2 * (ln->dm - ln->dM);
+    o = gfx_MulW(y, ln->bpr) + (ln->bpp == 1 ? x >> 3 : x >> 1);
+    lj->lj_At = PL_AT(pl, o);
     lj->lj_Mask = (ln->bpp == 1 ? 0x80 >> (x & 7) :
         ((x & 1) ? 0x0F : 0xF0)) & pm;
     lj->lj_Ptrn = rot ? (ln->ptrn << rot) | (ln->ptrn >> (16 - rot)) :
@@ -793,6 +809,9 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
     ln.steep = dx < dy;
     ln.dM = ln.steep ? dy : dx;
     ln.dm = ln.steep ? dx : dy;
+    /* the error terms are words */
+    if (ln.dM >= 16384)
+        return;
     /* the steps with their pixel in the clip: along the major axis */
     if (ln.steep) {
         a = ln.sy > 0 ? clip->MinY - y0 : y0 - clip->MaxY;
@@ -828,10 +847,6 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
     lj.lj_YStep = ln.sy > 0 ? ln.bpr : -ln.bpr;
     lj.lj_Shift = ln.sx > 0 ? -bpp : bpp;
     lj.lj_Steep = ln.steep;
-    /* the rows below yb are in the first 64 KB, row yb from byte rb on */
-    yb = (WORD)(0x10000L / ln.bpr);
-    rb = (WORD)(0x10000L % ln.bpr);
-    xs = (rb << 3) / bpp;
     for (i = 0; i < np; i++) {
         pm = (UBYTE)pl[i].pl_M;
         if (p->gp_DrMd & COMPLEMENT) {
@@ -849,7 +864,14 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
             linerun(&ln, &pl[i], &lj, a, b);
             continue;
         }
-        /* pieces that stay in one half */
+        /* pieces that stay in one half: the rows below yb are in the
+           first 64 KB, row yb from byte rb (pixel xs) on */
+        yb = gfx_MulDiv(1, 0, 0xFFFFL, ln.bpr, (UWORD *)&rb);
+        if (++rb == ln.bpr) {
+            yb++;
+            rb = 0;
+        }
+        xs = bpp == 1 ? rb << 3 : rb << 1;
         for (s = a; s <= b; s = e + 1) {
             dy = y0 + ln.sy * (ln.steep ? s : fstep(ln.dM, ln.dm, s));
             if (dy < yb)

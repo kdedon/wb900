@@ -4,7 +4,9 @@
  * input.device while Workbench runs.  It opens the System disk and the
  * Demos drawer with double clicks, checks the icons' pixels, selects
  * Hello with a click and a lasso, drags it, launches it, opens Notes,
- * shows all files and cleans up through the menus, and quits.  Each
+ * shows all files and cleans up through the menus.  It uses an AppIcon
+ * and an AppMenuItem, scrolls a narrowed drawer, snapshots it, copies
+ * Hello to the Ram Disk, checks the backdrop's pattern, and quits.  Each
  * check prints a FAIL line when it fails.
  */
 #include "workbench.h"
@@ -90,9 +92,9 @@ static void iconpos(struct WBWin *ww, struct WBIcon *in, WORD *x, WORD *y)
 {
 	struct Window *w = ww->ww_Win;
 
-	*x = w->LeftEdge + w->BorderLeft + in->in_X + 4 +
+	*x = w->LeftEdge + w->BorderLeft + in->in_X - ww->ww_OffX + 4 +
 	    in->in_Obj->do_Gadget.Width / 2;
-	*y = w->TopEdge + w->BorderTop + in->in_Y + 4 +
+	*y = w->TopEdge + w->BorderTop + in->in_Y - ww->ww_OffY + 4 +
 	    in->in_Obj->do_Gadget.Height / 2;
 }
 
@@ -143,7 +145,8 @@ static BOOL pixels(struct WBWin *ww, struct WBIcon *in, UWORD comp)
 
 	for (y = 0; y < im->Height; y++)
 		for (x = 0; x < im->Width; x++)
-			if (ReadPixel(rp, in->in_X + 4 + x, in->in_Y + 4 + y) !=
+			if (ReadPixel(rp, in->in_X - ww->ww_OffX + 4 + x,
+			    in->in_Y - ww->ww_OffY + 4 + y) !=
 			    ((imgpen(im, x, y) ^ comp) & mask))
 				return FALSE;
 	return TRUE;
@@ -222,10 +225,368 @@ static void stackuse(char *name)
 	    (int)(top - p), (int)(top - (UBYTE *)t->tc_SPLower));
 }
 
+/* Whether the screen shows its background in r, screen coordinates */
+static BOOL backdrop(struct Rectangle *r)
+{
+	static UWORD halftone[] = { 0x3333, 0xCCCC };
+	struct DrawInfo *dri = GetScreenDrawInfo(scr);
+	UWORD fill = dri->dri_Pens[FILLPEN], back = dri->dri_Pens[BACKGROUNDPEN];
+	BOOL plain = scr->LayerInfo.BlankHook == NULL;
+	WORD x, y;
+	LONG pen;
+
+	FreeScreenDrawInfo(scr, dri);
+	for (y = r->MinY; y <= r->MaxY; y++)
+		for (x = r->MinX; x <= r->MaxX; x++) {
+			pen = !plain && (halftone[y & 1] & (0x8000 >> (x & 15))) ?
+			    fill : back;
+			if (ReadPixel(&scr->RastPort, x, y) != pen)
+				return FALSE;
+		}
+	return TRUE;
+}
+
+/* The icon's box on the screen */
+static void screenbox(struct WBWin *ww, struct WBIcon *in, struct Rectangle *r)
+{
+	struct Window *w = ww->ww_Win;
+
+	r->MinX = w->LeftEdge + w->BorderLeft + in->in_X - ww->ww_OffX +
+	    in->in_Box.MinX;
+	r->MinY = w->TopEdge + w->BorderTop + in->in_Y - ww->ww_OffY +
+	    in->in_Box.MinY;
+	r->MaxX = r->MinX + in->in_Box.MaxX - in->in_Box.MinX;
+	r->MaxY = r->MinY + in->in_Box.MaxY - in->in_Box.MinY;
+}
+
+/* The next AppMessage, waiting up to 2 s; its first file in a static name */
+static char argname[PATHLEN];
+
+static struct AppMessage *appmsg(struct MsgPort *mp)
+{
+	struct AppMessage *am = NULL;
+	WORD i;
+
+	for (i = 0; i < 40 && (am = (struct AppMessage *)GetMsg(mp)) == NULL;
+	    i++)
+		Delay(5);
+	argname[0] = 0;
+	if (am != NULL && am->am_NumArgs > 0 &&
+	    NameFromLock(am->am_ArgList[0].wa_Lock, argname, PATHLEN))
+		AddPart(argname, am->am_ArgList[0].wa_Name, PATHLEN);
+	return am;
+}
+
+static BOOL gotmsg(struct MsgPort *mp, UWORD type, IPTR id, LONG n)
+{
+	struct AppMessage *am = appmsg(mp);
+	BOOL ok = am != NULL && am->am_Type == type && am->am_ID == id &&
+	    am->am_NumArgs == n;
+
+	if (am != NULL)
+		ReplyMsg((struct Message *)am);
+	return ok;
+}
+
+/* An AppIcon on the backdrop: opened, a file dropped on it, moved, removed */
+static void appicon(struct WBWin *demos, struct MsgPort *mp)
+{
+	struct DiskObject *dobj = GetDefDiskObject(WBTOOL);
+	struct WBIcon *in = NULL, *hello = findicon(demos, "Hello");
+	struct AppIcon *ai;
+	struct Rectangle r;
+	WORD i, x, y, y0, hx, hy;
+
+	ai = AddAppIconA(5, 6, "AppIcon", mp, NULL, dobj, NULL);
+	for (i = 0; i < 20 && (in = findicon(root, "AppIcon")) == NULL; i++)
+		Delay(5);
+	check(ai != NULL && in != NULL && in->in_App == dobj, "AppIcon shown");
+	if (in == NULL)
+		return;
+	check(pixels(root, in, 0), "AppIcon pixels");
+	iconpos(root, in, &x, &y);
+	click(x, y);
+	click(x, y);
+	check(gotmsg(mp, AMTYPE_APPICON, 5, 0), "AppIcon opened");
+	iconpos(demos, hello, &hx, &hy);
+	drag(hx, hy, x, y);
+	check(gotmsg(mp, AMTYPE_APPICON, 5, 1) &&
+	    streq(argname, "System:Demos/Hello"), "Hello dropped on the AppIcon");
+
+	/* moved down, the pattern is where it was */
+	screenbox(root, in, &r);
+	y0 = in->in_Y;
+	drag(x, y, x, y + 100);
+	check(in->in_Y == y0 + 100 && backdrop(&r), "AppIcon moved");
+	screenbox(root, in, &r);
+	check(RemoveAppIcon(ai), "RemoveAppIcon");
+	for (i = 0; i < 20 && findicon(root, "AppIcon") != NULL; i++)
+		Delay(5);
+	settle();
+	check(findicon(root, "AppIcon") == NULL && backdrop(&r),
+	    "AppIcon removed");
+	FreeDiskObject(dobj);
+}
+
+static WORD nmenus(void)
+{
+	struct Menu *m;
+	WORD n = 0;
+
+	for (m = wbmenus; m != NULL; m = m->NextMenu)
+		n++;
+	return n;
+}
+
+/* An AppMenuItem in the Tools menu, picked with Hello selected */
+static void appmenu(struct WBWin *demos, struct MsgPort *mp)
+{
+	struct AppMenuItem *ami;
+	WORD i, x, y;
+
+	ami = AddAppMenuItemA(7, 8, "Tool Item", mp, NULL);
+	for (i = 0; i < 20 && nmenus() != 4; i++)
+		Delay(5);
+	check(ami != NULL && nmenus() == 4, "Tools menu");
+	if (nmenus() != 4)
+		return;
+	iconpos(demos, findicon(demos, "Hello"), &x, &y);
+	click(x, y);
+	pick(3, 0);
+	check(gotmsg(mp, AMTYPE_APPMENUITEM, 7, 1) &&
+	    streq(argname, "System:Demos/Hello"), "AppMenuItem picked");
+	check(RemoveAppMenuItem(ami), "RemoveAppMenuItem");
+	for (i = 0; i < 20 && nmenus() != 3; i++)
+		Delay(5);
+	check(nmenus() == 3, "no Tools menu");
+}
+
+/* The scroller's knob on the screen */
+static void knob(struct WBWin *ww, WORD i, struct Rectangle *r)
+{
+	struct Window *w = ww->ww_Win;
+	struct Gadget *g = &ww->ww_Scroll[i];
+	struct PropInfo *pi = &ww->ww_Prop[i];
+	WORD k;
+
+	if (i == HSCROLL) {
+		k = (ULONG)pi->CWidth * pi->HorizBody / MAXBODY;
+		r->MinX = w->LeftEdge + g->LeftEdge + 1 +
+		    (ULONG)(pi->CWidth - k) * pi->HorizPot / MAXPOT;
+		r->MaxX = r->MinX + k - 1;
+		r->MinY = w->TopEdge + w->Height - 1 + g->TopEdge + 1;
+		r->MaxY = r->MinY + pi->CHeight - 1;
+	} else {
+		k = (ULONG)pi->CHeight * pi->VertBody / MAXBODY;
+		r->MinX = w->LeftEdge + w->Width - 1 + g->LeftEdge + 1;
+		r->MaxX = r->MinX + pi->CWidth - 1;
+		r->MinY = w->TopEdge + g->TopEdge + 1 +
+		    (ULONG)(pi->CHeight - k) * pi->VertPot / MAXPOT;
+		r->MaxY = r->MinY + k - 1;
+	}
+}
+
+/* Whether the icons that the window shows whole are drawn */
+static BOOL shown(struct WBWin *ww)
+{
+	struct Window *w = ww->ww_Win;
+	struct WBIcon *in;
+	WORD x, y, n = 0;
+
+	FOREACH(struct WBIcon *, in, &ww->ww_Icons) {
+		x = in->in_X - ww->ww_OffX;
+		y = in->in_Y - ww->ww_OffY;
+		if (x + in->in_Box.MinX < 0 || y + in->in_Box.MinY < 0 ||
+		    x + in->in_Box.MaxX >= w->GZZWidth ||
+		    y + in->in_Box.MaxY >= w->GZZHeight)
+			continue;
+		if (!pixels(ww, in, in->in_Selected ? 3 : 0))
+			return FALSE;
+		n++;
+	}
+	return n > 0;
+}
+
+/* Narrowed, Demos scrolls; cleaned up it fits its width again */
+static void scrolling(struct WBWin *demos)
+{
+	struct Window *w = demos->ww_Win;
+	struct Rectangle r;
+	WORD x, y;
+
+	x = w->LeftEdge + w->Width - 3;
+	y = w->TopEdge + w->Height - 3;
+	drag(x, y, x - 260, y);
+	check(w->Width < 160 && demos->ww_Prop[HSCROLL].HorizBody < MAXBODY,
+	    "narrowed Demos scrolls");
+	/* a click right of the knob pages right, a drag goes back */
+	knob(demos, HSCROLL, &r);
+	click(r.MaxX + 3, (r.MinY + r.MaxY) / 2);
+	check(demos->ww_OffX > 0 && shown(demos), "scrolled right");
+	knob(demos, HSCROLL, &r);
+	x = (r.MinX + r.MaxX) / 2;
+	y = (r.MinY + r.MaxY) / 2;
+	drag(x, y, x - 200, y);
+	check(demos->ww_OffX == demos->ww_Virt.MinX && shown(demos),
+	    "scrolled back");
+	pick(1, 2);
+	check(demos->ww_OffX == 0 &&
+	    demos->ww_Prop[HSCROLL].HorizBody == MAXBODY, "Clean Up fits");
+	if (demos->ww_Prop[VSCROLL].VertBody < MAXBODY) {
+		knob(demos, VSCROLL, &r);
+		x = (r.MinX + r.MaxX) / 2;
+		y = (r.MinY + r.MaxY) / 2;
+		drag(x, y, x, y + 30);
+		check(demos->ww_OffY > 0 && shown(demos), "scrolled down");
+	}
+}
+
+/* Window and Icons: Snapshot, UnSnapshot, and the window reopened */
+static void snapshot(struct WBWin *sys, struct WBWin *demos)
+{
+	static char path[] = "System:Demos";
+	struct Window *w = demos->ww_Win;
+	struct DiskObject *d;
+	struct WBIcon *in = findicon(demos, "Hello");
+	WORD width = w->Width, offy = demos->ww_OffY, x, y;
+	LONG hx = in->in_X;
+
+	pick(1, 5);
+	d = GetDiskObject(path);
+	check(d != NULL && d->do_DrawerData != NULL &&
+	    d->do_DrawerData->dd_NewWindow.Width == width &&
+	    d->do_DrawerData->dd_CurrentY == offy, "Window Snapshot");
+	FreeDiskObject(d);
+	d = GetDiskObject("System:Demos/Hello");
+	check(d != NULL && d->do_CurrentX == hx, "icon Snapshot");
+	FreeDiskObject(d);
+	iconpos(demos, in, &x, &y);
+	click(x, y);
+	pick(2, 3);
+	d = GetDiskObject("System:Demos/Hello");
+	check(d != NULL && d->do_CurrentX == NO_ICON_POSITION, "UnSnapshot");
+	FreeDiskObject(d);
+
+	/* closed and opened again, as snapshot */
+	pick(1, 1);
+	check(findpath(path) == NULL, "Demos closed");
+	iconpos(sys, findicon(sys, "Demos"), &x, &y);
+	click(x, y);
+	click(x, y);
+	demos = waitwin(path);
+	check(demos != NULL && demos->ww_Win->Width == width &&
+	    demos->ww_OffY == offy && findicon(demos, "Hello") != NULL,
+	    "Demos reopened");
+}
+
+/* Whether the path is there */
+static BOOL exists(STRPTR path)
+{
+	BPTR lock = Lock(path, ACCESS_READ);
+
+	UnLock(lock);
+	return lock != NULL;
+}
+
+/*
+ * The Ram Disk's window moved aside: an icon of Demos dropped in it is
+ * copied to where it was let go, and Hello dropped on a drawer moves
+ */
+static void ramdisk(struct WBWin *demos, struct WBWin *ram)
+{
+	static char name[NAMELEN + 4];
+	struct DiskObject *d = GetDefDiskObject(WBDRAWER);
+	struct Window *w = ram->ww_Win;
+	struct WBIcon *in, *sub = NULL;
+	WORD x, y, x1, y1, i;
+
+	x = w->LeftEdge + 40;
+	y = w->TopEdge + 4;
+	drag(x, y, x + 500, y + 300);
+	check(w->LeftEdge > 500, "Ram Disk window moved");
+	FOREACH(struct WBIcon *, in, &demos->ww_Icons)
+		if (in->in_Y - demos->ww_OffY >= 0 &&
+		    in->in_Y - demos->ww_OffY + in->in_Box.MaxY <
+		    demos->ww_Win->GZZHeight && !streq(in->in_Name, "Hello"))
+			break;
+	check(in->in_Node.mln_Succ != NULL, "an icon to copy");
+	if (in->in_Node.mln_Succ == NULL)
+		return;
+	strcpy(name, "RAM:");
+	strcat(name, in->in_Name);
+	iconpos(demos, in, &x, &y);
+	x1 = w->LeftEdge + w->Width / 2;
+	y1 = w->TopEdge + w->Height / 2;
+	drag(x, y, x1, y1);
+	in = findicon(ram, FilePart(name));
+	if (in != NULL)
+		iconpos(ram, in, &x, &y);
+	check(exists(name) && in != NULL && x == x1 && y == y1,
+	    "copied where dropped");
+
+	/* a drawer in the Ram Disk, and Hello moved into it */
+	/* PutDiskObject() tells Workbench */
+	UnLock(CreateDir("RAM:Sub"));
+	check(d != NULL && PutDiskObject("RAM:Sub", d), "RAM:Sub");
+	FreeDiskObject(d);
+	for (i = 0; i < 20 && (sub = findicon(ram, "Sub")) == NULL; i++)
+		Delay(5);
+	in = findicon(ram, "Hello");
+	check(sub != NULL && in != NULL, "Sub shown");
+	if (sub == NULL || in == NULL)
+		return;
+	iconpos(ram, in, &x, &y);
+	iconpos(ram, sub, &x1, &y1);
+	drag(x, y, x1, y1);
+	check(findicon(ram, "Hello") == NULL && exists("RAM:Sub/Hello") &&
+	    exists("RAM:Sub/Hello.info") && !exists("RAM:Hello"),
+	    "Hello moved into Sub");
+}
+
+/* Hello dropped on the Ram Disk is copied with its icon */
+static void copy(struct WBWin *demos)
+{
+	static struct FileInfoBlock fib;
+	struct WBIcon *in = findicon(demos, "Hello"), *ram = findicon(root,
+	    "Ram Disk:");
+	struct WBWin *ww;
+	LONG size[2];
+	WORD i, x, y, rx, ry;
+	BPTR lock;
+	static char *names[] = { "System:Demos/Hello", "RAM:Hello" };
+
+	check(in != NULL && ram != NULL, "Ram Disk");
+	if (in == NULL || ram == NULL)
+		return;
+	iconpos(demos, in, &x, &y);
+	iconpos(root, ram, &rx, &ry);
+	drag(x, y, rx, ry);
+	for (i = 0; i < 2; i++) {
+		size[i] = -1;
+		if ((lock = Lock(names[i], ACCESS_READ)) != NULL) {
+			if (Examine(lock, &fib))
+				size[i] = fib.fib_Size;
+			UnLock(lock);
+		}
+	}
+	lock = Lock("RAM:Hello.info", ACCESS_READ);
+	check(size[0] > 0 && size[1] == size[0] && lock != NULL &&
+	    findicon(demos, "Hello") != NULL, "Hello copied");
+	UnLock(lock);
+	click(rx, ry);
+	click(rx, ry);
+	ww = waitwin("Ram Disk:");
+	check(ww != NULL && findicon(ww, "Hello") != NULL, "Ram Disk window");
+	if (ww != NULL)
+		ramdisk(demos, ww);
+}
+
 static void script(void)
 {
 	struct WBWin *sys, *demos;
 	struct WBIcon *in, *hello;
+	struct MsgPort *port;
+	struct Rectangle r;
 	struct Task *t;
 	WORD x, y, x0, n;
 
@@ -315,6 +676,21 @@ static void script(void)
 		    "Clean Up");
 		x0 = in->in_X + in->in_Box.MaxX;
 	}
+
+	if ((port = CreateMsgPort()) != NULL) {
+		appicon(demos, port);
+		appmenu(demos, port);
+		DeleteMsgPort(port);
+	}
+	scrolling(demos);
+	snapshot(sys, demos);
+	if ((demos = waitwin("System:Demos")) != NULL)
+		copy(demos);
+	r.MinX = scr->Width / 2;
+	r.MaxX = r.MinX + 40;
+	r.MinY = scr->Height - 40;
+	r.MaxY = r.MinY + 20;
+	check(backdrop(&r), "backdrop pattern");
 
 	/* Workbench: Backdrop off and on again */
 	pick(0, 0);

@@ -4,7 +4,9 @@
  * window for each open drawer.  Icons are selected with a click (shift
  * adds), a lasso, or dragged as outlines within or between windows; a
  * double click opens a drawer or launches a program through
- * workbench.library.  Without a display it drives itself (selftest()).
+ * workbench.library.  Icons dropped on another volume are copied.
+ * AppIcons and the Tools menu's AppMenuItems send their applications
+ * AppMessages.  Without a display it drives itself (selftest()).
  */
 #include "workbench.h"
 #include <devices/inputevent.h>
@@ -75,8 +77,8 @@ char *strncpy(char *d, CONST_STRPTR s, ULONG n)
 /*** Menus ***/
 
 enum { M_BACKDROP = 1, M_EXECUTE, M_REDRAW, M_ABOUT, M_QUIT, M_PARENT,
-	M_CLOSE, M_CLEANUP, M_ICONS, M_ALL, M_OPEN, M_INFO, M_RENAME,
-	M_DELETE };
+	M_CLOSE, M_CLEANUP, M_ICONS, M_ALL, M_SNAPWIN, M_OPEN, M_INFO,
+	M_SNAPSHOT, M_UNSNAPSHOT, M_RENAME, M_DELETE, M_TOOL };
 
 static struct NewMenu newmenus[] = {
 	{ NM_TITLE, "Workbench", NULL, 0, 0, NULL },
@@ -93,9 +95,12 @@ static struct NewMenu newmenus[] = {
 	{ NM_ITEM, "Show Only Icons", NULL, CHECKIT | CHECKED, 0x10,
 	    (APTR)M_ICONS },
 	{ NM_ITEM, "Show All Files", NULL, CHECKIT, 0x08, (APTR)M_ALL },
+	{ NM_ITEM, "Snapshot", NULL, 0, 0, (APTR)M_SNAPWIN },
 	{ NM_TITLE, "Icons", NULL, 0, 0, NULL },
 	{ NM_ITEM, "Open", "O", 0, 0, (APTR)M_OPEN },
 	{ NM_ITEM, "Information...", "I", 0, 0, (APTR)M_INFO },
+	{ NM_ITEM, "Snapshot", "S", 0, 0, (APTR)M_SNAPSHOT },
+	{ NM_ITEM, "UnSnapshot", "U", 0, 0, (APTR)M_UNSNAPSHOT },
 	{ NM_ITEM, "Rename...", "R", 0, 0, (APTR)M_RENAME },
 	{ NM_ITEM, "Delete...", NULL, 0, 0, (APTR)M_DELETE },
 	{ NM_END, NULL, NULL, 0, 0, NULL }
@@ -105,6 +110,71 @@ void windowmenus(struct Window *w)
 {
 	if (wbmenus != NULL)
 		SetMenuStrip(w, wbmenus);
+}
+
+static void showchecks(struct WBWin *ww);
+
+/* The menus, with a Tools menu of the AppMenuItems after newmenus' */
+#define NBASE	(sizeof(newmenus) / sizeof(newmenus[0]) - 1)
+#define MAXTOOLS 16
+
+static struct NewMenu toolmenus[NBASE + MAXTOOLS + 2];
+static struct AppMenuItem *tools[MAXTOOLS];
+static char toolname[MAXTOOLS][APPMENUTEXT], toolkey[MAXTOOLS][2];
+
+/* An AppMenuItem of only '-', '_' and '~' is a bar */
+static BOOL isbar(char *s)
+{
+	for (; *s; s++)
+		if (*s != '-' && *s != '_' && *s != '~')
+			return FALSE;
+	return TRUE;
+}
+
+static void makemenus(void)
+{
+	struct NewMenu *nm = toolmenus;
+	struct AppMenuItem *ami = NULL;
+	struct TagItem t[2];
+	struct Menu *m;
+	struct WBWin *w;
+	WORD n = NBASE, i;
+
+	CopyMem(newmenus, nm, sizeof(newmenus));
+	if (!wbbackdrop)
+		nm[1].nm_Flags &= ~CHECKED;
+	for (i = 0; i < MAXTOOLS &&
+	    (ami = GetNextAppMenuItem(ami, toolname[i], toolkey[i])) != NULL;
+	    i++) {
+		if (i == 0) {
+			memset(&nm[n], 0, sizeof(nm[n]));
+			nm[n].nm_Type = NM_TITLE;
+			nm[n++].nm_Label = "Tools";
+		}
+		tools[i] = ami;
+		memset(&nm[n], 0, sizeof(nm[n]));
+		nm[n].nm_Type = NM_ITEM;
+		nm[n].nm_Label = isbar(toolname[i]) ? NM_BARLABEL : toolname[i];
+		nm[n].nm_CommKey = toolkey[i][0] ? toolkey[i] : NULL;
+		nm[n++].nm_UserData = (APTR)(IPTR)(M_TOOL + i);
+	}
+	memset(&nm[n], 0, sizeof(nm[n]));
+	t[0].ti_Tag = GTMN_NewLookMenus;	t[0].ti_Data = TRUE;
+	t[1].ti_Tag = TAG_DONE;
+	if ((m = CreateMenusA(nm, NULL)) == NULL)
+		return;
+	if (!LayoutMenusA(m, vi, t)) {
+		FreeMenus(m);
+		return;
+	}
+	FOREACHWIN(w)
+		ClearMenuStrip(w->ww_Win);
+	FreeMenus(wbmenus);
+	wbmenus = m;
+	FOREACHWIN(w)
+		SetMenuStrip(w->ww_Win, wbmenus);
+	if ((w = findwin(IntuitionBase->ActiveWindow)) != NULL)
+		showchecks(w);
 }
 
 /* The Show items' checkmarks for the active window */
@@ -238,14 +308,24 @@ static void opendrawer(STRPTR path, struct DiskObject *dobj)
 void openicon(struct WBWin *ww, struct WBIcon *in)
 {
 	char path[PATHLEN];
+	struct DiskObject *dobj;
 
+	if (in->in_App != NULL) {
+		if (!SendAppIconMessage(in->in_App, 0, NULL, AMCLASSICON_Open,
+		    0, 0, 0, 0))
+			DisplayBeep(scr);
+		return;
+	}
 	if (!fullpath(ww, in, path))
 		return;
 	switch (in->in_Obj->do_Type) {
 	case WBDISK:
 	case WBDRAWER:
 	case WBGARBAGE:
-		opendrawer(path, in->in_Obj);
+		/* the window as last snapshot */
+		dobj = GetDiskObjectNew(path);
+		opendrawer(path, dobj);
+		FreeDiskObject(dobj);
 		break;
 	default:
 		if (!OpenWorkbenchObjectA(path, NULL))
@@ -365,6 +445,92 @@ static void selected(void (*fn)(struct WBWin *, struct WBIcon *), BOOL first)
 			}
 }
 
+/* The icon's position into its .info: where it is, or none */
+static void snapicon(struct WBWin *ww, struct WBIcon *in, BOOL keep)
+{
+	char path[PATHLEN];
+
+	if (in->in_App != NULL || !fullpath(ww, in, path))
+		return;
+	in->in_Obj->do_CurrentX = keep ? in->in_X : NO_ICON_POSITION;
+	in->in_Obj->do_CurrentY = keep ? in->in_Y : NO_ICON_POSITION;
+	if (!PutIconTagList(path, in->in_Obj, NULL))
+		DisplayBeep(scr);
+}
+
+static void snapshot(struct WBWin *ww, struct WBIcon *in)
+{
+	snapicon(ww, in, TRUE);
+}
+
+static void unsnapshot(struct WBWin *ww, struct WBIcon *in)
+{
+	snapicon(ww, in, FALSE);
+}
+
+/* The icons' positions, and the window's in its drawer's icon */
+static void snapwin(struct WBWin *ww)
+{
+	struct Window *w = ww->ww_Win;
+	struct DiskObject *d;
+	struct DrawerData *dd;
+	struct WBIcon *in;
+
+	FOREACH(struct WBIcon *, in, &ww->ww_Icons)
+		snapicon(ww, in, TRUE);
+	if (ww == root)
+		return;
+	d = GetDiskObjectNew(ww->ww_Path);
+	if (d == NULL || (dd = d->do_DrawerData) == NULL) {
+		DisplayBeep(scr);
+		FreeDiskObject(d);
+		return;
+	}
+	dd->dd_NewWindow.LeftEdge = w->LeftEdge;
+	dd->dd_NewWindow.TopEdge = w->TopEdge;
+	dd->dd_NewWindow.Width = w->Width;
+	dd->dd_NewWindow.Height = w->Height;
+	dd->dd_CurrentX = ww->ww_OffX;
+	dd->dd_CurrentY = ww->ww_OffY;
+	dd->dd_Flags = ww->ww_ShowAll ? DDFLAGS_SHOWALL : DDFLAGS_SHOWICONS;
+	if (!PutIconTagList(ww->ww_Path, d, NULL))
+		DisplayBeep(scr);
+	FreeDiskObject(d);
+}
+
+#define MAXARGS	8
+
+/* The paths of the selected icons, of from or all windows, in buf */
+static WORD selfiles(struct WBWin *from, char **files, char *buf)
+{
+	struct WBWin *ww;
+	struct WBIcon *in;
+	WORD n = 0;
+
+	FOREACHWIN(ww)
+		if (from == NULL || ww == from)
+			FOREACH(struct WBIcon *, in, &ww->ww_Icons)
+				if (in->in_Selected && in->in_App == NULL &&
+				    n < MAXARGS && fullpath(ww, in, buf)) {
+					files[n++] = buf;
+					buf += PATHLEN;
+				}
+	return n;
+}
+
+/* An AppMessage of the selected icons for a pick of the Tools menu */
+static void picktool(WORD i)
+{
+	char *files[MAXARGS], *buf = AllocVec(MAXARGS * PATHLEN, MEMF_ANY);
+	ULONG secs, micros;
+
+	CurrentTime(&secs, &micros);
+	if (buf == NULL || !SendAppMenuItemMessage(tools[i],
+	    selfiles(NULL, files, buf), files, secs, micros))
+		DisplayBeep(scr);
+	FreeVec(buf);
+}
+
 static void setbackdrop(BOOL on)
 {
 	if (on == wbbackdrop)
@@ -433,11 +599,21 @@ static void menu(struct WBWin *ww, UWORD code)
 			if (ww != NULL)
 				showmode(ww, (IPTR)GTMENUITEM_USERDATA(item) == M_ALL);
 			break;
+		case M_SNAPWIN:
+			if (ww != NULL)
+				snapwin(ww);
+			break;
 		case M_OPEN:
 			selected(openicon, FALSE);
 			break;
 		case M_INFO:
 			selected(info, FALSE);
+			break;
+		case M_SNAPSHOT:
+			selected(snapshot, FALSE);
+			break;
+		case M_UNSNAPSHOT:
+			selected(unsnapshot, FALSE);
 			break;
 		case M_RENAME:
 			selected(wbrename, TRUE);
@@ -445,6 +621,9 @@ static void menu(struct WBWin *ww, UWORD code)
 		case M_DELETE:
 			selected(wbdelete, TRUE);
 			return;
+		default:
+			picktool((IPTR)GTMENUITEM_USERDATA(item) - M_TOOL);
+			break;
 		}
 		code = item->NextSelect;
 	}
@@ -452,7 +631,7 @@ static void menu(struct WBWin *ww, UWORD code)
 
 /*** Mouse ***/
 
-enum { IDLE, PRESS, DRAG, LASSO };
+enum { IDLE, PRESS, DRAG, LASSO, SCROLL };
 
 static WORD state = IDLE;
 static struct WBWin *mww;		/* the window of the press */
@@ -474,37 +653,127 @@ static void bandbox(void)
 	SetDrMd(rp, JAM1);
 }
 
-/* Move the selected icons of from into the drawer dir */
-static void dropinto(struct WBWin *from, STRPTR dir)
-{
-	char src[PATHLEN], to[PATHLEN];
-	struct WBIcon *in;
-	struct WBWin *ww;
-	BOOL moved = FALSE;
+#define COPYBUF	4096
 
-	FOREACH(struct WBIcon *, in, &from->ww_Icons) {
-		if (!in->in_Selected || from == root || !fullpath(from, in, src))
+static BOOL copyfile(STRPTR src, STRPTR dst, UBYTE *buf)
+{
+	BPTR in, out;
+	LONG n;
+
+	if ((in = Open(src, MODE_OLDFILE)) == NULL)
+		return FALSE;
+	if ((out = Open(dst, MODE_NEWFILE)) == NULL) {
+		Close(in);
+		return FALSE;
+	}
+	while ((n = Read(in, buf, COPYBUF)) > 0)
+		if (Write(out, buf, n) != n) {
+			n = -1;
+			break;
+		}
+	Close(out);
+	Close(in);
+	if (n != 0)
+		DeleteFile(dst);
+	return n == 0;
+}
+
+/* A drawer level's names, on the heap to spare the stack */
+struct level {
+	struct FileInfoBlock l_Fib;
+	char	 l_From[PATHLEN], l_To[PATHLEN];
+};
+
+/* The file or drawer src, and what is in it, to the new name dst */
+static BOOL copytree(STRPTR src, STRPTR dst, UBYTE *buf)
+{
+	struct level *l = AllocVec(sizeof(*l), MEMF_CLEAR);
+	BPTR lock, dir;
+	BOOL ok = FALSE;
+
+	if (l == NULL)
+		return FALSE;
+	if ((lock = Lock(src, ACCESS_READ)) != NULL && Examine(lock, &l->l_Fib)) {
+		if (l->l_Fib.fib_DirEntryType < 0) {
+			ok = copyfile(src, dst, buf);
+		} else if ((dir = CreateDir(dst)) != NULL) {
+			UnLock(dir);
+			ok = TRUE;
+			while (ok && ExNext(lock, &l->l_Fib)) {
+				strcpy(l->l_From, src);
+				strcpy(l->l_To, dst);
+				ok = AddPart(l->l_From, l->l_Fib.fib_FileName,
+				    PATHLEN) && AddPart(l->l_To,
+				    l->l_Fib.fib_FileName, PATHLEN) &&
+				    copytree(l->l_From, l->l_To, buf);
+			}
+		}
+	}
+	UnLock(lock);
+	FreeVec(l);
+	return ok;
+}
+
+/*
+ * Move the selected icons of from into the drawer dir, or copy them
+ * with their icons when dir is on another volume.  In dir's window they
+ * go dx, dy from where they were, or to free places for NO_ICON_POSITION.
+ */
+static void dropinto(struct WBWin *from, STRPTR dir, LONG dx, LONG dy)
+{
+	static struct TagItem busytags[] = {
+		{ WA_BusyPointer, TRUE }, { TAG_DONE, 0 }
+	};
+	struct level *l;
+	STRPTR src, to;
+	struct WBIcon *in, *next;
+	struct WBWin *ww = findpath(dir);
+	UBYTE *buf = NULL;
+	BOOL moved;
+
+	if (from == root || ww == from ||
+	    (l = AllocVec(sizeof(*l), MEMF_ANY)) == NULL)
+		return;
+	src = l->l_From;
+	to = l->l_To;
+	for (in = (struct WBIcon *)from->ww_Icons.mlh_Head;
+	    (next = (struct WBIcon *)in->in_Node.mln_Succ) != NULL; in = next) {
+		if (!in->in_Selected || !fullpath(from, in, src))
 			continue;
 		strcpy(to, dir);
-		if (!AddPart(to, in->in_Name, PATHLEN - 5) || !Rename(src, to)) {
+		if (!AddPart(to, in->in_Name, PATHLEN - 5)) {
 			DisplayBeep(scr);
 			continue;
 		}
-		strcat(src, ".info");
-		strcat(to, ".info");
-		Rename(src, to);
-		moved = TRUE;
+		if ((moved = Rename(src, to)) != FALSE) {
+			strcat(src, ".info");
+			strcat(to, ".info");
+			Rename(src, to);
+		} else if (IoErr() != ERROR_RENAME_ACROSS_DEVICES ||
+		    (buf == NULL && (buf = AllocVec(COPYBUF, MEMF_ANY)) == NULL)) {
+			DisplayBeep(scr);
+			continue;
+		} else {
+			SetWindowPointerA(from->ww_Win, busytags);
+			if (!copytree(src, to, buf)) {
+				DisplayBeep(scr);
+				continue;
+			}
+			strcat(src, ".info");
+			strcat(to, ".info");
+			copyfile(src, to, buf);
+		}
+		if (ww != NULL)
+			addicon(ww, in->in_Name, dx == NO_ICON_POSITION ? dx :
+			    in->in_X + dx, in->in_Y + dy);
+		if (moved)
+			removeicon(from, in);
 	}
-	if (!moved)
-		return;
-	freeicons(from);
-	scan(from);
-	redraw(from);
-	if ((ww = findpath(dir)) != NULL) {
-		freeicons(ww);
-		scan(ww);
-		redraw(ww);
+	if (buf != NULL) {
+		FreeVec(buf);
+		SetWindowPointerA(from->ww_Win, NULL);
 	}
+	FreeVec(l);
 }
 
 /* Launch the tool at with the selected icons of from as its arguments */
@@ -535,15 +804,37 @@ static void droptool(struct WBWin *from, STRPTR tool)
 		UnLock(locks[i]);
 }
 
+/* The selected icons of mww dropped on the AppIcon in, or the AppWindow w */
+static void dropapp(struct IntuiMessage *im, struct Window *w,
+    struct WBIcon *in)
+{
+	char *files[MAXARGS], *buf = AllocVec(MAXARGS * PATHLEN, MEMF_ANY);
+	WORD n;
+	BOOL ok = FALSE;
+
+	if (buf != NULL) {
+		n = selfiles(mww, files, buf);
+		if (in != NULL)
+			ok = SendAppIconMessage(in->in_App, n, files, 0,
+			    scr->MouseX, scr->MouseY, im->Seconds, im->Micros);
+		else if (w != NULL)
+			ok = SendAppWindowMessage(w, n, files, 0,
+			    scr->MouseX - w->LeftEdge, scr->MouseY - w->TopEdge,
+			    im->Seconds, im->Micros);
+	}
+	if (!ok)
+		DisplayBeep(scr);
+	FreeVec(buf);
+}
+
 /* The selected icons of mww let go at the screen's mouse position */
 static void drop(struct IntuiMessage *im)
 {
-	char path[PATHLEN], files[PATHLEN];
+	char path[PATHLEN];
 	struct Layer *l = WhichLayer(&scr->LayerInfo, scr->MouseX, scr->MouseY);
 	struct Window *w = l ? l->Window : NULL;
 	struct WBWin *ww = findwin(w);
 	struct WBIcon *in;
-	char *list[1];
 
 	if (ww == mww) {
 		in = hit(ww, scr->MouseX - w->LeftEdge - w->BorderLeft,
@@ -556,22 +847,21 @@ static void drop(struct IntuiMessage *im)
 		in = hit(ww, scr->MouseX - w->LeftEdge - w->BorderLeft,
 		    scr->MouseY - w->TopEdge - w->BorderTop);
 	} else {
-		/* an AppWindow gets the first icon */
-		FOREACH(struct WBIcon *, in, &mww->ww_Icons)
-			if (in->in_Selected && fullpath(mww, in, files)) {
-				list[0] = files;
-				if (w == NULL || !SendAppWindowMessage(w, 1, list, 0,
-				    scr->MouseX - w->LeftEdge,
-				    scr->MouseY - w->TopEdge, im->Seconds,
-				    im->Micros))
-					DisplayBeep(scr);
-				break;
-			}
+		dropapp(im, w, NULL);
 		return;
 	}
 	if (in == NULL) {
+		/* where the outlines were let go */
 		if (ww != root)
-			dropinto(mww, ww->ww_Path);
+			dropinto(mww, ww->ww_Path, dx + mww->ww_Win->LeftEdge +
+			    mww->ww_Win->BorderLeft - mww->ww_OffX -
+			    w->LeftEdge - w->BorderLeft + ww->ww_OffX,
+			    dy + mww->ww_Win->TopEdge + mww->ww_Win->BorderTop -
+			    mww->ww_OffY - w->TopEdge - w->BorderTop + ww->ww_OffY);
+		return;
+	}
+	if (in->in_App != NULL) {
+		dropapp(im, w, in);
 		return;
 	}
 	if (!fullpath(ww, in, path))
@@ -580,7 +870,7 @@ static void drop(struct IntuiMessage *im)
 	case WBDISK:
 	case WBDRAWER:
 	case WBGARBAGE:
-		dropinto(mww, path);
+		dropinto(mww, path, NO_ICON_POSITION, 0);
 		break;
 	case WBTOOL:
 		droptool(mww, path);
@@ -679,6 +969,9 @@ static void moved(void)
 		band.MaxY = scr->MouseY - w->TopEdge - w->BorderTop;
 		bandbox();
 		break;
+	case SCROLL:
+		scroll(mww);
+		break;
 	}
 }
 
@@ -711,6 +1004,18 @@ static void idcmp(void)
 			break;
 		case IDCMP_REFRESHWINDOW:
 			refresh(ww);
+			break;
+		case IDCMP_NEWSIZE:
+			setscroll(ww);
+			break;
+		case IDCMP_GADGETDOWN:
+			mww = ww;
+			state = SCROLL;
+			break;
+		case IDCMP_GADGETUP:
+			scroll(ww);
+			setscroll(ww);
+			state = IDLE;
 			break;
 		case IDCMP_ACTIVEWINDOW:
 			showchecks(ww);
@@ -745,6 +1050,10 @@ static void handler(void)
 		case WBHM_TYPE_UPDATE:
 			if (m->wbhm_Data.Update.Name != NULL)
 				update((STRPTR)m->wbhm_Data.Update.Name);
+			else if (m->wbhm_Data.Update.Type == WBAPPICON)
+				appicons();
+			else if (m->wbhm_Data.Update.Type == AMTYPE_APPMENUITEM)
+				makemenus();
 			break;
 		}
 		ReplyMsg((struct Message *)m);
@@ -804,13 +1113,8 @@ LONG Workbench(char *args, LONG len)
 	t[1].ti_Tag = TAG_DONE;
 	IconControlA(NULL, t);
 	RegisterWorkbench(wbport);
-	t[0].ti_Tag = GTMN_NewLookMenus;	t[0].ti_Data = TRUE;
-	if ((vi = GetVisualInfoA(scr, NULL)) != NULL &&
-	    (wbmenus = CreateMenusA(newmenus, NULL)) != NULL &&
-	    !LayoutMenusA(wbmenus, vi, t)) {
-		FreeMenus(wbmenus);
-		wbmenus = NULL;
-	}
+	if ((vi = GetVisualInfoA(scr, NULL)) != NULL)
+		makemenus();
 	openwin(NULL, NULL);
 	test = NextDisplayInfo(INVALID_ID) == INVALID_ID;
 	if (test && !selftest())

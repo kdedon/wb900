@@ -12,10 +12,9 @@
 #include <proto/utility.h>
 
 #include "workbench_intern.h"
+#include "support_messages.h"
 #include <workbench/workbench.h>
 
-
-static char *allocPath(char *str, APTR WorkbenchBase);
 
 /*****************************************************************************
 
@@ -47,7 +46,8 @@ static char *allocPath(char *str, APTR WorkbenchBase);
         files - files "list"
 
     RESULT
-        TRUE if action succeeded
+        TRUE if the message was sent; the AppWindow's application replies
+        it later
 
     NOTES
 
@@ -68,86 +68,22 @@ static char *allocPath(char *str, APTR WorkbenchBase);
 {
     AROS_LIBFUNC_INIT
 
-    struct List *awl = NULL;
-
+    struct AppWindow *aw;
     BOOL success = FALSE;
 
     if (numfiles == 0) return FALSE;
 
     LockWorkbenchShared();
-    awl = &WorkbenchBase->wb_AppWindows;
-    if (!IsListEmpty(awl))
+    for (aw = (struct AppWindow *)WorkbenchBase->wb_AppWindows.lh_Head;
+         aw->aw_Node.mln_Succ != NULL;
+         aw = (struct AppWindow *)aw->aw_Node.mln_Succ)
     {
-        struct Node *succ;
-        struct Node *s = awl->lh_Head;
-        struct AppWindow *aw = NULL;
-        int    i;
-        BOOL   fail = FALSE;
-
-        struct AppMessage *am = AllocVec(sizeof (struct AppMessage), MEMF_CLEAR);
-        if (am)
+        if (aw->aw_Window == win)
         {
-            while (((succ = ((struct Node*) s)->ln_Succ) != NULL) && (aw == NULL))
-            {
-                if ((((struct AppWindow *) s)->aw_Window) == win)
-                {
-                    aw = (struct AppWindow *) s;
-                }
-                s =  succ;
-            }
-            if (aw)
-            {
-                struct WBArg *wbargs = AllocVec(sizeof(struct WBArg) * numfiles, MEMF_CLEAR);
-                if (wbargs)
-                {
-                    struct WBArg *wb = wbargs;
-                    for (i = 0; i < numfiles; i++)
-                    {
-                        wb->wa_Name = FilePart(files[i]);
-                        char *path = allocPath(files[i], WorkbenchBase);
-                        if (path)
-                        {
-                            wb->wa_Lock = Lock(path, SHARED_LOCK);
-                            if (wb->wa_Lock == 0) fail = TRUE;
-                            FreeVec(path);
-                        }
-                        wb++;
-                    }
-                    if (!fail)
-                    {
-                        struct MsgPort *port = aw->aw_MsgPort;
-                        am->am_NumArgs = numfiles;
-                        am->am_ArgList = wbargs;
-                        am->am_ID = aw->aw_ID;
-                        am->am_UserData = aw->aw_UserData;
-                        am->am_Type = AMTYPE_APPWINDOW;
-                        am->am_Version = AM_VERSION;
-                        am->am_Class = class;
-                        am->am_MouseX = mousex;
-                        am->am_MouseY = mousey;
-                        am->am_Seconds = seconds;
-                        am->am_Micros = micros;
-                        struct MsgPort *reply = CreateMsgPort();
-                        if (reply)
-                        {
-                            am->am_Message.mn_ReplyPort = reply;
-                            PutMsg(port, (struct Message *) am);
-                            WaitPort(reply);
-                            GetMsg(reply);
-                            DeleteMsgPort(reply);
-                            success = TRUE;
-                        }
-                    }
-                    wb = wbargs;
-                    for (i = 0; i < numfiles; i++)
-                    {
-                        if (wb->wa_Lock) UnLock(wb->wa_Lock);
-                        wb++;
-                    }
-                    FreeVec(wbargs);
-                }
-            }
-            FreeVec(am);
+            success = SendAppMessage(aw->aw_MsgPort, AMTYPE_APPWINDOW,
+                aw->aw_ID, aw->aw_UserData, numfiles, files, class,
+                mousex, mousey, seconds, micros);
+            break;
         }
     }
     UnlockWorkbench();
@@ -156,24 +92,3 @@ static char *allocPath(char *str, APTR WorkbenchBase);
 
     AROS_LIBFUNC_EXIT
 } /* SendAppWindowMessage() */
-
-/*****************************************************************************/
-
-static char *allocPath(char *str, APTR WorkbenchBase)
-{
-    char *s0, *s1, *s;
-
-    s = NULL;
-    s0 = str;
-
-    s1 = PathPart(str);
-    if (s1)
-    {
-        int  l;
-
-        for (l = 0; s0 != s1; s0++,l++);
-        s = AllocVec(l + 1, MEMF_CLEAR);
-        if (s) CopyMem(str, s, l);
-    }
-    return s;
-}

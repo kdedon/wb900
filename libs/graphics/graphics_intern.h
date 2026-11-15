@@ -73,14 +73,18 @@ struct SoftSprite {
     WORD                    ss_W, ss_H;     /* its size */
     BOOL                    ss_Shown;
     struct BitMap          *ss_Save;       /* what it covers, at its place */
-    UBYTE                  *ss_Tmpl;       /* templates of pens 1-3 */
+    UBYTE                  *ss_Tmpl;       /* templates of pens 1-3, and room to merge */
     ULONG                   ss_TmplSize;
+    struct BitMap          *ss_Flush;      /* drawn into, to flush at the end */
 };
 
 BOOL gfx_SpriteBefore(struct BitMap *bm, struct Rectangle *r, struct GfxBase *GfxBase);
 void gfx_SpriteAfter(struct GfxBase *GfxBase);
 
 /* Internal GFXBase struct */
+/* Bytes of the template Text() keeps: 64 characters of an 8 by 8 font */
+#define TEXTRAS 512
+
 struct GfxBase_intern {
     struct GfxBase 	 	gfxbase;
 
@@ -105,6 +109,10 @@ struct GfxBase_intern {
     /* Regions pool */
     struct SignalSemaphore  	regionsem;
     struct MinList              ChunkPoolList;
+
+    /* Text()'s template when it fits, and whether a task has it */
+    UBYTE                       textras[TEXTRAS];
+    BOOL                        textrasbusy;
 };
 
 /* Macros */

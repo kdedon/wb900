@@ -1082,11 +1082,11 @@ static struct Gadget *Process_RawMouse(struct InputEvent *ie, struct IIHData *ii
                    Will be added to prescaled deltas of next mousemove event. If this is not done, moving
                    the mouse very slowly would cause it to not move at all */
 
-                iihdata->DeltaMouseX_Correction = iihdata->DeltaMouseX % GetPrivIBase(IntuitionBase)->ActivePreferences.PointerTicks;
-                iihdata->DeltaMouseY_Correction = iihdata->DeltaMouseY % GetPrivIBase(IntuitionBase)->ActivePreferences.PointerTicks;
+                iihdata->DeltaMouseX_Correction = iihdata->DeltaMouseX % (WORD)GetPrivIBase(IntuitionBase)->ActivePreferences.PointerTicks;
+                iihdata->DeltaMouseY_Correction = iihdata->DeltaMouseY % (WORD)GetPrivIBase(IntuitionBase)->ActivePreferences.PointerTicks;
 
-                iihdata->DeltaMouseX /= GetPrivIBase(IntuitionBase)->ActivePreferences.PointerTicks;
-                iihdata->DeltaMouseY /= GetPrivIBase(IntuitionBase)->ActivePreferences.PointerTicks;
+                iihdata->DeltaMouseX /= (WORD)GetPrivIBase(IntuitionBase)->ActivePreferences.PointerTicks;
+                iihdata->DeltaMouseY /= (WORD)GetPrivIBase(IntuitionBase)->ActivePreferences.PointerTicks;
                 break;
             }
 
