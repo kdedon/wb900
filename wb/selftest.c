@@ -1,8 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 /*
  * Workbench without a display: a process writes a user's events to
- * input.device while Workbench runs.  It opens the System disk and the
- * Demos drawer with double clicks, checks the icons' pixels, selects
+ * input.device while Workbench runs.  It moves the Ram Disk, opens the
+ * System disk and the Utilities and Demos drawers with double clicks,
+ * checks the icons' pixels and labels, selects
  * Hello with a click and a lasso, drags it, launches it, opens Notes,
  * shows all files and cleans up through the menus.  It uses an AppIcon
  * and an AppMenuItem, scrolls a narrowed drawer, snapshots it, copies
@@ -246,6 +247,49 @@ static BOOL backdrop(struct Rectangle *r)
 	return TRUE;
 }
 
+/*
+ * Whether the icon's label is its text in TEXTPEN on a box of
+ * BACKGROUNDPEN, 2 pixels wider each side and 1 taller
+ */
+static BOOL labelled(struct WBWin *ww, struct WBIcon *in)
+{
+	struct RastPort *rp = ww->ww_Win->RPort, t;
+	struct DrawInfo *dri = GetScreenDrawInfo(scr);
+	struct TextExtent te;
+	struct BitMap *bm;
+	WORD n = strlen(in->in_Name), x, y, x0, y0, bw, bh;
+	BOOL ok = TRUE;
+
+	if (in->in_Name[n - 1] == ':')
+		n--;
+	TextExtent(rp, in->in_Name, n, &te);
+	bw = te.te_Width + 4;
+	bh = te.te_Height + 2;
+	x0 = in->in_X - ww->ww_OffX + in->in_Box.MinX +
+	    (in->in_Box.MaxX - in->in_Box.MinX + 1 - bw) / 2;
+	y0 = in->in_Y - ww->ww_OffY + in->in_Box.MaxY - bh + 1;
+	bm = AllocBitMap(bw, bh, GetBitMapAttr(rp->BitMap, BMA_DEPTH),
+	    BMF_CLEAR, NULL);
+	if (bm == NULL) {
+		FreeScreenDrawInfo(scr, dri);
+		return FALSE;
+	}
+	InitRastPort(&t);
+	t.BitMap = bm;
+	SetFont(&t, rp->Font);
+	SetRast(&t, dri->dri_Pens[BACKGROUNDPEN]);
+	SetAPen(&t, dri->dri_Pens[TEXTPEN]);
+	SetDrMd(&t, JAM1);
+	Move(&t, 2, 1 - te.te_Extent.MinY);
+	Text(&t, in->in_Name, n);
+	for (y = 0; y < bh && ok; y++)
+		for (x = 0; x < bw && ok; x++)
+			ok = ReadPixel(rp, x0 + x, y0 + y) == ReadPixel(&t, x, y);
+	FreeBitMap(bm);
+	FreeScreenDrawInfo(scr, dri);
+	return ok;
+}
+
 /* The icon's box on the screen */
 static void screenbox(struct WBWin *ww, struct WBIcon *in, struct Rectangle *r)
 {
@@ -405,6 +449,36 @@ static BOOL shown(struct WBWin *ww)
 		n++;
 	}
 	return n > 0;
+}
+
+/* Utilities opens showing each of its 7 tools whole */
+static void utilities(struct WBWin *sys)
+{
+	struct WBIcon *in = findicon(sys, "Utilities");
+	struct WBWin *ww;
+	WORD x, y, n = 0;
+
+	check(in != NULL, "Utilities icon");
+	if (in == NULL)
+		return;
+	iconpos(sys, in, &x, &y);
+	click(x, y);
+	click(x, y);
+	ww = waitwin("System:Utilities");
+	check(ww != NULL, "Utilities drawer");
+	if (ww == NULL)
+		return;
+	FOREACH(struct WBIcon *, in, &ww->ww_Icons) {
+		x = in->in_X - ww->ww_OffX;
+		y = in->in_Y - ww->ww_OffY;
+		check(x + in->in_Box.MinX >= 0 && y + in->in_Box.MinY >= 0 &&
+		    x + in->in_Box.MaxX < ww->ww_Win->GZZWidth &&
+		    y + in->in_Box.MaxY < ww->ww_Win->GZZHeight, in->in_Name);
+		n++;
+	}
+	check(n == 7, "7 utilities");
+	click(ww->ww_Win->LeftEdge + 4, ww->ww_Win->TopEdge + 4);
+	check(findpath("System:Utilities") == NULL, "Utilities closed");
 }
 
 /* Narrowed, Demos scrolls; cleaned up it fits its width again */
@@ -581,6 +655,24 @@ static void copy(struct WBWin *demos)
 		ramdisk(demos, ww);
 }
 
+/* The Ram Disk moved left: its label goes, the backdrop shows again */
+static void ramlabel(void)
+{
+	struct WBIcon *in = findicon(root, "Ram Disk:");
+	struct Rectangle r;
+	WORD x, y, x0;
+
+	check(in != NULL && labelled(root, in), "Ram Disk label");
+	if (in == NULL)
+		return;
+	x0 = in->in_X;
+	screenbox(root, in, &r);
+	iconpos(root, in, &x, &y);
+	drag(x, y, x - 120, y);
+	check(in->in_X == x0 - 120 && labelled(root, in) && backdrop(&r),
+	    "Ram Disk moved");
+}
+
 static void script(void)
 {
 	struct WBWin *sys, *demos;
@@ -594,7 +686,8 @@ static void script(void)
 	check(in != NULL, "System disk icon");
 	if (in == NULL)
 		return;
-	check(pixels(root, in, 0), "disk icon pixels");
+	check(pixels(root, in, 0) && labelled(root, in), "disk icon pixels");
+	ramlabel();
 	iconpos(root, in, &x, &y);
 	click(x, y);
 	click(x, y);
@@ -602,9 +695,13 @@ static void script(void)
 	check(sys != NULL && findicon(sys, "Demos") != NULL &&
 	    findicon(sys, "Trashcan") != NULL && findicon(sys, "C") == NULL,
 	    "System drawer");
-	if (sys == NULL || (in = findicon(sys, "Demos")) == NULL)
+	if (sys == NULL)
 		return;
-	check(in->in_Obj->do_Type == WBDRAWER && pixels(sys, in, 0),
+	utilities(sys);
+	if ((in = findicon(sys, "Demos")) == NULL)
+		return;
+	check(in->in_Obj->do_Type == WBDRAWER && pixels(sys, in, 0) &&
+	    labelled(sys, in),
 	    "drawer icon pixels");
 	iconpos(sys, in, &x, &y);
 	click(x, y);

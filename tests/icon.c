@@ -142,21 +142,21 @@ static void drawing(struct Screen *s, char *what)
 		check(drawn(s, icon, IDS_SELECTED, im, x, y),
 		    cat(msg, what, " selected pixels"));
 
-		/* A frame and a label below it, centred */
+		/* A frame and a label in a box below it, centred */
 		y += 40;
 		GetIconRectangleA(rp, icon, "Label", &r, NULL);
 		fw = icon->do_Gadget.Width + 10;
-		lw = TextLength(rp, "Label", 5);
-		check(r.MinY == 0 && r.MaxY == icon->do_Gadget.Height + 9 +
+		lw = TextLength(rp, "Label", 5) + 4;
+		check(r.MinY == 0 && r.MaxY == icon->do_Gadget.Height + 11 +
 		    rp->TxHeight && (lw > fw ? r.MinX == -(lw - fw) / 2 &&
 		    r.MaxX - r.MinX + 1 == lw : r.MinX == 0 && r.MaxX == fw - 1),
 		    "GetIconRectangleA");
 		DrawIconStateA(rp, icon, "Label", x, y, IDS_NORMAL, NULL);
 		check(ReadPixel(rp, x, y) == pen(s, SHINEPEN) &&
-		    ReadPixel(rp, x + fw - 1, y + r.MaxY - rp->TxHeight) ==
+		    ReadPixel(rp, x + fw - 1, y + r.MaxY - rp->TxHeight - 2) ==
 		    pen(s, SHADOWPEN), "frame");
 		for (n = 0, i = r.MinX; i <= r.MaxX; i++)
-			if (ReadPixel(rp, x + i, y + r.MaxY - 2) == pen(s, TEXTPEN))
+			if (ReadPixel(rp, x + i, y + r.MaxY - 3) == pen(s, TEXTPEN))
 				n++;
 		check(n > 5, "label");
 		x += r.MaxX - r.MinX + 8;

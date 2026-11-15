@@ -131,13 +131,18 @@ static const UWORD defpens[NUMDRIPENS] =
         TextExtent(rp, label, txtlen, &extent);
 
         /* leftEdge is the icon's left edge. Center the label around it. */
-        textLeft = (wDelta - extent.te_Width) / 2;
+        textLeft = (wDelta - extent.te_Width - 2 * LABEL_MX) / 2 + LABEL_MX;
 
+        /* A solid box keeps the text readable on a patterned backdrop */
+        SetDrMd(rp, JAM1);
+        SetAPen(rp, Pens[BACKGROUNDPEN]);
+        RectFill(rp, leftEdge + textLeft - LABEL_MX, topEdge + textTop,
+                 leftEdge + textLeft + extent.te_Width - 1 + LABEL_MX,
+                 topEdge + textTop + extent.te_Height - 1 + 2 * LABEL_MY);
         SetAPen(rp, Pens[TEXTPEN]);
-        SetBPen(rp, Pens[BACKGROUNDPEN]);
-        SetDrMd(rp, JAM2);
 
-        Move(rp, leftEdge + textLeft, topEdge + textTop - extent.te_Extent.MinY);
+        Move(rp, leftEdge + textLeft,
+             topEdge + textTop + LABEL_MY - extent.te_Extent.MinY);
         Text(rp, label, txtlen);
     }
     

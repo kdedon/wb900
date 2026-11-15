@@ -34,7 +34,7 @@ Opened 2026-11-14; status from exec816-0f and the c900/exec900 log. The user app
 | 25 | console.device: read the console ring (below) | open | — |
 | 26 | ExecBase: idle time, for a CPU load (below) | open | — |
 | 27 | `Close()`: clear the `pr_ConsoleTask` that the handle's `Open()` set (below) | **Landed** d2a5278b: Close clears the console its handle set; Open("*") afterwards fails with ERROR_DEVICE_NOT_MOUNTED | done |
-| 28 | `InLoadSeg`: read a hunk's RELOC32 offsets in blocks (below) | open | — |
+| 28 | `InLoadSeg`: read a hunk's RELOC32 offsets in blocks (below) | **Landed** d547e925: 128-entry reloc buffer; a 2,219-reloc file loads in 0.32 s instead of 1.50 s at 6 MHz | done |
 
 ### 16. Semaphore and Forbid cost
 

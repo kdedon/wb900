@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * Calculator from SYS:Utilities, on the Workbench screen in RAM.
+ * Calculator, SYS:Utilities/Calc, on the Workbench screen in RAM.
  * Workbench starts it; the root program types key sequences and clicks a
  * button through input.device and compares the display gadget with the
  * expected text drawn in a bitmap of the same font and pens.  Then a
@@ -309,7 +309,7 @@ static void workbench(void)
 	struct Gadget *g;
 	WORD x, y;
 
-	check(OpenWorkbenchObjectA("SYS:Utilities/Calculator", NULL), "launch");
+	check(OpenWorkbenchObjectA("SYS:Utilities/Calc", NULL), "launch");
 	win = waitwin(TRUE);
 	check(win != NULL, "Calculator's window");
 	if (win == NULL)
@@ -340,7 +340,7 @@ static struct sync s;
 
 static BOOL script(void)
 {
-	static char cmd[] = "SYS:Utilities/Calculator\n";
+	static char cmd[] = "SYS:Utilities/Calc\n";
 	BPTR fh;
 
 	if ((fh = Open("SYS:CalcScript", MODE_NEWFILE)) == NULL)

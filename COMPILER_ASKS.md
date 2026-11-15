@@ -223,7 +223,7 @@ long m(long dx) { return (dx * 0xFFFF) / 7L; }		/* m(-1) is not -9362 */
 
 With a 16-bit int, C89 converts the `unsigned int` to `long`, which holds all its values, so both are signed. cc2 divides unsigned (no EXTSL before DIVL; `long / 7L` alone gets one). Not blocking: intuition's prop knob dragged past its container's start jumped to the far end; propgadgets.c now casts both operands to LONG.
 
-## 18. 16-bit multiply and divide go through the 32-bit instructions (opened 2026-11-15)
+## 18. 16-bit multiply and divide go through the 32-bit instructions (opened 2026-11-15; landed in toolchain 9ef8108 and f8c24f0)
 
 ```c
 unsigned short q(unsigned short a, unsigned short b) { return a / b; }

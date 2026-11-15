@@ -1,5 +1,5 @@
 /*
- * The commodities in SYS:Tools/Commodities, launched as Workbench
+ * The commodities in SYS:Tools/Commodity, launched as Workbench
  * launches them, with their icons' tool types.  The root program writes
  * events to input.device and checks each one's effect on the Workbench
  * screen: NoCapsLock drops Caps Lock, ClickToFront brings a window to
@@ -143,16 +143,16 @@ static void stackuse(char *name)
 	    (int)(top - p), (int)(top - (UBYTE *)t->tc_SPLower));
 }
 
-/* Launch SYS:Tools/Commodities/name and wait for its broker to start */
-static BOOL launch(char *name)
+/* Launch SYS:Tools/Commodity/file and wait for its broker, name, to start */
+static BOOL launch(char *file, char *name)
 {
 	char path[48];
-	char *p = path, *s = "SYS:Tools/Commodities/";
+	char *p = path, *s = "SYS:Tools/Commodity/";
 	int i;
 
 	while (*s)
 		*p++ = *s++;
-	for (s = name; *s; )
+	for (s = file; *s; )
 		*p++ = *s++;
 	*p = 0;
 	check(OpenWorkbenchObjectA(path, NULL), name);
@@ -238,7 +238,7 @@ static void nocapslock(void)
 {
 	key(0x20, IEQUALIFIER_CAPSLOCK);
 	check(seenqual & IEQUALIFIER_CAPSLOCK, "Caps Lock without NoCapsLock");
-	if (!launch("NoCapsLock"))
+	if (!launch("NoCaps", "NoCapsLock"))
 		return;
 	key(0x20, IEQUALIFIER_CAPSLOCK | IEQUALIFIER_LSHIFT);
 	check(seencode == 0x20 && seenqual == IEQUALIFIER_LSHIFT,
@@ -267,7 +267,7 @@ static void clicktofront(struct Window *a, struct Window *b)
 	check(front(b) && !front(a), "B in front");
 	doubleclick(x, y);
 	check(!front(a), "a double click alone does not raise");
-	if (!launch("ClickToFront"))
+	if (!launch("ToFront", "ClickToFront"))
 		return;
 	WindowToFront(b);
 	sync();
@@ -292,7 +292,7 @@ static void autopoint(struct Window *a, struct Window *b)
 	mouse(b->LeftEdge + b->Width / 2, b->TopEdge + b->Height / 2);
 	sync();
 	check(IntuitionBase->ActiveWindow == b, "B active");
-	if (!launch("AutoPoint"))
+	if (!launch("AutoPoint", "AutoPoint"))
 		return;
 	/* the pointer keeps moving over A: no activation yet */
 	for (i = 0; i < 10; i++) {
@@ -314,7 +314,7 @@ static void depthmenu(struct Window *a, struct Window *b)
 	WindowToFront(b);
 	ActivateWindow(b);
 	sync();
-	if (!launch("DepthMenu"))
+	if (!launch("DepthMenu", "DepthMenu"))
 		return;
 	check(sysgad(b, GTYP_WDEPTH, &x, &y), "depth gadget");
 	mouse(x, y);
@@ -381,7 +381,7 @@ static void blanker(void)
 	UWORD n;
 	LONG black;
 
-	if (!launch("Blanker"))
+	if (!launch("Blanker", "Blanker"))
 		return;
 	check(blanked() == NULL, "Blanker waits");
 	w = waitblank(TRUE);

@@ -96,10 +96,10 @@
             txtlen = IconBase->ib_MaxNameLength;
 
         TextExtent(rp, label, txtlen, &extent);
-        rectangle->MaxY += extent.te_Height;
-        if (extent.te_Width > (rectangle->MaxX + 1))
+        rectangle->MaxY += extent.te_Height + 2 * LABEL_MY;
+        if (extent.te_Width + 2 * LABEL_MX > (rectangle->MaxX + 1))
         {
-            LONG overhang = extent.te_Width - (rectangle->MaxX + 1);
+            LONG overhang = extent.te_Width + 2 * LABEL_MX - (rectangle->MaxX + 1);
             rectangle->MinX -= overhang / 2;
             rectangle->MaxX += overhang - (overhang / 2);
         }

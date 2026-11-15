@@ -114,6 +114,10 @@ struct IconBase
 
 typedef struct IconBase IconBase_T;
 
+/* A label's box: its text with this margin beside, above and below it */
+#define LABEL_MX 2
+#define LABEL_MY 1
+
 /* FIXME: Remove these #define xxxBase hacks
    Do not use this in new code !
 */
