@@ -1,0 +1,34 @@
+* gadtools.library in the C900 dialect of an Amiga fd file, from AROS's
+* gadtools.conf.  Each function takes GadToolsBase first; the C functions
+* are AROS_LH definitions named GadTools_N after their vector.
+##base _GadToolsBase
+##bias 30
+##public
+CreateGadgetA(kind,previous,ng,taglist)(ULONG,struct Gadget *,struct NewGadget *,struct TagItem *) struct Gadget * @GadTools_5
+FreeGadgets(glist)(struct Gadget *) void @GadTools_6
+GT_SetGadgetAttrsA(gad,win,req,tagList)(struct Gadget *,struct Window *,struct Requester *,struct TagItem *) void @GadTools_7
+CreateMenusA(newmenu,tagList)(struct NewMenu *,struct TagItem *) struct Menu * @GadTools_8
+FreeMenus(menu)(struct Menu *) void @GadTools_9
+LayoutMenuItemsA(menuitem,vi,tagList)(struct MenuItem *,APTR,struct TagItem *) BOOL @GadTools_10
+LayoutMenusA(menu,vi,tagList)(struct Menu *,APTR,struct TagItem *) BOOL @GadTools_11
+GT_GetIMsg(intuiport)(struct MsgPort *) struct IntuiMessage * @GadTools_12
+GT_ReplyIMsg(imsg)(struct IntuiMessage *) void @GadTools_13
+GT_RefreshWindow(win,req)(struct Window *,struct Requester *) void @GadTools_14
+GT_BeginRefresh(win)(struct Window *) void @GadTools_15
+GT_EndRefresh(win,complete)(struct Window *,BOOL) void @GadTools_16
+GT_FilterIMsg(imsg)(struct IntuiMessage *) struct IntuiMessage * @GadTools_17
+GT_PostFilterIMsg(modimsg)(struct IntuiMessage *) struct IntuiMessage * @GadTools_18
+CreateContext(glistpointer)(struct Gadget **) struct Gadget * @GadTools_19
+DrawBevelBoxA(rport,left,top,width,height,taglist)(struct RastPort *,WORD,WORD,WORD,WORD,struct TagItem *) void @GadTools_20
+GetVisualInfoA(screen,tagList)(struct Screen *,struct TagItem *) APTR @GadTools_21
+FreeVisualInfo(vi)(APTR) void @GadTools_22
+##private
+gadtoolsPrivate1()()
+gadtoolsPrivate2()()
+gadtoolsPrivate3()()
+gadtoolsPrivate4()()
+gadtoolsPrivate5()()
+gadtoolsPrivate6()()
+##public
+GT_GetGadgetAttrsA(gad,win,req,taglist)(struct Gadget *,struct Window *,struct Requester *,struct TagItem *) LONG @GadTools_29
+##end

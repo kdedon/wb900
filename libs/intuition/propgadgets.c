@@ -348,11 +348,11 @@ void CalcKnobSize (struct Gadget * propGadget, struct BBox * knobbox)
     {
         if (pi->Flags & AUTOKNOB)
         {
-            knobbox->Width = pi->CWidth * pi->HorizBody / MAXBODY;
+            knobbox->Width = (ULONG)pi->CWidth * pi->HorizBody / MAXBODY;
             if (knobbox->Width < KNOBHMIN) knobbox->Width = KNOBHMIN;
         }
 
-        knobbox->Left = knobbox->Left + (pi->CWidth - knobbox->Width)
+        knobbox->Left = knobbox->Left + ((LONG)pi->CWidth - knobbox->Width)
                         * pi->HorizPot / MAXPOT;
 
         if (pi->HorizBody)
@@ -370,11 +370,11 @@ void CalcKnobSize (struct Gadget * propGadget, struct BBox * knobbox)
     {
         if (pi->Flags & AUTOKNOB)
         {
-            knobbox->Height = pi->CHeight * pi->VertBody / MAXBODY;
+            knobbox->Height = (ULONG)pi->CHeight * pi->VertBody / MAXBODY;
             if (knobbox->Height < KNOBVMIN) knobbox->Height = KNOBVMIN;
         }
 
-        knobbox->Top = knobbox->Top + (pi->CHeight - knobbox->Height)
+        knobbox->Top = knobbox->Top + ((LONG)pi->CHeight - knobbox->Height)
                        * pi->VertPot / MAXPOT;
 
         if (pi->VertBody)

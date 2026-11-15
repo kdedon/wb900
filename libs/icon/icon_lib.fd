@@ -1,0 +1,44 @@
+* icon.library in the C900 dialect of an Amiga fd file, from AROS's
+* icon.conf.  Each function takes IconBase first; the C functions are
+* AROS_LH definitions named Icon_N after their vector.  A function that
+* keeps its register list is not implemented.
+##base _IconBase
+##bias 30
+##private
+GetWBObject(name)(a0)
+PutWBObject(name,object)(a0,a1)
+GetIcon(name,icon,freelist)(a0,a1,a2)
+PutIcon(name,icon)(a0,a1)
+##public
+FreeFreeList(freelist)(struct FreeList *) void @Icon_9
+##private
+FreeWBObject(WBObject)(a0)
+AllocWBObject()()
+##public
+AddFreeList(freelist,mem,size)(struct FreeList *,APTR,IPTR) BOOL @Icon_12
+GetDiskObject(name)(CONST_STRPTR) struct DiskObject * @Icon_13
+PutDiskObject(name,icon)(CONST_STRPTR,struct DiskObject *) BOOL @Icon_14
+FreeDiskObject(diskobj)(struct DiskObject *) void @Icon_15
+FindToolType(toolTypeArray,typeName)(STRPTR *,STRPTR) UBYTE * @Icon_16
+MatchToolValue(typeString,value)(UBYTE *,UBYTE *) BOOL @Icon_17
+BumpRevision(newname,oldname)(UBYTE *,UBYTE *) UBYTE * @Icon_18
+##private
+FreeAlloc(free,len,type)(a0,a1,a2)
+##public
+GetDefDiskObject(type)(LONG) struct DiskObject * @Icon_20
+PutDefDiskObject(icon)(struct DiskObject *) BOOL @Icon_21
+GetDiskObjectNew(name)(CONST_STRPTR) struct DiskObject * @Icon_22
+DeleteDiskObject(name)(UBYTE *) BOOL @Icon_23
+##private
+FreeFree(fl,address)(a0,a1)
+##public
+DupDiskObjectA(icon,tags)(struct DiskObject *,struct TagItem *) struct DiskObject * @Icon_25
+IconControlA(icon,tags)(struct DiskObject *,struct TagItem *) ULONG @Icon_26
+DrawIconStateA(rp,icon,label,leftEdge,topEdge,state,tags)(struct RastPort *,struct DiskObject *,STRPTR,LONG,LONG,ULONG,struct TagItem *) void @Icon_27
+GetIconRectangleA(rp,icon,label,rectangle,tags)(struct RastPort *,struct DiskObject *,STRPTR,struct Rectangle *,struct TagItem *) BOOL @Icon_28
+NewDiskObject(type)(ULONG) struct DiskObject * @Icon_29
+GetIconTagList(name,tags)(CONST_STRPTR,const struct TagItem *) struct DiskObject * @Icon_30
+PutIconTagList(name,icon,tags)(CONST_STRPTR,struct DiskObject *,struct TagItem *) BOOL @Icon_31
+LayoutIconA(icon,screen,tags)(struct DiskObject *,struct Screen *,struct TagItem *) BOOL @Icon_32
+ChangeToSelectedIconColor(cr)(a0)
+##end

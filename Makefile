@@ -64,15 +64,17 @@ define CCRULE
 	$(CC2) 001200000010 $(OBJ)/$(2).z1 $(3) $(OBJ)/$(2).scr 0
 endef
 
-LIBS	= utility keymap graphics layers intuition gadtools icon
+LIBS	= utility keymap graphics layers intuition gadtools icon workbench
 # graphics.library's display drivers (LIBS:NAME.gfxdriver)
 GFXDRIVERS = hr
-DEVS	= input
+DEVS	= input console
+# The device names that differ from their directory's
+console_DEVNAME = wincon
 TESTS	= $(basename $(notdir $(wildcard $(TOP)/tests/*.c)))
 # The tests that open intuition.library
-ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon
+ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon workbench wbboot console
 # The demos also made as NAME-1x.bin, in the Workbench 1.x style
-STYLED	= wbdemo wbinter gtdemo
+STYLED	= wbdemo wbinter gtdemo wbboot
 
 
 .PHONY: all test clean
@@ -136,6 +138,10 @@ $(eval $(call LIBRARY,layers,Layers,la))
 # graphics calls layers.library through the base layers leaves in GfxBase.
 $(graphics_OBJS): $(OUT)/include/lvo/layers_lib.h
 $(eval $(call DEVICE,input,Input,id))
+console_LINK = $(ALIB)
+console_SRC = $(TOP)/lib
+$(eval $(call DEVICE,console,Console,cd))
+$(console_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility graphics intuition keymap)
 # The HR driver writes the card's control port.
 hr_LINK = $(OBJ)/portio.o
 $(eval $(call MODULE,hr,HR,hr,libs,gfxdriver))
@@ -159,11 +165,39 @@ $(OBJ)/t_%.o: $(TOP)/tests/%.c $(HDRS) $(patsubst %,$(OUT)/include/lvo/%_lib.h,$
 	$(call CCRULE,$<,t_$*,$@)
 
 $(OUT)/progs/%: $(OBJ)/startup.o $(OBJ)/t_%.o $(OBJ)/amiga.o $(OBJ)/portio.o $(OBJ)/progabs.o
-	$(SYMCHECK) $(TOP)/tests/$*.c $(if $(filter intuition gadtools gtdemo,$*),$(TOP)/lib)
+	$(SYMCHECK) $(TOP)/tests/$*.c $(if $(filter $(ALIBTESTS),$*),$(TOP)/lib) $(if $(filter wbboot,$*),$(WBSRC))
 	@mkdir -p $(OUT)/progs
 	$(LD) -r -o $(OBJ)/p_$*.r $^
 	$(MKHUNK) --entry=start $@ $(OBJ)/p_$*.r
-$(OUT)/progs/intuition $(OUT)/progs/gadtools $(OUT)/progs/gtdemo: $(ALIB)
+# The tests that link amiga.lib
+ALIBTESTS = intuition gadtools gtdemo console
+$(patsubst %,$(OUT)/progs/%,$(ALIBTESTS)): $(ALIB)
+
+# Programs for Workbench's disk (wb/), linked as the tests are.
+$(OBJ)/w_%.o: $(TOP)/wb/%.c $(HDRS) $(patsubst %,$(OUT)/include/lvo/%_lib.h,$(LIBS) $(DEVS))
+	$(call CCRULE,$<,w_$*,$@)
+$(OUT)/wb/%: $(OBJ)/startup.o $(OBJ)/w_%.o $(OBJ)/amiga.o $(OBJ)/portio.o $(OBJ)/progabs.o
+	$(SYMCHECK) $(TOP)/wb/$*.c
+	@mkdir -p $(OUT)/wb
+	$(LD) -r -o $(OBJ)/q_$*.r $^
+	$(MKHUNK) --entry=start $@ $(OBJ)/q_$*.r
+# Workbench, which tests/wbboot.c starts
+WBSRC	= $(patsubst %,$(TOP)/wb/%.c,workbench drawer selftest)
+$(OUT)/progs/wbboot: $(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC))
+$(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC)): $(TOP)/wb/workbench.h
+
+# The icons of Workbench's disk: $(OUT)/wb/NAME.info, from mkinfo.py
+# with NAME_INFO's options
+MKINFO	= python3 $(TOP)/tools/mkinfo.py
+Hello_INFO = --type=tool --art=$(TOP)/wb/hello.txt --stack=2048
+Disk_INFO = --type=disk --art=builtin:disk --window=60,40,420,180
+Demos_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
+	--window=140,110,400,140
+Trashcan_INFO = --type=trashcan --art=builtin:trash --select=builtin:trash_open
+Notes_INFO = --type=project --art=builtin:project --tool=SYS:Demos/Hello
+$(OUT)/wb/%.info: $(TOP)/tools/mkinfo.py $(TOP)/wb/hello.txt $(TOP)/libs/icon/support_builtin.c
+	@mkdir -p $(OUT)/wb
+	$(MKINFO) $@ $($*_INFO)
 
 # Boot volumes: Exec900, dos.library and the V7 handler (LIBS:), the
 # display modules and gameport.dev every Exec900 image carries, the
@@ -177,7 +211,18 @@ DISK	= --module=$(EXEC900_OUT)/hunks/dos.library \
 	  --file=$(EXEC900_OUT)/hunks/gameport.dev \
 	  $(foreach l,$(call DISKLIBS,$(1)),--put=Libs/$(l).library=$(OUT)/libs/$(l).library) \
 	  $(foreach g,$(GFXDRIVERS),--put=Libs/$(g).gfxdriver=$(OUT)/libs/$(g).gfxdriver) \
-	  $(foreach d,$(DEVS),--put=Devs/$(d).device=$(OUT)/devs/$(d).device)
+	  $(foreach d,$(DEVS),--put=Devs/$(or $($(d)_DEVNAME),$(d)).device=$(OUT)/devs/$(d).device) \
+	  $($(1)_PUT)
+
+# A test's more files on its disk: NAME_PUT, mkdisk --put options
+workbench_PUT = --put=Demos/Hello=$(OUT)/wb/hello --put=Demos/Hello.info=$(OUT)/wb/Hello.info
+$(OUT)/workbench.bin: $(OUT)/wb/hello $(OUT)/wb/Hello.info
+# Workbench's disk: a few drawers, a tool and a project with icons
+WBDISK	= Disk.info Demos.info Demos/Hello.info Demos/Notes.info Trashcan.info
+wbboot_PUT = $(workbench_PUT) --put=Demos/Notes=$(TOP)/wb/Notes \
+	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan \
+	$(foreach i,$(filter-out Demos/Hello.info,$(WBDISK)),--put=$(i)=$(OUT)/wb/$(notdir $(i)))
+$(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
 
 BINDEPS	= $(patsubst %,$(OUT)/libs/%.library,$(LIBS)) $(patsubst %,$(OUT)/libs/%.gfxdriver,$(GFXDRIVERS)) $(patsubst %,$(OUT)/devs/%.device,$(DEVS)) $(EXEC900_OUT)/exec900.sys
 $(OUT)/%.bin: $(OUT)/progs/% $(BINDEPS)

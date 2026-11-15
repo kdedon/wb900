@@ -30,6 +30,7 @@ No floats, no static array over 64 KB, no local array over 256 B, no bool/stdint
 8. **32-bit shifts and masks in 16-bit int.** For example `red<<16`, `(1<<15..18)` in intuition.h, and `~0x8000u` zero-extension.
 9. **Plane addressing and stack depth.** `y*BytesPerRow` in int is valid only while a plane fits 64 KB. BOOPSI super-method chains are 3–5 deep, each frame holding TagItem arrays.
 10. **C99/GCC features.** Designated initializers, inline and statement expressions, ~150 sites.
+11. **UWORD in arithmetic.** With a 16-bit int, UWORD promotes to unsigned, so `(height - tf_YSize) / 2` and `CWidth * HorizBody` go wrong where AROS's 32-bit int keeps them signed or wide. Cast to WORD or LONG. gadtools had six such sites, intuition's prop knob two.
 
 ## Public headers
 

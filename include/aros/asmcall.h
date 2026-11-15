@@ -14,6 +14,7 @@
 
 #define AROS_UFH2(t, n, a1, a2)		t n(a1, a2)
 #define AROS_UFH3(t, n, a1, a2, a3)	t n(a1, a2, a3)
+#define AROS_UFH3S(t, n, a1, a2, a3)	static t n(a1, a2, a3)
 #define AROS_UFH4(t, n, a1, a2, a3, a4)	t n(a1, a2, a3, a4)
 #define AROS_UFP2(t, n, a1, a2)		t n(a1, a2)
 #define AROS_UFP3(t, n, a1, a2, a3)	t n(a1, a2, a3)

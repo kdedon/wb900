@@ -1,0 +1,33 @@
+* workbench.library in the C900 dialect of an Amiga fd file, from AROS's
+* workbench.conf.  Each function takes WorkbenchBase first; the C
+* functions are AROS_LH definitions named Workbench_N after their vector.
+* A function that keeps its register list is not implemented.
+##base _WorkbenchBase
+##bias 30
+##public
+UpdateWorkbench(name,lock,action)(CONST_STRPTR,BPTR,LONG) BOOL @Workbench_5
+QuoteWorkbench(stringNum)(d0)
+StartWorkbench(flag,ptr)(d0,d1)
+AddAppWindowA(id,userdata,window,msgport,taglist)(IPTR,IPTR,struct Window *,struct MsgPort *,struct TagItem *) struct AppWindow * @Workbench_8
+RemoveAppWindow(appWindow)(struct AppWindow *) BOOL @Workbench_9
+AddAppIconA(id,userdata,text,msgport,lock,diskobj,taglist)(IPTR,IPTR,CONST_STRPTR,struct MsgPort *,BPTR,struct DiskObject *,struct TagItem *) struct AppIcon * @Workbench_10
+RemoveAppIcon(appIcon)(struct AppIcon *) BOOL @Workbench_11
+AddAppMenuItemA(id,userdata,text,msgport,taglist)(IPTR,IPTR,APTR,struct MsgPort *,struct TagItem *) struct AppMenuItem * @Workbench_12
+RemoveAppMenuItem(appMenuItem)(struct AppMenuItem *) BOOL @Workbench_13
+##private
+WBConfig(unk1,unk2)(d0,d1)
+##public
+WBInfo(lock,name,screen)(a0,a1,a2)
+OpenWorkbenchObjectA(name,tags)(STRPTR,struct TagItem *) BOOL @Workbench_16
+CloseWorkbenchObjectA(name,tags)(a0,a1)
+WorkbenchControlA(name,tags)(STRPTR,struct TagItem *) BOOL @Workbench_18
+AddAppWindowDropZoneA(aw,id,userdata,tags)(a0,d0,d1,a1)
+RemoveAppWindowDropZone(aw,dropZone)(a0,a1)
+ChangeWorkbenchSelectionA(name,hook,tags)(a0,a1,a2)
+MakeWorkbenchObjectVisibleA(name,tags)(a0,a1)
+RegisterWorkbench(messageport)(struct MsgPort *) BOOL @Workbench_23
+UnregisterWorkbench(messageport)(struct MsgPort *) BOOL @Workbench_24
+UpdateWorkbenchObjectA(name,type,tags)(STRPTR,LONG,struct TagItem *) BOOL @Workbench_25
+SendAppWindowMessage(win,numfiles,files,windowclass,mousex,mousey,seconds,micros)(struct Window *,ULONG,char **,UWORD,WORD,WORD,ULONG,ULONG) BOOL @Workbench_26
+GetNextAppIcon(lastdiskobj,text)(struct DiskObject *,char *) struct DiskObject * @Workbench_27
+##end

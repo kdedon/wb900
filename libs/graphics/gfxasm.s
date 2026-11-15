@@ -304,17 +304,20 @@ wrmw:
 / d, rows and src step through the rows.  Each row's template words
 / are the bits from bit tb (-15 on) of src, read up to the byte after
 / the last: with nib NULL (1 bit a pixel) one a word of d, else 16 a
-/ group of 4 words, each 4 bits looked up in nib.  Then n words of d,
-/ the first under lm and the last under rm, from the template words t
-/ under the mask m by mode: 0 JAM2, ((f & t) ^ b) (f is APen ^ BPen);
-/ 1 JAM1, f where t; 4 complement where t; with 2 added, where not t;
-/ 8, chunky with m all 1s, the words nib holds for the 4 bits.
-/ The frame: 0 the template words, 64 the expanded words, 128 job.
+/ group of 4 words, each 8 bits looked up in nib's longs.  Then n words
+/ of d, the first under lm and the last under rm, from the template
+/ words t under the mask m by mode: 0 JAM2, ((f & t) ^ b) (f is APen ^
+/ BPen); 1 JAM1, f where t; 4 complement where t; with 2 added, where
+/ not t.
+/ Chunky JAM2 under all of m writes the groups of 4 words straight to d
+/ and puts back what lm and rm leave of the end words.
+/ The frame: 0 the template words, 64 the expanded words, 128 job,
+/ 132 and 134 the end words of d before.
 gfx_TmplRows_:
 	sub	r15, $16
 	ldm	(rr14), r6, $8
 	ldl	rr12, rr14(20)
-	sub	r15, $132
+	sub	r15, $136
 	ldl	rr14(128), rr12
 tr1:	ldl	rr12, rr14(128)
 	ld	r0, rr12(6)
@@ -356,65 +359,132 @@ tr4:	ldb	rh6, rl0
 	inc	r3, $2
 	inc	r5, $2
 	djnz	r1, tr4
-/ chunky: each template word to 4 words of masks through nib (rr6), or
-/ in mode 8 straight to the words of d: nib holds them
+/ chunky: each template byte to 2 words of masks through nib (rr6)
 tr5:	ldl	rr12, rr14(128)
 	ldl	rr6, rr12(30)
 	ldl	rr4, rr14
 	test	r6
-	jr	z, tr7
-	ld	r1, rr12(16)
+	jp	z, tr7
 	ld	r0, rr12(28)
-	cp	r0, $8
-	jr	eq, trd
+	test	r0
+	jr	nz, tr60
+	ld	r0, rr12(22)
+	cp	r0, $0xffff
+	jr	ne, tr60
+	ld	r9, rr12(16)
+	srl	r9, $2
+	jr	z, tr60
+/ JAM2: r12 f, r13 b, r9 the groups of 4 words in n
+	ldl	rr2, rr12(0)
+	ld	r0, (rr2)
+	ld	rr14(132), r0
+	ld	r1, rr12(16)
+	dec	r1, $1
+	add	r1, r1
+	ld	r0, rr2(r1)
+	ld	rr14(134), r0
+	ld	r10, rr12(18)
+	ld	r11, rr12(20)
+	ld	r12, r10
+	ld	r13, r11
+tr6f:	ld	r0, (rr4)
+	inc	r5, $2
+	ldb	rl1, rh0
+	clrb	rh1
+	sll	r1, $2
+	ldl	rr10, rr6(r1)
+	and	r10, r12
+	xor	r10, r13
+	and	r11, r12
+	xor	r11, r13
+	ldl	(rr2), rr10
+	inc	r3, $4
+	ldb	rl1, rl0
+	clrb	rh1
+	sll	r1, $2
+	ldl	rr10, rr6(r1)
+	and	r10, r12
+	xor	r10, r13
+	and	r11, r12
+	xor	r11, r13
+	ldl	(rr2), rr10
+	inc	r3, $4
+	djnz	r9, tr6f
+/ the 0-3 words left, the last under rm (r8)
+	ldl	rr10, rr14(128)
+	ld	r9, rr10(16)
+	ld	r8, rr10(26)
+	and	r9, $3
+	jr	nz, tr6g
+	dec	r3, $2
+	ld	r0, (rr2)
+	ld	r10, rr14(134)
+	xor	r0, r10
+	and	r0, r8
+	xor	r0, r10
+	ld	(rr2), r0
+	jr	tr6j
+tr6g:	ld	r0, (rr4)
+	ldb	rl1, rh0
+	clrb	rh1
+	sll	r1, $2
+	ldl	rr10, rr6(r1)
+	ldb	rl1, rl0
+	clrb	rh1
+	sll	r1, $2
+	ldl	rr0, rr6(r1)
+	and	r10, r12
+	xor	r10, r13
+	and	r11, r12
+	xor	r11, r13
+	and	r0, r12
+	xor	r0, r13
+tr6h:	cp	r9, $1
+	jr	eq, tr6i
+	ld	(rr2), r10
+	inc	r3, $2
+	ld	r10, r11
+	ld	r11, r0
+	dec	r9, $1
+	jr	tr6h
+tr6i:	ld	r1, (rr2)
+	xor	r10, r1
+	and	r10, r8
+	xor	r10, r1
+	ld	(rr2), r10
+/ the first word under lm
+tr6j:	ldl	rr12, rr14(128)
+	ldl	rr2, rr12(0)
+	ld	r1, rr12(24)
+	ld	r0, (rr2)
+	ld	r10, rr14(132)
+	xor	r0, r10
+	and	r0, r1
+	xor	r0, r10
+	ld	(rr2), r0
+	jp	tr8
+/ 4 words a template word, as many as n rounded up
+tr60:	ld	r9, rr12(16)
 	ldl	rr2, rr14
 	add	r3, $64
-tr6:	ld	r8, (rr4)
+tr6:	ld	r0, (rr4)
 	inc	r5, $2
-	ld	r10, $4
-tr61:	ld	r9, r8
-	srl	r9, $12
-	add	r9, r9
-	ld	r0, rr6(r9)
-	ld	(rr2), r0
-	inc	r3, $2
-	sll	r8, $4
-	dec	r1, $1
-	jr	z, tr62
-	djnz	r10, tr61
-	jr	tr6
-tr62:	ldl	rr4, rr14
+	ldb	rl1, rh0
+	clrb	rh1
+	sll	r1, $2
+	ldl	rr10, rr6(r1)
+	ldl	(rr2), rr10
+	inc	r3, $4
+	ldb	rl1, rl0
+	clrb	rh1
+	sll	r1, $2
+	ldl	rr10, rr6(r1)
+	ldl	(rr2), rr10
+	inc	r3, $4
+	sub	r9, $4
+	jr	gt, tr6
+	ldl	rr4, rr14
 	add	r5, $64
-	jr	tr7
-/ mode 8: r12 this word's mask, lm then all; r13 rm
-trd:	ldl	rr2, rr12(0)
-	ld	r11, rr12(24)
-	ld	r13, rr12(26)
-	ld	r12, r11
-trd1:	ld	r8, (rr4)
-	inc	r5, $2
-	ld	r10, $4
-trd2:	ld	r9, r8
-	srl	r9, $12
-	add	r9, r9
-	ld	r0, rr6(r9)
-	cp	r1, $1
-	jr	ne, trd3
-	and	r12, r13
-trd3:	cp	r12, $0xffff
-	jr	eq, trd4
-	ld	r11, (rr2)
-	xor	r0, r11
-	and	r0, r12
-	xor	r0, r11
-	ld	r12, $0xffff
-trd4:	ld	(rr2), r0
-	inc	r3, $2
-	sll	r8, $4
-	dec	r1, $1
-	jr	z, tr8
-	djnz	r10, trd2
-	jr	trd1
 / the words of d from the template words at rr4
 tr7:	ldl	rr2, rr12(0)
 	ld	r1, rr12(16)
@@ -425,6 +495,40 @@ tr7:	ldl	rr2, rr12(0)
 	ld	r10, rr12(26)
 	ld	r12, rr12(28)
 	and	r9, r8
+/ JAM2 under all of m, 3 words or more: only the end words read d
+	test	r12
+	jr	nz, tr71
+	cp	r8, $0xffff
+	jr	ne, tr71
+	cp	r1, $3
+	jr	ult, tr71
+	ld	r0, (rr4)
+	inc	r5, $2
+	and	r0, r6
+	xor	r0, r7
+	ld	r11, (rr2)
+	xor	r0, r11
+	and	r0, r9
+	xor	r0, r11
+	ld	(rr2), r0
+	inc	r3, $2
+	sub	r1, $2
+tr70:	ld	r0, (rr4)
+	inc	r5, $2
+	and	r0, r6
+	xor	r0, r7
+	ld	(rr2), r0
+	inc	r3, $2
+	djnz	r1, tr70
+	ld	r0, (rr4)
+	and	r0, r6
+	xor	r0, r7
+	ld	r11, (rr2)
+	xor	r0, r11
+	and	r0, r10
+	xor	r0, r11
+	ld	(rr2), r0
+	jr	tr8
 / r13 is this word's mask: r9 for the first, then m; rm for the last
 tr71:	ld	r13, r9
 	ld	r9, r8
@@ -475,7 +579,7 @@ tr8:	ldl	rr12, rr14(128)
 	add	r3, r0
 	ldl	rr12(8), rr2
 	jp	tr1
-tr9:	add	r15, $132
+tr9:	add	r15, $136
 	ldm	r6, (rr14), $8
 	add	r15, $16
 	ret
@@ -575,12 +679,17 @@ gfx_CopyRows_:
 / (16 - sh)), sh 1-15, reading s[0] to s[n].  Downwards (dir < 0) each
 / word is read before the word to its left is written.  The pair of
 / source words shifts left by sh, or right by 16 - sh (r8 negative),
-/ whichever is shorter.
+/ whichever is shorter.  Upwards sh may be -15 to -1: word k is then
+/ (s[k - 1] << (16 + sh)) | (s[k] >> -sh), reading s[0] to s[n - 1],
+/ with 0 for s[-1].
 gfx_ShiftRows_:
 	sub	r15, $16
 	ldm	(rr14), r6, $8
 	ld	r8, rr14(36)
-	cp	r8, $8
+	test	r8
+	jr	pl, 1f
+	add	r8, $16
+1:	cp	r8, $8
 	jr	ule, 1f
 	sub	r8, $16
 1:	ld	r9, rr14(42)
@@ -595,9 +704,13 @@ sr1:	ldl	rr4, rr14(20)
 / up: the first word under lm, the middle, the last under rm
 	ld	r6, rr14(38)
 	ld	r7, rr14(40)
+	clr	r12
+	ld	r0, rr14(36)
+	test	r0
+	jr	mi, 4f
 	ld	r12, (rr2)
 	inc	r3, $2
-	ld	r13, (rr2)
+4:	ld	r13, (rr2)
 	cp	r11, $1
 	jr	ne, 2f
 	and	r6, r7
@@ -710,104 +823,90 @@ sredge:	ld	r0, r12
 2:	ld	(rr4), r0
 	ret
 
-/ gfx_LineRun(job): the pixels of a line in one plane, job (gfxformat.c)
-/  0 the pixel masks of x & 7 (bytes)	8 lo	12 hi	16 yo (long)
-/  20 x	22 y	24 d	26 incrE	28 incrNE	30 count
-/  32 sx	34 sy	36 ystep (long)	40 steep	42 ptrn
-/  44 cx0	46 cx1 - cx0	48 cy0	50 cy1 - cy0	52 f	54 b
-/  56 mode	58 -(log2 pixels a byte)
-/ yo is the row's offset plus lo's: x's byte is in lo below 0x10000 and
-/ in hi from there.  ptrn bit 15 goes with the first pixel; 1 is f, 0 b
-/ in mode 0 (JAM2) and nothing in 1 (JAM1); mode 2 complements on 1.
+/ gfx_LineRun(job, xstep, count): count pixels of a line, none past its
+/ half of the plane.  The job's words go to r0-r11:
+/  rl0 the pixel's bits	rh1 K	rr2 its byte	r4 the byte step of y
+/  rl5 P1, rh5 P0	rl6 the bits after a byte step, rh6 skip0
+/  r7 err	r8 incrE	r9 incrNE	r10 ptrn	r11 the bits' shift
+/ then steep at 24; count is at least 1.  A pixel of pattern bit 1 becomes
+/ d ^ (((d & K) ^ P1) & bits), of bit 0 the same with P0, or stays
+/ with skip0.  Each step takes the major axis, and the minor one when
+/ err is not negative; an x step shifts the bits by r11 and when they
+/ run out reloads them and steps the byte by xstep (r12).
 gfx_LineRun_:
 	sub	r15, $16
 	ldm	(rr14), r6, $8
-	ldl	rr4, rr14(20)
-	ldl	rr6, rr4(16)
-	ld	r8, rr4(20)
-	ld	r9, rr4(22)
-	ld	r10, rr4(24)
-	ld	r12, rr4(26)
-	ld	r13, rr4(28)
-	ld	r1, rr4(30)
-	ld	r11, rr4(42)
-	test	r1
-	jp	z, ln9
-ln1:	rl	r11, $1
-	jr	c, ln2
-	ld	r0, rr4(56)
-	test	r0
-	jr	nz, ln8
-	ld	r0, rr4(54)
-	jr	ln3
-ln2:	ld	r0, rr4(52)
-/ inside the clip
-ln3:	ld	r2, r8
-	ld	r3, rr4(44)
-	sub	r2, r3
-	ld	r3, rr4(46)
-	cp	r2, r3
-	jr	ugt, ln8
-	ld	r2, r9
-	ld	r3, rr4(48)
-	sub	r2, r3
-	ld	r3, rr4(50)
-	cp	r2, r3
-	jr	ugt, ln8
-/ rr2 = yo + x's byte, in lo or hi
-	push	(rr14), r1
-	push	(rr14), r13
-	ld	r3, r8
-	ld	r13, rr4(58)
-	sdl	r3, r13
-	clr	r2
-	addl	rr2, rr6
-	test	r2
-	jr	nz, ln4
-	ld	r2, rr4(8)
-	jr	ln5
-ln4:	ld	r2, rr4(12)
-ln5:	ld	r13, r8
-	and	r13, $7
-	ldb	rh0, rr4(r13)
-	ld	r13, rr4(56)
-	ldb	rl1, (rr2)
-	cp	r13, $2
-	jr	ne, ln6
-	xorb	rl1, rh0
-	jr	ln7
-/ d ^ ((d ^ pen) & m)
-ln6:	ldb	rh1, rl1
-	xorb	rh1, rl0
-	andb	rh1, rh0
-	xorb	rl1, rh1
-ln7:	ldb	(rr2), rl1
-	pop	r13, (rr14)
-	pop	r1, (rr14)
-/ the next pixel
-ln8:	test	r10
-	jr	mi, ln10
-	ld	r0, rr4(32)
-	add	r8, r0
-	ld	r0, rr4(34)
-	add	r9, r0
-	ldl	rr2, rr4(36)
-	addl	rr6, rr2
-	add	r10, r13
-	jr	ln12
-ln10:	add	r10, r12
-	ld	r0, rr4(40)
-	test	r0
-	jr	nz, ln11
-	ld	r0, rr4(32)
-	add	r8, r0
-	jr	ln12
-ln11:	ld	r0, rr4(34)
-	add	r9, r0
-	ldl	rr2, rr4(36)
-	addl	rr6, rr2
-ln12:	dec	r1, $1
-	jp	nz, ln1
+	ldl	rr12, rr14(20)
+	ldm	r0, (rr12), $12
+	ld	r13, rr12(24)
+	ld	r12, rr14(24)
+	test	r13
+	ld	r13, rr14(26)
+	jp	nz, ln5
+/ x major
+ln1:	rl	r10, $1
+	jr	nc, ln4
+	ldb	rh0, (rr2)
+	ldb	rl1, rh0
+	andb	rl1, rh1
+	xorb	rl1, rl5
+	andb	rl1, rl0
+	xorb	rh0, rl1
+	ldb	(rr2), rh0
+ln2:	test	r7
+	jr	mi, ln3
+	add	r7, r9
+	add	r3, r4
+	jr	ln31
+ln3:	add	r7, r8
+ln31:	sdlb	rl0, r11
+	jr	nz, ln32
+	ldb	rl0, rl6
+	add	r3, r12
+ln32:	djnz	r13, ln1
+	jr	ln9
+ln4:	testb	rh6
+	jr	nz, ln2
+	ldb	rh0, (rr2)
+	ldb	rl1, rh0
+	andb	rl1, rh1
+	xorb	rl1, rh5
+	andb	rl1, rl0
+	xorb	rh0, rl1
+	ldb	(rr2), rh0
+	jr	ln2
+/ y major
+ln5:	rl	r10, $1
+	jr	nc, ln8
+	ldb	rh0, (rr2)
+	ldb	rl1, rh0
+	andb	rl1, rh1
+	xorb	rl1, rl5
+	andb	rl1, rl0
+	xorb	rh0, rl1
+	ldb	(rr2), rh0
+ln6:	test	r7
+	jr	mi, ln7
+	add	r7, r9
+	sdlb	rl0, r11
+	jr	nz, ln71
+	ldb	rl0, rl6
+	add	r3, r12
+	jr	ln71
+ln7:	add	r7, r8
+ln71:	add	r3, r4
+	djnz	r13, ln5
+	jr	ln9
+ln8:	testb	rh6
+	jr	nz, ln6
+	ldb	rh0, (rr2)
+	ldb	rl1, rh0
+	andb	rl1, rh1
+	xorb	rl1, rh5
+	andb	rl1, rl0
+	xorb	rh0, rl1
+	ldb	(rr2), rh0
+	jr	ln6
 ln9:	ldm	r6, (rr14), $8
 	add	r15, $16
 	ret

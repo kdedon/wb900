@@ -1,0 +1,16 @@
+* console.device in the C900 dialect of an Amiga fd file, from AROS's
+* console.conf.  Each function takes ConsoleDevice first; the C functions
+* are AROS_LH definitions named Console_N after their vector.
+##base _ConsoleDevice
+##bias 30
+##private
+BeginIO(ioRequest)(struct IORequest *) void @Console_5
+AbortIO(ioRequest)(struct IORequest *) LONG @Console_6
+##public
+CDInputHandler(events,consoleDevice)(struct InputEvent *,APTR) struct InputEvent * @Console_7
+RawKeyConvert(events,buffer,length,keyMap)(struct InputEvent *,STRPTR,LONG,struct KeyMap *) LONG @Console_8
+GetConSnip()() APTR @Console_9
+SetConSnip(param)(APTR) LONG @Console_10
+AddConSnipHook(hook)(struct Hook *) void @Console_11
+RemConSnipHook(hook)(struct Hook *) void @Console_12
+##end

@@ -70,6 +70,7 @@ struct SoftSprite {
     struct BitMap          *ss_BitMap;     /* drawn into, or NULL */
     struct ExtSprite       *ss_Sprite;
     WORD                    ss_X, ss_Y;
+    WORD                    ss_W, ss_H;     /* its size */
     BOOL                    ss_Shown;
     struct BitMap          *ss_Save;       /* what it covers, at its place */
     UBYTE                  *ss_Tmpl;       /* templates of pens 1-3 */

@@ -52,6 +52,22 @@ IPTR WinDecorClass__OM_NEW(Class *cl, Object *obj, struct opSet *msg)
 
 /**************************************************************************************************/
 
+IPTR WinDecorClass__OM_DISPOSE(Class *cl, Object *obj, Msg msg)
+{
+    struct IntuitionBase *IntuitionBase = (struct IntuitionBase *)cl->cl_UserData;
+    struct GfxBase       *GfxBase = GetPrivIBase(IntuitionBase)->GfxBase;
+    struct windecor_data *data = INST_DATA(cl, obj);
+    UWORD                 i;
+
+    for (i = 0; i < SYSIMCACHE; i++)
+        if (data->cache[i].bm)
+            FreeBitMap(data->cache[i].bm);
+
+    return DoSuperMethodA(cl, obj, msg);
+}
+
+/**************************************************************************************************/
+
 IPTR WinDecorClass__OM_GET(Class *cl, Object *obj, struct opGet *msg)
 {
     return decor_om_get(cl, obj, msg, WDA_UserBuffer, WDA_TrueColorOnly);
@@ -160,7 +176,7 @@ IPTR WinDecorClass__WDM_GETDEFSIZE_SYSIMAGE(Class *cl, Object *obj, struct wdpGe
 
 /**************************************************************************************************/
 
-IPTR WinDecorClass__WDM_DRAW_SYSIMAGE(Class *cl, Object *obj, struct wdpDrawSysImage *msg)
+static IPTR drawsysimage(Class *cl, Object *obj, struct wdpDrawSysImage *msg)
 {
     struct IntuitionBase        *IntuitionBase = (struct IntuitionBase *)cl->cl_UserData;
     struct GfxBase              *GfxBase = GetPrivIBase(IntuitionBase)->GfxBase;
@@ -364,6 +380,68 @@ IPTR WinDecorClass__WDM_DRAW_SYSIMAGE(Class *cl, Object *obj, struct wdpDrawSysI
 
 /**************************************************************************************************/
 
+/*
+ * The images fill their box, so on the screen's bitmap each is drawn once
+ * a size and state into a bitmap of its own, and copied from there.
+ */
+IPTR WinDecorClass__WDM_DRAW_SYSIMAGE(Class *cl, Object *obj, struct wdpDrawSysImage *msg)
+{
+    struct IntuitionBase *IntuitionBase = (struct IntuitionBase *)cl->cl_UserData;
+    struct GfxBase       *GfxBase = GetPrivIBase(IntuitionBase)->GfxBase;
+    struct windecor_data *data = INST_DATA(cl, obj);
+    struct RastPort      *rp = msg->wdp_RPort;
+    struct BitMap        *scrbm = DRI(msg->wdp_Dri)->dri_Screen->RastPort.BitMap;
+    struct sysimcache    *c;
+    struct wdpDrawSysImage m;
+    struct RastPort       trp;
+    UBYTE                 fs = FRAME_SIZE(IntuitionBase);
+    UWORD                 i;
+
+    if (msg->wdp_Which == MUIIMAGE || msg->wdp_Which == POPUPIMAGE ||
+        rp->BitMap != scrbm || msg->wdp_Width <= 0 || msg->wdp_Height <= 0)
+        return drawsysimage(cl, obj, msg);
+
+    for (i = 0, c = data->cache; i < SYSIMCACHE; i++, c++)
+        if (c->bm && c->which == msg->wdp_Which && c->state == msg->wdp_State &&
+            c->w == msg->wdp_Width && c->h == msg->wdp_Height && c->framesize == fs)
+            break;
+
+    if (i == SYSIMCACHE)
+    {
+        c = &data->cache[data->next];
+        data->next = (data->next + 1) & (SYSIMCACHE - 1);
+        if (c->bm)
+            FreeBitMap(c->bm);
+        c->bm = AllocBitMap(msg->wdp_Width, msg->wdp_Height,
+                            GetBitMapAttr(scrbm, BMA_DEPTH), 0, scrbm);
+        if (!c->bm)
+            return drawsysimage(cl, obj, msg);
+        InitRastPort(&trp);
+        trp.BitMap = c->bm;
+        m = *msg;
+        m.wdp_RPort = &trp;
+        m.wdp_X = 0;
+        m.wdp_Y = 0;
+        if (!drawsysimage(cl, obj, &m))
+        {
+            FreeBitMap(c->bm);
+            c->bm = NULL;
+            return FALSE;
+        }
+        c->which = msg->wdp_Which;
+        c->state = msg->wdp_State;
+        c->w = msg->wdp_Width;
+        c->h = msg->wdp_Height;
+        c->framesize = fs;
+    }
+
+    BltBitMapRastPort(c->bm, 0, 0, rp, msg->wdp_X, msg->wdp_Y, c->w, c->h, 0xC0);
+
+    return TRUE;
+}
+
+/**************************************************************************************************/
+
 static void findtitlearea(struct Window *win, LONG *left, LONG *right)
 {
     struct Gadget *g;
@@ -542,11 +620,19 @@ IPTR WinDecorClass__WDM_DRAW_WINBORDER(Class *cl, Object *obj, struct wdpDrawWin
 
     SetAPen(rp, pens[(window->Flags & WFLG_WINDOWACTIVE) ? FILLPEN : BACKGROUNDPEN]);
 
+    findtitlearea(window, &left, &right);
+
     if (bordertop > 2)
     {
-        /* Fill on top side */
+        /* Fill on top side, but for the title area the title fills */
 
-        CheckRectFill(rp, 1, 1, width - 2, bordertop - 2, IntuitionBase);
+        if (window->Title)
+        {
+            CheckRectFill(rp, 1, 1, left, bordertop - 2, IntuitionBase);
+            CheckRectFill(rp, right, 1, width - 2, bordertop - 2, IntuitionBase);
+        }
+        else
+            CheckRectFill(rp, 1, 1, width - 2, bordertop - 2, IntuitionBase);
     }
 
     if (!(msg->wdp_Flags & WDF_DWB_TOP_ONLY))
@@ -574,8 +660,6 @@ IPTR WinDecorClass__WDM_DRAW_WINBORDER(Class *cl, Object *obj, struct wdpDrawWin
                           width - 2, height - 2, IntuitionBase);
         }
     }
-
-    findtitlearea(window, &left, &right);
 
     if (left != 0)
     {

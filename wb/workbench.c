@@ -1,0 +1,844 @@
+/* SPDX-License-Identifier: MIT */
+/*
+ * Workbench: the Workbench screen with the disks on its backdrop and a
+ * window for each open drawer.  Icons are selected with a click (shift
+ * adds), a lasso, or dragged as outlines within or between windows; a
+ * double click opens a drawer or launches a program through
+ * workbench.library.  Without a display it drives itself (selftest()).
+ */
+#include "workbench.h"
+#include <devices/inputevent.h>
+
+struct DosLibrary *DOSBase;
+struct GfxBase *GfxBase;
+struct IntuitionBase *IntuitionBase;
+struct Library *LayersBase, *UtilityBase, *GadToolsBase, *IconBase,
+    *WorkbenchBase;
+
+struct Screen *scr;
+struct MinList wins;
+struct WBWin *root;
+struct MsgPort *idport;
+
+static struct MsgPort *wbport;
+static APTR vi;
+struct Menu *wbmenus;
+BOOL wbbackdrop = TRUE;
+static BOOL running = TRUE;
+
+ULONG strlen(CONST_STRPTR s)
+{
+	CONST_STRPTR p = s;
+
+	while (*p)
+		p++;
+	return (ULONG)(p - s);
+}
+
+char *strcpy(char *d, CONST_STRPTR s)
+{
+	char *p = d;
+
+	while ((*p++ = *s++) != 0)
+		;
+	return d;
+}
+
+char *strcat(char *d, CONST_STRPTR s)
+{
+	strcpy(d + strlen(d), s);
+	return d;
+}
+
+APTR memset(APTR d, int c, ULONG n)
+{
+	UBYTE *p = d;
+
+	while (n--)
+		*p++ = c;
+	return d;
+}
+
+/* At most n - 1 characters, always terminated */
+char *strncpy(char *d, CONST_STRPTR s, ULONG n)
+{
+	char *p = d;
+
+	while (n > 1 && (*p = *s++) != 0) {
+		p++;
+		n--;
+	}
+	*p = 0;
+	return d;
+}
+
+/*** Menus ***/
+
+enum { M_BACKDROP = 1, M_EXECUTE, M_REDRAW, M_ABOUT, M_QUIT, M_PARENT,
+	M_CLOSE, M_CLEANUP, M_ICONS, M_ALL, M_OPEN, M_INFO, M_RENAME,
+	M_DELETE };
+
+static struct NewMenu newmenus[] = {
+	{ NM_TITLE, "Workbench", NULL, 0, 0, NULL },
+	{ NM_ITEM, "Backdrop", "B", CHECKIT | MENUTOGGLE | CHECKED, 0,
+	    (APTR)M_BACKDROP },
+	{ NM_ITEM, "Execute Command...", "E", 0, 0, (APTR)M_EXECUTE },
+	{ NM_ITEM, "Redraw All", NULL, 0, 0, (APTR)M_REDRAW },
+	{ NM_ITEM, "About...", NULL, 0, 0, (APTR)M_ABOUT },
+	{ NM_ITEM, "Quit", "Q", 0, 0, (APTR)M_QUIT },
+	{ NM_TITLE, "Window", NULL, 0, 0, NULL },
+	{ NM_ITEM, "Open Parent", NULL, 0, 0, (APTR)M_PARENT },
+	{ NM_ITEM, "Close", "K", 0, 0, (APTR)M_CLOSE },
+	{ NM_ITEM, "Clean Up", ".", 0, 0, (APTR)M_CLEANUP },
+	{ NM_ITEM, "Show Only Icons", NULL, CHECKIT | CHECKED, 0x10,
+	    (APTR)M_ICONS },
+	{ NM_ITEM, "Show All Files", NULL, CHECKIT, 0x08, (APTR)M_ALL },
+	{ NM_TITLE, "Icons", NULL, 0, 0, NULL },
+	{ NM_ITEM, "Open", "O", 0, 0, (APTR)M_OPEN },
+	{ NM_ITEM, "Information...", "I", 0, 0, (APTR)M_INFO },
+	{ NM_ITEM, "Rename...", "R", 0, 0, (APTR)M_RENAME },
+	{ NM_ITEM, "Delete...", NULL, 0, 0, (APTR)M_DELETE },
+	{ NM_END, NULL, NULL, 0, 0, NULL }
+};
+
+void windowmenus(struct Window *w)
+{
+	if (wbmenus != NULL)
+		SetMenuStrip(w, wbmenus);
+}
+
+/* The Show items' checkmarks for the active window */
+static void showchecks(struct WBWin *ww)
+{
+	struct MenuItem *icons, *all;
+	struct WBWin *w;
+
+	if (wbmenus == NULL)
+		return;
+	icons = ItemAddress(wbmenus, FULLMENUNUM(1, 3, NOSUB));
+	all = ItemAddress(wbmenus, FULLMENUNUM(1, 4, NOSUB));
+	FOREACHWIN(w)
+		ClearMenuStrip(w->ww_Win);
+	icons->Flags &= ~CHECKED;
+	all->Flags &= ~CHECKED;
+	if (ww->ww_ShowAll)
+		all->Flags |= CHECKED;
+	else
+		icons->Flags |= CHECKED;
+	FOREACHWIN(w)
+		ResetMenuStrip(w->ww_Win, wbmenus);
+}
+
+/*** Requesters ***/
+
+static LONG request(struct WBWin *ww, CONST_STRPTR text, CONST_STRPTR gads,
+    ULONG *args)
+{
+	struct EasyStruct es;
+
+	es.es_StructSize = sizeof(es);
+	es.es_Flags = 0;
+	es.es_Title = "Workbench";
+	es.es_TextFormat = text;
+	es.es_GadgetFormat = gads;
+	return EasyRequestArgs(ww ? ww->ww_Win : NULL, &es, NULL, args);
+}
+
+/* A line of text from the user into buf, of len bytes */
+static BOOL askstring(CONST_STRPTR title, STRPTR buf, WORD len)
+{
+	static UBYTE undo[PATHLEN];
+	static WORD xy[] = { -2, -2, 301, -2, 301, 9, -2, 9, -2, -2 };
+	static struct Border border = { 0, 0, 1, 0, JAM1, 5, xy, NULL };
+	struct StringInfo si;
+	struct Gadget g;
+	struct Window *w;
+	struct IntuiMessage *im;
+	struct TagItem t[10];
+	ULONG class = 0;
+
+	memset(&si, 0, sizeof(si));
+	memset(&g, 0, sizeof(g));
+	si.Buffer = buf;
+	si.UndoBuffer = undo;
+	si.MaxChars = len;
+	g.LeftEdge = 12;
+	g.TopEdge = scr->BarHeight + 10;
+	g.Width = 300;
+	g.Height = 8;
+	g.Flags = GFLG_GADGHCOMP;
+	g.Activation = GACT_RELVERIFY;
+	g.GadgetType = GTYP_STRGADGET;
+	g.GadgetRender = (APTR)&border;
+	g.SpecialInfo = (APTR)&si;
+
+	t[0].ti_Tag = WA_Left;		t[0].ti_Data = (scr->Width - 324) / 2;
+	t[1].ti_Tag = WA_Top;		t[1].ti_Data = scr->Height / 3;
+	t[2].ti_Tag = WA_Width;		t[2].ti_Data = 324;
+	t[3].ti_Tag = WA_Height;	t[3].ti_Data = scr->BarHeight + 26;
+	t[4].ti_Tag = WA_Title;		t[4].ti_Data = (IPTR)title;
+	t[5].ti_Tag = WA_Gadgets;	t[5].ti_Data = (IPTR)&g;
+	t[6].ti_Tag = WA_IDCMP;
+	t[6].ti_Data = IDCMP_GADGETUP | IDCMP_CLOSEWINDOW;
+	t[7].ti_Tag = WA_CloseGadget;	t[7].ti_Data = TRUE;
+	t[8].ti_Tag = WA_Activate;	t[8].ti_Data = TRUE;
+	t[9].ti_Tag = WA_CustomScreen;	t[9].ti_Data = (IPTR)scr;
+	if ((w = OpenWindowTagList(NULL, t)) == NULL)
+		return FALSE;
+	ActivateGadget(&g, w, NULL);
+	while (class == 0) {
+		WaitPort(w->UserPort);
+		while ((im = (struct IntuiMessage *)GetMsg(w->UserPort)) != NULL) {
+			class = im->Class;
+			ReplyMsg((struct Message *)im);
+		}
+	}
+	CloseWindow(w);
+	return class == IDCMP_GADGETUP && buf[0] != 0;
+}
+
+/*** Commands ***/
+
+static void execute(void)
+{
+	char cmd[PATHLEN];
+	struct TagItem t[3];
+	BPTR out;
+
+	cmd[0] = 0;
+	if (!askstring("Execute a file", cmd, PATHLEN) ||
+	    (out = Open("CON:", MODE_NEWFILE)) == NULL)
+		return;
+	t[0].ti_Tag = SYS_Asynch;	t[0].ti_Data = TRUE;
+	t[1].ti_Tag = SYS_Output;	t[1].ti_Data = (IPTR)out;
+	t[2].ti_Tag = TAG_DONE;
+	if (SystemTagList(cmd, t) == -1) {
+		Close(out);
+		DisplayBeep(scr);
+	}
+}
+
+/* Open a drawer, or bring its window to the front */
+static void opendrawer(STRPTR path, struct DiskObject *dobj)
+{
+	struct WBWin *ww = findpath(path);
+
+	if (ww != NULL) {
+		WindowToFront(ww->ww_Win);
+		ActivateWindow(ww->ww_Win);
+	} else if (openwin(path, dobj) == NULL) {
+		DisplayBeep(scr);
+	}
+}
+
+void openicon(struct WBWin *ww, struct WBIcon *in)
+{
+	char path[PATHLEN];
+
+	if (!fullpath(ww, in, path))
+		return;
+	switch (in->in_Obj->do_Type) {
+	case WBDISK:
+	case WBDRAWER:
+	case WBGARBAGE:
+		opendrawer(path, in->in_Obj);
+		break;
+	default:
+		if (!OpenWorkbenchObjectA(path, NULL))
+			DisplayBeep(scr);
+		break;
+	}
+}
+
+static void parent(struct WBWin *ww)
+{
+	char dir[PATHLEN];
+	struct DiskObject *dobj;
+	WORD n;
+
+	if (ww == root || ww->ww_Path[strlen(ww->ww_Path) - 1] == ':') {
+		DisplayBeep(scr);
+		return;
+	}
+	n = PathPart(ww->ww_Path) - ww->ww_Path;
+	CopyMem(ww->ww_Path, dir, n);
+	dir[n] = 0;
+	dobj = GetDiskObjectNew(dir);
+	opendrawer(dir, dobj);
+	FreeDiskObject(dobj);
+}
+
+static char *typename[] = { "?", "disk", "drawer", "tool", "project",
+	"trashcan", "device", "kick", "AppIcon" };
+
+static void info(struct WBWin *ww, struct WBIcon *in)
+{
+	struct FileInfoBlock *fib = AllocDosObject(DOS_FIB, NULL);
+	struct DiskObject *d = in->in_Obj;
+	char path[PATHLEN];
+	ULONG args[5];
+	BPTR lock;
+
+	args[0] = (IPTR)in->in_Name;
+	args[1] = (IPTR)typename[d->do_Type <= WBAPPICON ? d->do_Type : 0];
+	args[2] = 0;
+	args[3] = (IPTR)(d->do_DefaultTool ? d->do_DefaultTool : "");
+	args[4] = d->do_StackSize;
+	if (fib != NULL && fullpath(ww, in, path) &&
+	    (lock = Lock(path, ACCESS_READ)) != NULL) {
+		if (Examine(lock, fib))
+			args[2] = fib->fib_Size;
+		UnLock(lock);
+	}
+	FreeDosObject(DOS_FIB, fib);
+	request(ww, "%s\nType: %s\nSize: %ld bytes\nDefault tool: %s\n"
+	    "Stack: %ld bytes", "OK", args);
+}
+
+/* The object path and its icon renamed to name, in the same drawer */
+static BOOL renameobj(STRPTR path, STRPTR name)
+{
+	char to[PATHLEN], from[PATHLEN];
+	WORD n = PathPart(path) - path;
+	BOOL ok;
+
+	CopyMem(path, to, n);
+	to[n] = 0;
+	if (!AddPart(to, name, PATHLEN - 5))
+		return FALSE;
+	ok = Rename(path, to);
+	strcpy(from, path);
+	strcat(from, ".info");
+	strcat(to, ".info");
+	Rename(from, to);
+	return ok;
+}
+
+static void wbrename(struct WBWin *ww, struct WBIcon *in)
+{
+	char path[PATHLEN], name[NAMELEN];
+
+	if (ww == root) {
+		DisplayBeep(scr);
+		return;
+	}
+	strcpy(name, in->in_Name);
+	if (!askstring("Rename", name, NAMELEN) || !fullpath(ww, in, path))
+		return;
+	if (!renameobj(path, name))
+		DisplayBeep(scr);
+	update(path);
+}
+
+static void wbdelete(struct WBWin *ww, struct WBIcon *in)
+{
+	char path[PATHLEN];
+	ULONG args[1];
+
+	args[0] = (IPTR)in->in_Name;
+	if (ww == root || !fullpath(ww, in, path) ||
+	    !request(ww, "Delete %s?", "Delete|Cancel", args))
+		return;
+	if (!DeleteFile(path) && IoErr() != ERROR_OBJECT_NOT_FOUND)
+		DisplayBeep(scr);
+	else
+		DeleteDiskObject(path);
+	update(path);
+}
+
+/* fn on each selected icon, or with first only on the first */
+static void selected(void (*fn)(struct WBWin *, struct WBIcon *), BOOL first)
+{
+	struct WBWin *ww;
+	struct WBIcon *in;
+
+	FOREACHWIN(ww)
+		FOREACH(struct WBIcon *, in, &ww->ww_Icons)
+			if (in->in_Selected) {
+				(*fn)(ww, in);
+				if (first)
+					return;
+			}
+}
+
+static void setbackdrop(BOOL on)
+{
+	if (on == wbbackdrop)
+		return;
+	wbbackdrop = on;
+	if (root != NULL)
+		closewin(root);
+	openwin(NULL, NULL);
+}
+
+static void showmode(struct WBWin *ww, BOOL all)
+{
+	if (ww == root || ww->ww_ShowAll == all)
+		return;
+	ww->ww_ShowAll = all;
+	freeicons(ww);
+	scan(ww);
+	redraw(ww);
+}
+
+static void menu(struct WBWin *ww, UWORD code)
+{
+	struct MenuItem *item;
+	struct WBWin *w;
+	ULONG about[2];
+
+	while (code != MENUNULL && running &&
+	    (item = ItemAddress(wbmenus, code)) != NULL) {
+		switch ((IPTR)GTMENUITEM_USERDATA(item)) {
+		case M_BACKDROP:
+			setbackdrop((item->Flags & CHECKED) != 0);
+			return;
+		case M_EXECUTE:
+			execute();
+			break;
+		case M_REDRAW:
+			FOREACHWIN(w) {
+				if (w != root || !wbbackdrop)
+					RefreshWindowFrame(w->ww_Win);
+				redraw(w);
+			}
+			break;
+		case M_ABOUT:
+			about[0] = IconBase->lib_Version;
+			about[1] = WorkbenchBase->lib_Version;
+			request(ww, "wb900 Workbench\nicon.library %ld, "
+			    "workbench.library %ld", "OK", about);
+			break;
+		case M_QUIT:
+			running = FALSE;
+			break;
+		case M_PARENT:
+			if (ww != NULL)
+				parent(ww);
+			break;
+		case M_CLOSE:
+			if (ww != NULL && ww != root)
+				closewin(ww);
+			return;
+		case M_CLEANUP:
+			if (ww != NULL)
+				cleanup(ww);
+			break;
+		case M_ICONS:
+		case M_ALL:
+			if (ww != NULL)
+				showmode(ww, (IPTR)GTMENUITEM_USERDATA(item) == M_ALL);
+			break;
+		case M_OPEN:
+			selected(openicon, FALSE);
+			break;
+		case M_INFO:
+			selected(info, FALSE);
+			break;
+		case M_RENAME:
+			selected(wbrename, TRUE);
+			return;
+		case M_DELETE:
+			selected(wbdelete, TRUE);
+			return;
+		}
+		code = item->NextSelect;
+	}
+}
+
+/*** Mouse ***/
+
+enum { IDLE, PRESS, DRAG, LASSO };
+
+static WORD state = IDLE;
+static struct WBWin *mww;		/* the window of the press */
+static WORD sx, sy, dx, dy;		/* press on the screen; drag offset */
+static struct Rectangle band;		/* the lasso, inner coordinates */
+static struct WBIcon *lastin;		/* the last icon clicked, and when */
+static ULONG lastsec, lastmic;
+
+static void bandbox(void)
+{
+	struct RastPort *rp = mww->ww_Win->RPort;
+
+	SetDrMd(rp, COMPLEMENT);
+	Move(rp, band.MinX, band.MinY);
+	Draw(rp, band.MaxX, band.MinY);
+	Draw(rp, band.MaxX, band.MaxY);
+	Draw(rp, band.MinX, band.MaxY);
+	Draw(rp, band.MinX, band.MinY + 1);
+	SetDrMd(rp, JAM1);
+}
+
+/* Move the selected icons of from into the drawer dir */
+static void dropinto(struct WBWin *from, STRPTR dir)
+{
+	char src[PATHLEN], to[PATHLEN];
+	struct WBIcon *in;
+	struct WBWin *ww;
+	BOOL moved = FALSE;
+
+	FOREACH(struct WBIcon *, in, &from->ww_Icons) {
+		if (!in->in_Selected || from == root || !fullpath(from, in, src))
+			continue;
+		strcpy(to, dir);
+		if (!AddPart(to, in->in_Name, PATHLEN - 5) || !Rename(src, to)) {
+			DisplayBeep(scr);
+			continue;
+		}
+		strcat(src, ".info");
+		strcat(to, ".info");
+		Rename(src, to);
+		moved = TRUE;
+	}
+	if (!moved)
+		return;
+	freeicons(from);
+	scan(from);
+	redraw(from);
+	if ((ww = findpath(dir)) != NULL) {
+		freeicons(ww);
+		scan(ww);
+		redraw(ww);
+	}
+}
+
+/* Launch the tool at with the selected icons of from as its arguments */
+static void droptool(struct WBWin *from, STRPTR tool)
+{
+	char path[PATHLEN];
+	struct TagItem t[2 * 8 + 1];
+	BPTR locks[8];
+	struct WBIcon *in;
+	WORD n = 0, i;
+
+	FOREACH(struct WBIcon *, in, &from->ww_Icons) {
+		if (!in->in_Selected || n == 8 || !fullpath(from, in, path))
+			continue;
+		*PathPart(path) = 0;
+		if ((locks[n] = Lock(path, ACCESS_READ)) == NULL)
+			continue;
+		t[2 * n].ti_Tag = WBOPENA_ArgLock;
+		t[2 * n].ti_Data = (IPTR)locks[n];
+		t[2 * n + 1].ti_Tag = WBOPENA_ArgName;
+		t[2 * n + 1].ti_Data = (IPTR)in->in_Name;
+		n++;
+	}
+	t[2 * n].ti_Tag = TAG_DONE;
+	if (!OpenWorkbenchObjectA(tool, t))
+		DisplayBeep(scr);
+	for (i = 0; i < n; i++)
+		UnLock(locks[i]);
+}
+
+/* The selected icons of mww let go at the screen's mouse position */
+static void drop(struct IntuiMessage *im)
+{
+	char path[PATHLEN], files[PATHLEN];
+	struct Layer *l = WhichLayer(&scr->LayerInfo, scr->MouseX, scr->MouseY);
+	struct Window *w = l ? l->Window : NULL;
+	struct WBWin *ww = findwin(w);
+	struct WBIcon *in;
+	char *list[1];
+
+	if (ww == mww) {
+		in = hit(ww, scr->MouseX - w->LeftEdge - w->BorderLeft,
+		    scr->MouseY - w->TopEdge - w->BorderTop);
+		if (in == NULL || in->in_Selected) {
+			moveicons(mww, dx, dy);
+			return;
+		}
+	} else if (ww != NULL) {
+		in = hit(ww, scr->MouseX - w->LeftEdge - w->BorderLeft,
+		    scr->MouseY - w->TopEdge - w->BorderTop);
+	} else {
+		/* an AppWindow gets the first icon */
+		FOREACH(struct WBIcon *, in, &mww->ww_Icons)
+			if (in->in_Selected && fullpath(mww, in, files)) {
+				list[0] = files;
+				if (w == NULL || !SendAppWindowMessage(w, 1, list, 0,
+				    scr->MouseX - w->LeftEdge,
+				    scr->MouseY - w->TopEdge, im->Seconds,
+				    im->Micros))
+					DisplayBeep(scr);
+				break;
+			}
+		return;
+	}
+	if (in == NULL) {
+		if (ww != root)
+			dropinto(mww, ww->ww_Path);
+		return;
+	}
+	if (!fullpath(ww, in, path))
+		return;
+	switch (in->in_Obj->do_Type) {
+	case WBDISK:
+	case WBDRAWER:
+	case WBGARBAGE:
+		dropinto(mww, path);
+		break;
+	case WBTOOL:
+		droptool(mww, path);
+		break;
+	default:
+		DisplayBeep(scr);
+		break;
+	}
+}
+
+static void buttons(struct WBWin *ww, struct IntuiMessage *im)
+{
+	struct Window *w = ww->ww_Win;
+	WORD x = im->MouseX - w->BorderLeft, y = im->MouseY - w->BorderTop;
+	BOOL shift = (im->Qualifier &
+	    (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT)) != 0;
+	struct WBIcon *in;
+
+	if (im->Code == SELECTDOWN) {
+		mww = ww;
+		sx = scr->MouseX;
+		sy = scr->MouseY;
+		dx = dy = 0;
+		if ((in = hit(ww, x, y)) == NULL) {
+			if (!shift)
+				deselectall(NULL);
+			band.MinX = band.MaxX = x;
+			band.MinY = band.MaxY = y;
+			bandbox();
+			state = LASSO;
+			lastin = NULL;
+			return;
+		}
+		if (in == lastin && DoubleClick(lastsec, lastmic, im->Seconds,
+		    im->Micros)) {
+			lastin = NULL;
+			state = IDLE;
+			openicon(ww, in);
+			return;
+		}
+		lastin = in;
+		lastsec = im->Seconds;
+		lastmic = im->Micros;
+		if (shift) {
+			selecticon(ww, in, !in->in_Selected);
+		} else if (!in->in_Selected) {
+			deselectall(NULL);
+			selecticon(ww, in, TRUE);
+		}
+		state = in->in_Selected ? PRESS : IDLE;
+		return;
+	}
+	if (im->Code != SELECTUP)
+		return;
+	if (state == DRAG) {
+		outline(mww, dx, dy);
+		drop(im);
+	} else if (state == LASSO) {
+		struct Rectangle r;
+
+		bandbox();
+		r.MinX = band.MinX < band.MaxX ? band.MinX : band.MaxX;
+		r.MaxX = band.MinX < band.MaxX ? band.MaxX : band.MinX;
+		r.MinY = band.MinY < band.MaxY ? band.MinY : band.MaxY;
+		r.MaxY = band.MinY < band.MaxY ? band.MaxY : band.MinY;
+		lasso(mww, &r);
+	}
+	state = IDLE;
+}
+
+static void moved(void)
+{
+	struct Window *w;
+
+	switch (state) {
+	case PRESS:
+		if (scr->MouseX - sx < 4 && sx - scr->MouseX < 4 &&
+		    scr->MouseY - sy < 4 && sy - scr->MouseY < 4)
+			break;
+		state = DRAG;
+		lastin = NULL;
+		dx = scr->MouseX - sx;
+		dy = scr->MouseY - sy;
+		outline(mww, dx, dy);
+		break;
+	case DRAG:
+		outline(mww, dx, dy);
+		dx = scr->MouseX - sx;
+		dy = scr->MouseY - sy;
+		outline(mww, dx, dy);
+		break;
+	case LASSO:
+		w = mww->ww_Win;
+		bandbox();
+		band.MaxX = scr->MouseX - w->LeftEdge - w->BorderLeft;
+		band.MaxY = scr->MouseY - w->TopEdge - w->BorderTop;
+		bandbox();
+		break;
+	}
+}
+
+/*** Events ***/
+
+BOOL busy;
+
+static void idcmp(void)
+{
+	struct IntuiMessage *im;
+	struct WBWin *ww;
+	BOOL move = FALSE;
+
+	busy = TRUE;
+	while ((im = (struct IntuiMessage *)GetMsg(idport)) != NULL) {
+		ww = findwin(im->IDCMPWindow);
+		if (ww == NULL) {
+			ReplyMsg((struct Message *)im);
+			continue;
+		}
+		switch (im->Class) {
+		case IDCMP_MOUSEMOVE:
+			move = TRUE;
+			break;
+		case IDCMP_MOUSEBUTTONS:
+			if (move)
+				moved();
+			move = FALSE;
+			buttons(ww, im);
+			break;
+		case IDCMP_REFRESHWINDOW:
+			refresh(ww);
+			break;
+		case IDCMP_ACTIVEWINDOW:
+			showchecks(ww);
+			break;
+		case IDCMP_MENUPICK:
+			ReplyMsg((struct Message *)im);
+			menu(ww, im->Code);
+			continue;
+		case IDCMP_CLOSEWINDOW:
+			ReplyMsg((struct Message *)im);
+			if (ww != root)
+				closewin(ww);
+			continue;
+		}
+		ReplyMsg((struct Message *)im);
+	}
+	if (move)
+		moved();
+	busy = FALSE;
+}
+
+/* workbench.library's messages: drawers to open, objects that changed */
+static void handler(void)
+{
+	struct WBHandlerMessage *m;
+
+	while ((m = (struct WBHandlerMessage *)GetMsg(wbport)) != NULL) {
+		switch (m->wbhm_Type) {
+		case WBHM_TYPE_OPEN:
+			opendrawer((STRPTR)m->wbhm_Data.Open.Name, NULL);
+			break;
+		case WBHM_TYPE_UPDATE:
+			if (m->wbhm_Data.Update.Name != NULL)
+				update((STRPTR)m->wbhm_Data.Update.Name);
+			break;
+		}
+		ReplyMsg((struct Message *)m);
+	}
+}
+
+static BOOL openlibs(void)
+{
+	return (DOSBase = (struct DosLibrary *)OpenLibrary(DOSNAME, 36L)) &&
+	    (GfxBase = (struct GfxBase *)OpenLibrary(GRAPHICSNAME, 39L)) &&
+	    (IntuitionBase = (struct IntuitionBase *)
+	    OpenLibrary(INTUITIONNAME, 39L)) &&
+	    (LayersBase = OpenLibrary("layers.library", 39L)) &&
+	    (UtilityBase = OpenLibrary(UTILITYNAME, 39L)) &&
+	    (GadToolsBase = OpenLibrary("gadtools.library", 39L)) &&
+	    (IconBase = OpenLibrary(ICONNAME, 44L)) &&
+	    (WorkbenchBase = OpenLibrary(WORKBENCH_NAME, 45L));
+}
+
+static void closelibs(void)
+{
+	CloseLibrary(WorkbenchBase);
+	CloseLibrary(IconBase);
+	CloseLibrary(GadToolsBase);
+	CloseLibrary(UtilityBase);
+	CloseLibrary(LayersBase);
+	CloseLibrary((struct Library *)IntuitionBase);
+	CloseLibrary((struct Library *)GfxBase);
+	CloseLibrary((struct Library *)DOSBase);
+}
+
+BOOL selftest(void);
+LONG selftestdone(void);
+
+/* Workbench's process: 0 when it quits, or the self test's result */
+LONG Workbench(char *args, LONG len)
+{
+	struct TagItem t[2];
+	struct WBWin *ww;
+	ULONG sigs;
+	LONG rc = RETURN_OK;
+	BOOL test;
+
+	if (!openlibs()) {
+		closelibs();
+		return RETURN_FAIL;
+	}
+	NewList((struct List *)&wins);
+	idport = CreateMsgPort();
+	wbport = CreateMsgPort();
+	if (idport == NULL || wbport == NULL || OpenWorkBench() == 0 ||
+	    (scr = LockPubScreen("Workbench")) == NULL) {
+		rc = RETURN_FAIL;
+		goto done;
+	}
+	t[0].ti_Tag = ICONCTRLA_SetGlobalScreen;	t[0].ti_Data = (IPTR)scr;
+	t[1].ti_Tag = TAG_DONE;
+	IconControlA(NULL, t);
+	RegisterWorkbench(wbport);
+	t[0].ti_Tag = GTMN_NewLookMenus;	t[0].ti_Data = TRUE;
+	if ((vi = GetVisualInfoA(scr, NULL)) != NULL &&
+	    (wbmenus = CreateMenusA(newmenus, NULL)) != NULL &&
+	    !LayoutMenusA(wbmenus, vi, t)) {
+		FreeMenus(wbmenus);
+		wbmenus = NULL;
+	}
+	openwin(NULL, NULL);
+	test = NextDisplayInfo(INVALID_ID) == INVALID_ID;
+	if (test && !selftest())
+		running = test = FALSE;
+	while (running) {
+		sigs = Wait((1L << idport->mp_SigBit) |
+		    (1L << wbport->mp_SigBit) | SIGBREAKF_CTRL_C);
+		if (sigs & (1L << idport->mp_SigBit))
+			idcmp();
+		if (sigs & (1L << wbport->mp_SigBit))
+			handler();
+		if (sigs & SIGBREAKF_CTRL_C)
+			running = FALSE;
+	}
+
+	if (test)
+		rc = selftestdone();
+	while ((ww = (struct WBWin *)wins.mlh_Head)->ww_Node.mln_Succ != NULL)
+		closewin(ww);
+	UnregisterWorkbench(wbport);
+	handler();
+	FreeMenus(wbmenus);
+	FreeVisualInfo(vi);
+	t[0].ti_Tag = ICONCTRLA_SetGlobalScreen;	t[0].ti_Data = (IPTR)NULL;
+	t[1].ti_Tag = TAG_DONE;
+	IconControlA(NULL, t);
+	UnlockPubScreen(NULL, scr);
+	/* the display goes back when the last screen closes */
+	CloseWorkBench();
+done:
+	DeleteMsgPort(wbport);
+	DeleteMsgPort(idport);
+	closelibs();
+	return rc;
+}

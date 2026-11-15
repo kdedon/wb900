@@ -18,6 +18,7 @@
 
 #include "graphics_intern.h"
 #include "default_font.h"
+#include "gfxformat.h"
 
 #define AN_GraphicsLib  0x02000000L
 
@@ -49,6 +50,7 @@ static struct Library *gfxinit(struct Library *lib, APTR seg, APTR sysbase)
     GfxBase->hash_table = AllocMem(GFXASSOCIATE_HASHSIZE * sizeof(APTR), MEMF_CLEAR | MEMF_PUBLIC);
 
     InitSemaphore(&PrivGBase(GfxBase)->sprite.ss_Lock);
+    gfx_InitFormats();
     InitSemaphore(&PrivGBase(GfxBase)->regionsem);
     NewMinList(&PrivGBase(GfxBase)->ChunkPoolList);
 

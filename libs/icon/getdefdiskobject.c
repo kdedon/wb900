@@ -1,0 +1,53 @@
+/*
+    Copyright (C) 1995-2007, The AROS Development Team. All rights reserved.
+*/
+
+#include "icon_intern.h"
+
+/*********************************************************
+
+    NAME */
+#include <proto/icon.h>
+
+        AROS_LH1(struct DiskObject *, GetDefDiskObject,
+
+/*  SYNOPSIS */
+        AROS_LHA(LONG, type, D0),
+
+/*  LOCATION */
+        struct IconBase *, IconBase, 20, Icon)
+
+/*  FUNCTION
+        Gets the default icon for the supplied type of icon.
+
+    INPUTS
+        type  -  type of icon to get default diskobject for.
+
+
+    RESULT
+        DiskObject structure or NULL if an error occured. The error may
+        be obtained by IoErr().
+
+    NOTES
+
+    EXAMPLE
+
+    BUGS
+
+    SEE ALSO
+        PutDefDiskObject(), GetDiskObjectNew()
+
+    INTERNALS
+
+*****************************************************************************/
+{
+    AROS_LIBFUNC_INIT
+    
+    struct TagItem tags[2];
+
+    tags[0].ti_Tag = ICONGETA_GetDefaultType;   tags[0].ti_Data = type;
+    tags[1].ti_Tag = TAG_DONE;
+    return GetIconTagList(NULL, tags);
+    
+    AROS_LIBFUNC_EXIT
+} /* GetDefDiskObject() */

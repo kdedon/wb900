@@ -860,9 +860,21 @@ struct PointerData
 };
 
 /* WinDecorClass */
+#define SYSIMCACHE 16
+
+/* A system image as drawn, to copy it from */
+struct sysimcache
+{
+	struct BitMap	*bm;
+	UWORD		 w, h;
+	UBYTE		 which, state, framesize;
+};
+
 struct windecor_data
 {
-	ULONG	userbuffersize;
+	ULONG		 userbuffersize;
+	struct sysimcache cache[SYSIMCACHE];
+	UWORD		 next;
 };
 
 /* ScrDecorClass */

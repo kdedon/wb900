@@ -28,17 +28,34 @@ static const UWORD nib4[16] = {
     0xF000, 0xF00F, 0xF0F0, 0xF0FF, 0xFF00, 0xFF0F, 0xFFF0, 0xFFFF
 };
 
+/* 8 template bits, bit 7 leftmost, as two words of chunky pixel masks */
+static ULONG nib8[256];
+
+void gfx_InitFormats(void)
+{
+    UWORD k;
+
+    for (k = 0; k < 256; k++)
+        nib8[k] = ((ULONG)nib4[k >> 4] << 16) | nib4[k & 15];
+}
+
 WORD gfx_Planes(struct BitMap *bm, const struct GfxPens *p,
     struct GfxPlane *pl, UWORD *bpp)
 {
     register struct GfxPlane *q = pl;
     register PLANEPTR *pp = bm->Planes;
     register UWORD i;
-    UBYTE *hi = IS_GFXBM(bm) ? GFXBM(bm)->gb_Half1 : NULL;
+    UBYTE *hi = NULL;
     UBYTE m = p->gp_Mask, a = p->gp_APen, b = p->gp_BPen;
     UWORD depth = bm->Depth;
+    WORD np = 0;
+    BOOL chunky = FALSE;
 
-    if (GFX_DRIVER(bm)->gd_Format == GDF_CHUNKY4) {
+    if (IS_GFXBM(bm)) {
+        hi = GFXBM(bm)->gb_Half1;
+        chunky = GFXBM(bm)->gb_Driver->gd_Format == GDF_CHUNKY4;
+    }
+    if (chunky) {
         *bpp = 4;
         if ((m & 15) == 0)
             return 0;
@@ -61,8 +78,9 @@ WORD gfx_Planes(struct BitMap *bm, const struct GfxPens *p,
         q->pl_B = (b & 1) ? 0xFFFF : 0;
         q->pl_M = 0xFFFF;
         q++;
+        np++;
     }
-    return q - pl;
+    return np;
 }
 
 /*
@@ -215,14 +233,15 @@ void gfx_Fill(struct BitMap *bm, const struct Rectangle *r,
     const struct GfxPens *p)
 {
     struct GfxPlane pl[8];
+    register struct GfxPlane *q;
     UWORD bpp, bpr = bm->BytesPerRow, w0, n, lm, rm, k, e, rows, t, m, a, x;
     UBYTE dm = p->gp_DrMd;
     WORD np, i, bx0, bx1;
     ULONG o;
 
     np = gfx_Planes(bm, p, pl, &bpp);
-    bx0 = r->MinX * bpp;
-    bx1 = r->MaxX * bpp + bpp - 1;
+    bx0 = bpp == 1 ? r->MinX : r->MinX << 2;
+    bx1 = bpp == 1 ? r->MaxX : (r->MaxX << 2) + 3;
     w0 = bx0 >> 4;
     n = (bx1 >> 4) - w0 + 1;
     lm = 0xFFFF >> (bx0 & 15);
@@ -231,20 +250,26 @@ void gfx_Fill(struct BitMap *bm, const struct Rectangle *r,
     o = (ULONG)r->MinY * bpr + (w0 << 1);
     if (p->gp_Ptrn == NULL) {
         t = (dm & INVERSVID) ? 0 : 0xFFFF;
-        for (i = 0; i < np; i++) {
-            m = pl[i].pl_M;
+        for (q = pl; np > 0; np--, q++) {
+            m = q->pl_M;
             if (dm & COMPLEMENT) {
                 a = 0xFFFF;
                 x = t & m;
             } else if (dm & JAM2) {
                 a = ~m;
-                x = ((t & pl[i].pl_F) | (~t & pl[i].pl_B)) & m;
+                x = ((t & q->pl_F) | (~t & q->pl_B)) & m;
             } else {
                 a = ~(t & m);
-                x = pl[i].pl_F & t & m;
+                x = q->pl_F & t & m;
             }
-            if (a != 0xFFFF || x != 0)
-                fillspan(&pl[i], o, n, rows, bpr, a, x, lm, rm);
+            if (a == 0xFFFF && x == 0)
+                continue;
+            if (q->pl_Hi == NULL ||
+                    (ULONG)r->MaxY * bpr + ((w0 + n) << 1) <= 0x10000L)
+                fillrect((UWORD *)(q->pl_Lo + (UWORD)o), n, rows, bpr,
+                    a, x, lm, rm);
+            else
+                fillspan(q, o, n, rows, bpr, a, x, lm, rm);
         }
         return;
     }
@@ -317,14 +342,13 @@ struct tmpljob {
     UWORD	 tj_SrcMod;
     WORD	 tj_TB;
     UWORD	 tj_N, tj_F, tj_B, tj_M, tj_LM, tj_RM, tj_Mode;
-    const UWORD	*tj_Nib;
+    const ULONG	*tj_Nib;
 };
 
 #define T_JAM2		0
 #define T_JAM1		1
 #define T_COMP		4
 #define T_NOT		2
-#define T_PIX		8	/* chunky: nib holds the pixels to store */
 
 /* Destination words a pass of gfx_TmplRows takes */
 #define TPASS	32
@@ -376,7 +400,6 @@ void gfx_Template(struct BitMap *bm, const struct Rectangle *r,
 {
     struct GfxPlane pl[8];
     struct tmpljob tj;
-    UWORD pix[16];
     UWORD bpp, ppw, bpr = bm->BytesPerRow;
     UWORD qlen = ((srcx + (r->MaxX - r->MinX)) >> 3) + 1;
     UWORD w0, n, n1, lm, rm, c, cnt, rows, k, mode;
@@ -418,14 +441,7 @@ void gfx_Template(struct BitMap *bm, const struct Rectangle *r,
         }
         tj.tj_M = pl[i].pl_M;
         tj.tj_Mode = mode;
-        tj.tj_Nib = bpp == 1 ? NULL : nib4;
-        if (bpp == 4 && mode == T_JAM2 && tj.tj_M == 0xFFFF) {
-            /* the words of pixels for each 4 template bits */
-            for (k = 0; k < 16; k++)
-                pix[k] = (tj.tj_F & nib4[k]) ^ tj.tj_B;
-            tj.tj_Mode = T_PIX;
-            tj.tj_Nib = pix;
-        }
+        tj.tj_Nib = bpp == 1 ? NULL : nib8;
         for (c = 0; c < n; c += cnt) {
             cnt = n - c < TPASS ? n - c : TPASS;
             tb = tx + (WORD)(c * ppw);
@@ -608,8 +624,6 @@ void gfx_Copy(struct BitMap *src, WORD sx, WORD sy, struct BitMap *dst,
     sbx = sx * bpp - (bx0 & 15);
     sw = sbx < 0 ? 0 : (UWORD)sbx >> 4;
     cj.cj_TB = sbx - (WORD)(sw << 4);
-    /* whole rows of words: the same bits of the source words, or shifted */
-    aligned = cj.cj_TB >= 0 && minterm == 0xC0;
     /* the last source byte a row needs, and its words */
     cj.cj_SQ = (UWORD)((sx * bpp + (r->MaxX - r->MinX + 1) * bpp - 1) >> 3) -
         (sw << 1);
@@ -620,6 +634,9 @@ void gfx_Copy(struct BitMap *src, WORD sx, WORD sy, struct BitMap *dst,
     dstep = up ? -(LONG)dbpr : dbpr;
     /* right to left on the same row when the destination is right of it */
     cj.cj_Left = src == dst && r->MinY == sy && r->MinX > sx;
+    /* whole rows of words: the same bits of the source words, or shifted;
+       right to left only from a source bit at or after the destination's */
+    aligned = minterm == 0xC0 && (cj.cj_TB >= 0 || !cj.cj_Left);
 
     for (i = 0, pi = 0; i < np; i++) {
         /* the source plane of the destination's, or its constant */
@@ -669,20 +686,84 @@ void gfx_Copy(struct BitMap *src, WORD sx, WORD sy, struct BitMap *dst,
     }
 }
 
-/* gfx_LineRun's job */
+/* gfx_LineRun's job, the words it loads into r0-r11, then steep */
 struct linejob {
-    UBYTE	 lj_Mask[8];
-    UBYTE	*lj_Lo, *lj_Hi;
-    ULONG	 lj_YO;
-    WORD	 lj_X, lj_Y, lj_D, lj_IncrE, lj_IncrNE, lj_Count;
-    WORD	 lj_SX, lj_SY;
-    LONG	 lj_YStep;
-    WORD	 lj_Steep;
+    UWORD	 lj_Mask;	/* the first pixel's bits */
+    UWORD	 lj_K;		/* K << 8 */
+    UBYTE	*lj_At;		/* its byte */
+    WORD	 lj_YStep;
+    UWORD	 lj_Pens;	/* P0 << 8 | P1 */
+    UWORD	 lj_Reload;	/* skip0 << 8 | the bits of the next byte */
+    WORD	 lj_Err, lj_IncrE, lj_IncrNE;
     UWORD	 lj_Ptrn;
-    WORD	 lj_CX0, lj_CW, lj_CY0, lj_CH;
-    UWORD	 lj_F, lj_B, lj_Mode;
     WORD	 lj_Shift;
+    UWORD	 lj_Steep;
 };
+
+/*
+ * A line of dM steps on its major axis and dm on its minor one: the
+ * minor steps after i steps; the first step with at least k; the last
+ * with at most k.  The blitter's line mode steps diagonally on a tie.
+ */
+static WORD fstep(WORD dM, WORD dm, WORD i)
+{
+    return (WORD)((2 * (ULONG)dm * i + dM) / (2 * (ULONG)dM));
+}
+
+static WORD firstf(WORD dM, WORD dm, WORD k)
+{
+    if (k <= 0)
+        return 0;
+    if (dm == 0 || k > dm)
+        return dM + 1;
+    return (WORD)((2 * (ULONG)dM * k - dM + 2 * dm - 1) / (2 * (ULONG)dm));
+}
+
+static WORD lastf(WORD dM, WORD dm, WORD k)
+{
+    if (k < 0)
+        return -1;
+    if (dm == 0 || k >= dm)
+        return dM;
+    return (WORD)((2 * (ULONG)dM * (k + 1) - dM - 1) / (2 * (ULONG)dm));
+}
+
+/* What stays the same for the pieces of a line */
+struct line {
+    WORD	 x0, y0, sx, sy, dM, dm;
+    BOOL	 steep;
+    UWORD	 bpp, bpr, ptrn;
+};
+
+/* The last step whose row is not past row yl */
+static WORD lastrow(const struct line *ln, WORD yl)
+{
+    WORD k = ln->sy * (yl - ln->y0);
+
+    if (ln->steep)
+        return k < 0 ? -1 : k;
+    return lastf(ln->dM, ln->dm, k);
+}
+
+/* Steps s to e of the line in one half of plane pl */
+static void linerun(const struct line *ln, const struct GfxPlane *pl,
+    struct linejob *lj, WORD s, WORD e)
+{
+    WORD f = fstep(ln->dM, ln->dm, s), x, y;
+    UWORD rot = s & 15;
+    UBYTE pm = (UBYTE)pl->pl_M;
+
+    x = ln->x0 + ln->sx * (ln->steep ? f : s);
+    y = ln->y0 + ln->sy * (ln->steep ? s : f);
+    lj->lj_Err = (WORD)(2 * (LONG)ln->dm * (s + 1) - ln->dM -
+        2 * (LONG)ln->dM * f);
+    lj->lj_At = PL_AT(pl, (ULONG)y * ln->bpr + (((ULONG)x * ln->bpp) >> 3));
+    lj->lj_Mask = (ln->bpp == 1 ? 0x80 >> (x & 7) :
+        ((x & 1) ? 0x0F : 0xF0)) & pm;
+    lj->lj_Ptrn = rot ? (ln->ptrn << rot) | (ln->ptrn >> (16 - rot)) :
+        ln->ptrn;
+    gfx_LineRun(lj, ln->sx, e - s + 1);
+}
 
 void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
     WORD x0, WORD y0, WORD x1, WORD y1, UWORD ptrn,
@@ -690,60 +771,105 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
 {
     struct GfxPlane pl[8];
     struct linejob lj;
-    UWORD bpp, bpr = bm->BytesPerRow;
-    WORD dx, dy, np, i, k;
-    UBYTE m;
+    struct line ln;
+    WORD dx, dy, np, i, a, b, s, e, lo, hi, m0, sm, xs, yb, rb;
+    UBYTE pm, skip0;
+    UWORD bpp;
 
     np = gfx_Planes(bm, p, pl, &bpp);
+    ln.bpp = bpp;
+    ln.bpr = bm->BytesPerRow;
+    ln.ptrn = ptrn;
+    ln.x0 = x0;
+    ln.y0 = y0;
     dx = x1 - x0;
     dy = y1 - y0;
-    lj.lj_SX = dx > 0 ? 1 : -1;
-    lj.lj_SY = dy > 0 ? 1 : -1;
-    lj.lj_YStep = dy > 0 ? (LONG)bpr : -(LONG)bpr;
+    ln.sx = dx > 0 ? 1 : -1;
+    ln.sy = dy > 0 ? 1 : -1;
     if (dx < 0)
         dx = -dx;
     if (dy < 0)
         dy = -dy;
-    lj.lj_Steep = dx < dy;
-    if (lj.lj_Steep) {
-        k = dx;
-        dx = dy;
-        dy = k;
+    ln.steep = dx < dy;
+    ln.dM = ln.steep ? dy : dx;
+    ln.dm = ln.steep ? dx : dy;
+    /* the steps with their pixel in the clip: along the major axis */
+    if (ln.steep) {
+        a = ln.sy > 0 ? clip->MinY - y0 : y0 - clip->MaxY;
+        b = ln.sy > 0 ? clip->MaxY - y0 : y0 - clip->MinY;
+        m0 = x0;
+        sm = ln.sx;
+        lo = sm > 0 ? clip->MinX - m0 : m0 - clip->MaxX;
+        hi = sm > 0 ? clip->MaxX - m0 : m0 - clip->MinX;
+    } else {
+        a = ln.sx > 0 ? clip->MinX - x0 : x0 - clip->MaxX;
+        b = ln.sx > 0 ? clip->MaxX - x0 : x0 - clip->MinX;
+        m0 = y0;
+        sm = ln.sy;
+        lo = sm > 0 ? clip->MinY - m0 : m0 - clip->MaxY;
+        hi = sm > 0 ? clip->MaxY - m0 : m0 - clip->MinY;
     }
-    /* The blitter's line mode steps diagonally on a tie. */
-    lj.lj_IncrE = 2 * dy;
-    lj.lj_IncrNE = 2 * (dy - dx);
-    /* none after the major axis leaves the clip */
-    if (lj.lj_Steep)
-        k = lj.lj_SY > 0 ? clip->MaxY - y0 : y0 - clip->MinY;
-    else
-        k = lj.lj_SX > 0 ? clip->MaxX - x0 : x0 - clip->MinX;
-    if (k < 0)
+    if (a < 0)
+        a = 0;
+    if (b > ln.dM)
+        b = ln.dM;
+    /* and the minor */
+    s = firstf(ln.dM, ln.dm, lo);
+    if (s > a)
+        a = s;
+    e = lastf(ln.dM, ln.dm, hi);
+    if (e < b)
+        b = e;
+    if (a > b)
         return;
-    lj.lj_Count = (k < dx ? k : dx) + 1;
-    lj.lj_Ptrn = ptrn;
-    lj.lj_CX0 = clip->MinX;
-    lj.lj_CW = clip->MaxX - clip->MinX;
-    lj.lj_CY0 = clip->MinY;
-    lj.lj_CH = clip->MaxY - clip->MinY;
-    lj.lj_Shift = bpp == 1 ? -3 : -1;
-    if (p->gp_DrMd & COMPLEMENT)
-        lj.lj_Mode = 2;
-    else
-        lj.lj_Mode = (p->gp_DrMd & JAM2) ? 0 : 1;
+
+    lj.lj_IncrE = 2 * ln.dm;
+    lj.lj_IncrNE = 2 * (ln.dm - ln.dM);
+    lj.lj_YStep = ln.sy > 0 ? ln.bpr : -ln.bpr;
+    lj.lj_Shift = ln.sx > 0 ? -bpp : bpp;
+    lj.lj_Steep = ln.steep;
+    /* the rows below yb are in the first 64 KB, row yb from byte rb on */
+    yb = (WORD)(0x10000L / ln.bpr);
+    rb = (WORD)(0x10000L % ln.bpr);
+    xs = (rb << 3) / bpp;
     for (i = 0; i < np; i++) {
-        m = (UBYTE)pl[i].pl_M;
-        for (k = 0; k < 8; k++)
-            lj.lj_Mask[k] = (bpp == 1 ? 0x80 >> k : ((k & 1) ? 0x0F : 0xF0)) & m;
-        lj.lj_Lo = pl[i].pl_Lo;
-        lj.lj_Hi = pl[i].pl_Hi;
-        /* x's byte from lo, or the second half from 0x10000 */
-        lj.lj_YO = (ULONG)y0 * bpr + (UWORD)(ULONG)pl[i].pl_Lo;
-        lj.lj_F = (UBYTE)pl[i].pl_F;
-        lj.lj_B = (UBYTE)pl[i].pl_B;
-        lj.lj_X = x0;
-        lj.lj_Y = y0;
-        lj.lj_D = 2 * dy - dx;
-        gfx_LineRun(&lj);
+        pm = (UBYTE)pl[i].pl_M;
+        if (p->gp_DrMd & COMPLEMENT) {
+            lj.lj_K = 0;
+            lj.lj_Pens = 0xFF;
+            skip0 = 1;
+        } else {
+            lj.lj_K = 0xFF00;
+            lj.lj_Pens = ((UBYTE)pl[i].pl_B << 8) | (UBYTE)pl[i].pl_F;
+            skip0 = !(p->gp_DrMd & JAM2);
+        }
+        lj.lj_Reload = (skip0 << 8) | (pm & (ln.sx > 0 ?
+            (bpp == 1 ? 0x80 : 0xF0) : (bpp == 1 ? 0x01 : 0x0F)));
+        if (pl[i].pl_Hi == NULL) {
+            linerun(&ln, &pl[i], &lj, a, b);
+            continue;
+        }
+        /* pieces that stay in one half */
+        for (s = a; s <= b; s = e + 1) {
+            dy = y0 + ln.sy * (ln.steep ? s : fstep(ln.dM, ln.dm, s));
+            if (dy < yb)
+                e = ln.sy > 0 ? lastrow(&ln, yb - 1) : b;
+            else if (dy > yb || rb == 0)
+                e = ln.sy > 0 ? b : lastrow(&ln, rb == 0 ? yb : yb + 1);
+            else {
+                /* the row that crosses, at pixel xs */
+                e = lastrow(&ln, yb);
+                dx = x0 + ln.sx * s;
+                if (!ln.steep && ln.sx > 0 && dx < xs && xs - 1 - x0 < e)
+                    e = xs - 1 - x0;
+                if (!ln.steep && ln.sx < 0 && dx >= xs && x0 - xs < e)
+                    e = x0 - xs;
+            }
+            if (e > b)
+                e = b;
+            if (e < s)
+                e = s;
+            linerun(&ln, &pl[i], &lj, s, e);
+        }
     }
 }

@@ -592,43 +592,70 @@ static void blitcase(struct RastPort *rp, WORD ox, WORD oy, char *name,
 }
 
 /*
- * Lines across the area, against the same lines in a cleared bitmap of
- * the format at the same place in its words
+ * A line by the blitter's line mode, which steps diagonally on a tie,
+ * put in want where it is in the area; pattern bit 15 goes with the
+ * first pixel.
  */
+static void refline(WORD ox, WORD oy, WORD x0, WORD y0, WORD x1, WORD y1,
+    UWORD ptrn, UBYTE mode, UBYTE a, UBYTE b, UBYTE all)
+{
+	WORD dx = x1 - x0, dy = y1 - y0, sx = dx > 0 ? 1 : -1;
+	WORD sy = dy > 0 ? 1 : -1, x = x0, y = y0, dM, dm, d, i, steep;
+
+	if (dx < 0)
+		dx = -dx;
+	if (dy < 0)
+		dy = -dy;
+	steep = dx < dy;
+	dM = steep ? dy : dx;
+	dm = steep ? dx : dy;
+	d = 2 * dm - dM;
+	for (i = 0; i <= dM; i++) {
+		if (x >= ox && x < ox + FW && y >= oy && y < oy + FH)
+			want[y - oy][x - ox] = pixel(want[y - oy][x - ox],
+			    (ptrn >> (15 - (i & 15))) & 1, mode, a, b, all);
+		if (d >= 0) {
+			if (steep)
+				x += sx;
+			else
+				y += sy;
+			d += 2 * (dm - dM);
+		} else
+			d += 2 * dm;
+		if (steep)
+			y += sy;
+		else
+			x += sx;
+	}
+}
+
+/* Lines in all directions, some running out of the bitmap */
 static void linecase(struct RastPort *rp, WORD ox, WORD oy, char *name,
-    UBYTE a, UWORD ptrn)
+    UBYTE mode, UBYTE a, UBYTE b, UWORD ptrn, UBYTE all)
 {
 	static WORD ends[][4] = {
 		{ 0, 0, 71, 11 }, { 70, 1, 2, 10 }, { 5, 11, 40, 0 },
-		{ 64, 0, 66, 11 }, { 1, 5, 70, 6 }
+		{ 64, 0, 66, 11 }, { 1, 5, 70, 6 }, { 66, 11, 60, 0 },
+		{ 71, 11, 0, 0 }, { 30, 0, 20, 11 }, { 2, 11, 5, 0 },
+		{ -40, -30, 100, 25 }, { 80, -5, -20, 30 }, { 10, 40, 30, -50 },
+		{ -10, 6, 200, 7 }, { 50, -9, 47, 20 }, { 0, 3, 71, 3 }
 	};
-	struct RastPort ref;
-	struct BitMap *bm;
-	WORD x, y, k, rx = ox & 15;
+	WORD x, y, k;
 
-	bm = AllocBitMap(FW + 16, FH, GetBitMapAttr(rp->BitMap, BMA_DEPTH),
-	    BMF_CLEAR, rp->BitMap);
-	if (bm == NULL)
-		return;
-	InitRastPort(&ref);
-	ref.BitMap = bm;
 	snap(rp, ox, oy, was);
-	SetABPenDrMd(rp, a, 0, JAM1);
-	SetABPenDrMd(&ref, a, 0, JAM1);
-	SetDrPt(rp, ptrn);
-	SetDrPt(&ref, ptrn);
-	for (k = 0; k < 5; k++) {
-		Move(rp, ox + ends[k][0], oy + ends[k][1]);
-		Draw(rp, ox + ends[k][2], oy + ends[k][3]);
-		Move(&ref, rx + ends[k][0], ends[k][1]);
-		Draw(&ref, rx + ends[k][2], ends[k][3]);
-	}
-	SetDrPt(rp, 0xFFFF);
 	for (y = 0; y < FH; y++)
 		for (x = 0; x < FW; x++)
-			want[y][x] = ReadPixel(&ref, rx + x, y) ? a : was[y][x];
+			want[y][x] = was[y][x];
+	SetABPenDrMd(rp, a, b, mode);
+	SetDrPt(rp, ptrn);
+	for (k = 0; k < sizeof(ends) / sizeof(ends[0]); k++) {
+		Move(rp, ox + ends[k][0], oy + ends[k][1]);
+		Draw(rp, ox + ends[k][2], oy + ends[k][3]);
+		refline(ox, oy, ox + ends[k][0], oy + ends[k][1],
+		    ox + ends[k][2], oy + ends[k][3], ptrn, mode, a, b, all);
+	}
+	SetDrPt(rp, 0xFFFF);
 	compare(rp, ox, oy, name, "Draw");
-	FreeBitMap(bm);
 }
 
 static void rowcases(struct BitMap *bm, WORD ox, WORD oy, char *name)
@@ -669,20 +696,66 @@ static void rowcases(struct BitMap *bm, WORD ox, WORD oy, char *name)
 	blitcase(&rp, ox, oy, name, 0, 0, 0, 1, 72, 11, 0xC0, all);
 	blitcase(&rp, ox, oy, name, 3, 0, 14, 2, 40, 8, 0xC0, all);
 	blitcase(&rp, ox, oy, name, 30, 3, 19, 3, 37, 6, 0xC0, all);
-	linecase(&rp, ox, oy, name, 5 & all | 1, 0xFFFF);
-	linecase(&rp, ox, oy, name, 6 & all | 1, 0xF0C3);
+	linecase(&rp, ox, oy, name, JAM1, 5 & all | 1, 0, 0xFFFF, all);
+	linecase(&rp, ox, oy, name, JAM1, 6 & all | 1, 0, 0xF0C3, all);
+	linecase(&rp, ox, oy, name, JAM2, 3 & all, 6 & all, 0xE4D1, all);
+	linecase(&rp, ox, oy, name, COMPLEMENT, 1, 0, 0xFF3C, all);
+}
+
+/*
+ * BltBitMap from a source x left of the destination's in their words:
+ * from x 0-3 of one bitmap to x 5-20 of another
+ */
+static void blitedge(struct BitMap *src, struct BitMap *dst, char *name)
+{
+	struct RastPort s, d;
+	WORD x, y, sx, dx, ok = TRUE;
+	UBYTE all = (1 << GetBitMapAttr(dst, BMA_DEPTH)) - 1;
+
+	InitRastPort(&s);
+	s.BitMap = src;
+	InitRastPort(&d);
+	d.BitMap = dst;
+	for (y = 0; y < 6; y++)
+		for (x = 0; x < 40; x++) {
+			SetAPen(&s, rnd() & all);
+			WritePixel(&s, x, y);
+		}
+	for (sx = 0; sx < 4; sx++)
+		for (dx = 5; dx <= 20; dx += 5) {
+			BltBitMap(src, sx, 0, dst, dx, 2, 30 - sx, 5, 0xC0, 0xFF,
+			    NULL);
+			for (y = 0; y < 5; y++)
+				for (x = 0; x < 30 - sx; x++)
+					if (ReadPixel(&d, dx + x, 2 + y) !=
+					    ReadPixel(&s, sx + x, y))
+						ok = FALSE;
+		}
+	if (!ok)
+		xKPrintf("FAIL graphics: %s BltBitMap from the left edge\n", name);
+	fails += !ok;
 }
 
 static void rows(void)
 {
-	struct BitMap *bm;
+	struct BitMap *bm, *src;
 
 	bm = AllocBitMap(200, 40, 3, BMF_CLEAR, NULL);
+	src = AllocBitMap(40, 6, 3, BMF_CLEAR, NULL);
+	if (bm && src)
+		blitedge(src, bm, "planar 3");
+	if (src)
+		FreeBitMap(src);
 	if (bm) {
 		rowcases(bm, 5, 3, "planar 3");
 		FreeBitMap(bm);
 	}
 	bm = chunky(200, 40);
+	src = chunky(40, 6);
+	if (bm && src)
+		blitedge(src, bm, "chunky");
+	if (src)
+		FreeBitMap(src);
 	if (bm) {
 		rowcases(bm, 7, 20, "chunky");
 		FreeBitMap(bm);

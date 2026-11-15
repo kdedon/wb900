@@ -19,15 +19,12 @@
 
 #define SPRITEMAXW	32
 
-static void sprite_rect(struct SoftSprite *ss, struct Rectangle *r,
-                        struct GfxBase *GfxBase)
+static void sprite_rect(struct SoftSprite *ss, struct Rectangle *r)
 {
-    struct BitMap *img = ss->ss_Sprite->es_BitMap;
-
     r->MinX = ss->ss_X;
     r->MinY = ss->ss_Y;
-    r->MaxX = ss->ss_X + GetBitMapAttr(img, BMA_WIDTH) - 1;
-    r->MaxY = ss->ss_Y + img->Rows - 1;
+    r->MaxX = ss->ss_X + ss->ss_W - 1;
+    r->MaxY = ss->ss_Y + ss->ss_H - 1;
 }
 
 /* The part of the sprite inside its bitmap, or FALSE */
@@ -36,7 +33,7 @@ static BOOL sprite_clip(struct SoftSprite *ss, struct Rectangle *r,
 {
     struct Rectangle bm;
 
-    sprite_rect(ss, r, GfxBase);
+    sprite_rect(ss, r);
     GetRPClipRectangleForBitMap(ss->ss_BitMap, &bm, GfxBase);
     if (r->MinX < bm.MinX) r->MinX = bm.MinX;
     if (r->MinY < bm.MinY) r->MinY = bm.MinY;
@@ -129,7 +126,7 @@ BOOL gfx_SpriteBefore(struct BitMap *bm, struct Rectangle *r, struct GfxBase *Gf
         return FALSE;
     ObtainSemaphore(&ss->ss_Lock);
     if (ss->ss_Shown) {
-        sprite_rect(ss, &sr, GfxBase);
+        sprite_rect(ss, &sr);
         if (_AndRectRect(&sr, r, &sr))
             sprite_hide(ss, GfxBase);
     }
@@ -305,6 +302,8 @@ void gfx_SpriteAfter(struct GfxBase *GfxBase)
     ss->ss_Sprite = newsprite;
     ss->ss_BitMap = bm;
     if (newsprite) {
+        ss->ss_W = GetBitMapAttr(img, BMA_WIDTH);
+        ss->ss_H = img->Rows;
         if (oldsprite) {
             ss->ss_X = oldsprite->es_SimpleSprite.x;
             ss->ss_Y = oldsprite->es_SimpleSprite.y;

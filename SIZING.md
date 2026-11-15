@@ -83,6 +83,9 @@ AROS intuition depends on (number of includes): graphics 66, layers 43, utility 
 - **Measured 2026-11-14:** utility.library is 8,066 B code + 440 B data from 1,423 code lines, so about **6 bytes per line**. Applied to intuition's ~25–30k code lines (excluding doc comments), the full library comes to ~150–180 KB, and the subset to well under that. This is consistent with the earlier range.
 - **Measured 2026-11-14:** graphics.library is 54,828 B code + 3,802 B data; layers.library (hyperlayers without composited layers) is 29,882 B code + 422 B data, one hunk each. layers' deepest call in its test took about 1.1 KB of stack.
 - **Measured 2026-11-14 (toolchain 337f2b6):** intuition.library (AROS rom/intuition without monitorclass, CGX/HIDD, screen notification, screen buffers, IPrefs, alerts and the group/model/fillrect/itext/barlabel classes; with the decorator classes and decorator loading) is 201,412 B code in four hunks of 54,786, 62,380, 64,290 and 19,956 B, plus 3,644 B data, from about 38.8k lines (autodocs included). graphics.library grew to 59,032 B code + 4,074 B data with the pen, VideoControl and View calls. In tests/intuition the input task, which runs intuition's handler, used 2,580 B of its stack (now 4,096 B, was 1,536 B) and the menu task 1,209 B of 2,048 B.
+- **Measured 2026-11-15:** gadtools.library (all of AROS workbench/libs/gadtools) is 63,626 B code in one hunk plus 1,970 B data, from 8.3k lines. In tests/gadtools the input task used 2,571 B of its 4,096 B stack and the menu task 2,045 B, so its stack is now 3,072 B (was 2,048 B).
+
+- **Measured 2026-11-15:** icon.library (classic .info icons only) is about 21 KB code + 2 KB data; workbench.library 16 KB + 0.4 KB, and its handler process uses 882 of 1,536 B of stack. The Workbench program is a 28 KB hunk; its process uses about 2.6 KB of its 3.5 KB stack in the self test.
 
 ## 6. Suggested phasing
 

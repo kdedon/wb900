@@ -22,6 +22,15 @@ Opened 2026-11-14. Status reported by exec816-0f the same day. Exec work is a pl
 | 13 | `<devices/inputevent.h>`: `IECLASS_NEWMOUSE` (0x16), AROS's class for wheel events (`NM_WHEEL_*` codes in `ie_Code`) | **Landed** 9a6e75b2: IECLASS_NEWMOUSE 0x16, <devices/newmouse.h> NM_WHEEL_* 0x7A-0x7D (match AROS RAWKEY_NM_*) | done |
 | 14 | `FreeSignal(-1)` for a port's `mp_SigBit` of -1: `DeleteMsgPort` passes the UBYTE as 255, and `FreeSignal` panics "reserved bit". AmigaOS takes the low byte, so a port whose signal was given away (`mp_SigBit = -1`, as amiga.lib's `TimeDelay` and AROS code do) can be deleted | **Landed** 9a6e75b2: FreeSignal ignores 0xFF, as Exec V37+ | done |
 | 15 | `mkdisk.py`: a larger exec partition (an option such as `--exec=BLOCKS`): it is fixed at 1024 blocks (512 KB) | **Landed** 9a6e75b2: exec partition sized from contents; `--exec=BLOCKS` overrides | done |
+| 16 | Faster `ObtainSemaphore`/`ReleaseSemaphore` and `Forbid`/`Permit` (below) | open | — |
+| 17 | `<dos/dosextens.h>`: the NDK ST_* entry types | **Landed** cc58d673 | done |
+| 18 | `mkdisk.py --mkdir=PATH` | **Landed** cc58d673 | done |
+
+### 16. Semaphore and Forbid cost
+
+An uncontended `ObtainSemaphore` plus `ReleaseSemaphore` takes about 1.5k cycles at 6 MHz (`obtain` calls `xForbid`, `take` and `xPermit`; `xReleaseSem` calls `xForbid` and `xPermit`), and `Forbid`/`Permit` about 330 cycles a pair. graphics.library takes the layer lock and the pointer lock around every primitive, so opening a window does about 420 obtains and 900 Forbid/Permit pairs: 12% of its 5.1M cycles. Repro: wbdemo's win2-open under the profiling emulator.
+
+Asked for: an assembler fast path for the free, own-nested and shared cases (count and owner set with interrupts held off, no calls), falling back to the queue as now, and `Forbid`/`Permit` without the C call frame.
 
 ### 10. Keyboard raw codes
 

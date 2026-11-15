@@ -35,6 +35,9 @@ struct GfxPlane {
 WORD gfx_Planes(struct BitMap *bm, const struct GfxPens *p,
     struct GfxPlane *pl, UWORD *bpp);
 
+/* The tables of the row code, made once */
+void gfx_InitFormats(void);
+
 /* gd_Fill, gd_Template, gd_Copy and gd_Line of both formats */
 void gfx_Fill(struct BitMap *bm, const struct Rectangle *r,
     const struct GfxPens *p);
@@ -58,7 +61,8 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
  * under rm, rows dstep and sstep bytes apart, upwards or (dir < 0)
  * downwards along a row.  gfx_ShiftRows: the same with each word from
  * the bits sh (1-15) on of two source words, reading n + 1 a row.
- * gfx_LineRun: a line in one plane by job (gfxformat.c).  gfx_WCopy: n
+ * gfx_LineRun: count pixels of a line in one half of a plane, from
+ * job (gfxformat.c), x bytes stepping by xstep.  gfx_WCopy: n
  * words, upwards.
  * gfx_Bits: n words of the bits of byte string s from bit sh (0-7),
  * reading s[0] to s[2n] (s[2n - 1] when sh is 0).
@@ -72,7 +76,7 @@ void gfx_CopyRows(UWORD *d, const UWORD *s, UWORD n, UWORD rows,
     WORD dstep, WORD sstep, UWORD lm, UWORD rm, WORD dir);
 void gfx_ShiftRows(UWORD *d, const UWORD *s, UWORD n, UWORD rows,
     WORD dstep, WORD sstep, UWORD sh, UWORD lm, UWORD rm, WORD dir);
-void gfx_LineRun(APTR job);
+void gfx_LineRun(APTR job, WORD xstep, UWORD count);
 void gfx_WCopy(UWORD *d, const UWORD *s, UWORD n);
 void gfx_Bits(UWORD *out, const UBYTE *s, UWORD sh, UWORD n);
 

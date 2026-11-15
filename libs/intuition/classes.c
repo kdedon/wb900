@@ -47,6 +47,7 @@ IPTR PointerClass__OM_NEW(Class *cl, Object *o, Msg msg);
 IPTR PointerClass__OM_GET(Class *cl, Object *o, Msg msg);
 IPTR PointerClass__OM_DISPOSE(Class *cl, Object *o, Msg msg);
 IPTR WinDecorClass__OM_NEW(Class *cl, Object *o, Msg msg);
+IPTR WinDecorClass__OM_DISPOSE(Class *cl, Object *o, Msg msg);
 IPTR WinDecorClass__OM_GET(Class *cl, Object *o, Msg msg);
 IPTR WinDecorClass__WDM_GETDEFSIZE_SYSIMAGE(Class *cl, Object *o, Msg msg);
 IPTR WinDecorClass__WDM_DRAW_SYSIMAGE(Class *cl, Object *o, Msg msg);
@@ -235,6 +236,8 @@ static IPTR WinDecorClass_Dispatcher(Class *cl, Object *o, Msg msg)
     {
     case OM_NEW:
         return (IPTR)WinDecorClass__OM_NEW(cl, o, msg);
+    case OM_DISPOSE:
+        return (IPTR)WinDecorClass__OM_DISPOSE(cl, o, msg);
     case OM_GET:
         return (IPTR)WinDecorClass__OM_GET(cl, o, msg);
     case WDM_GETDEFSIZE_SYSIMAGE:

@@ -184,6 +184,18 @@ f_:
 
 as-z8001 rejects it (`0003 q`, `0004 u`, `0004 a`); with `1:` and `1b` it assembles. Only `0:` to `9:` are local labels, so a routine with more than ten branch targets needs named ones. Not blocking: libs/graphics/gfxasm.s uses names (`tr1`, `ln1`, `sr1`). Expected: any decimal number, as in the Unix assemblers.
 
+## 14. as: RR0 or R0 as a base register (opened 2026-11-15)
+
+```
+	.shri
+f_:
+	ld	r9, rr0(16)
+	ldl	rr2, rr0(4)
+	ret
+```
+
+The Z8000 has no based or indexed mode on register 0, but as-z8001 takes these without a word and emits direct-address loads (`LD R9,0x0014`, `LDL RR2,0x0004`), which read low memory. Expected: an error, as for any other mode the CPU lacks. Not blocking: libs/graphics/gfxasm.s now uses RR10 there.
+
 ## Out of scope (handled by the converter or by hand)
 
 Designated initializers (~123 sites), statement expressions, `inline`, variadic macros (4 sites), the AROS_LH/UFH macros, and 64-bit integers.
