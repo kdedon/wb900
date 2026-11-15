@@ -674,16 +674,16 @@ STATIC BOOL SMGadInit(struct LayoutData *ld, struct AslBase_intern *AslBase)
     {
         struct NewMenu nm[] =
         {
-            {NM_TITLE, (STRPTR)MSG_MODEREQ_MEN_CONTROL, 0, 0, 0, 0                                                  },
+            {NM_TITLE, (STRPTR)MSG_MODEREQ_MEN_CONTROL},
              {NM_ITEM, (STRPTR)MSG_MODEREQ_MEN_CONTROL_LASTMODE     , 0, 0, 0, (APTR)SMMEN_LASTMODE     },
              {NM_ITEM, (STRPTR)MSG_MODEREQ_MEN_CONTROL_NEXTMODE     , 0, 0, 0, (APTR)SMMEN_NEXTMODE     },
-             {NM_ITEM, NM_BARLABEL, 0, 0, 0, 0                                                                      },
+             {NM_ITEM, NM_BARLABEL},
              {NM_ITEM, (STRPTR)MSG_MODEREQ_MEN_CONTROL_PROPERTIES   , 0, 0, 0, (APTR)SMMEN_PROPERTYLIST },
              {NM_ITEM, (STRPTR)MSG_MODEREQ_MEN_CONTROL_RESTORE      , 0, 0, 0, (APTR)SMMEN_RESTORE      },
-             {NM_ITEM, NM_BARLABEL, 0, 0, 0, 0                                                                      },
+             {NM_ITEM, NM_BARLABEL},
              {NM_ITEM, (STRPTR)MSG_MODEREQ_MEN_CONTROL_OK           , 0, 0, 0, (APTR)SMMEN_OK           },
              {NM_ITEM, (STRPTR)MSG_MODEREQ_MEN_CONTROL_CANCEL       , 0, 0, 0, (APTR)SMMEN_CANCEL       },
-            {NM_END, 0, 0, 0, 0, 0                                                                                     }
+            {NM_END}
         };
 
         struct TagItem menu_tags[] =

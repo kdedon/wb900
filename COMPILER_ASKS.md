@@ -1,6 +1,8 @@
-# Requested MWC compiler additions (landed on toolchain main 4bf4702, 2026-11-14)
+# Requested MWC compiler changes
 
-Status: landed as 4bf4702 (prototypes bbcf7d6, long switch 8a9a078, `//` 20be671, mixed declarations 5027c09). Existing code stays byte-identical, and native and host builds match. Notes in /tmp/claude-1000/ansi/deliver/README.md.
+Target: commodore-900-toolchain, cc0 front end (cc1 where noted). Motivation: HAZARDS.md. Each later ask's heading gives its status; 13 is open.
+
+1–4 landed on toolchain main as 4bf4702, 2026-11-14 (prototypes bbcf7d6, long switch 8a9a078, `//` 20be671, mixed declarations 5027c09). Existing code stays byte-identical; native and host builds match.
 
 Limits as delivered:
 - Prototype checks compare promoted types only; pointee types and struct tags are not compared.
@@ -8,15 +10,13 @@ Limits as delivered:
 - The int-in-`...` warning is behind `-VSRTVC`.
 - A `//` with a line splice between the slashes isn't recognised.
 - Avoid `-VDEBUG`: cc2 crashes in fixdbgt(), and mixed declarations trigger it more often.
-- Native cc0 grows by 3.9 KB text and 0.8 KB data. Each distinct prototype costs 4 bytes plus 1 per parameter, capped at a 32 KB pool.
-
-Target: commodore-900-toolchain, cc0 front end (cc1 where noted). Motivation: HAZARDS.md.
+- Native cc0 grows by 3.9 KB text and 0.8 KB data. Each distinct prototype costs 4 bytes plus 1 per parameter, in a 32 KB pool.
 
 ## Rules for all four
 
-- **Additive.** Code that compiles today must compile byte-identical. The self-host fixed point, `check-native`, and COHERENT kernel/userland builds must not change.
+- **Additive.** Code that compiles today compiles byte-identical. The self-host fixed point, `check-native` and COHERENT kernel/userland builds don't change.
 - **No ABI change.** Objects built with and without these features link and call each other as today.
-- **Native too.** The features work in the native cc0 on the C900, within its 64 KB data segment.
+- **Native too.** They work in the native cc0 on the C900, within its 64 KB data segment.
 
 ## 1. Function prototypes and ANSI definitions
 
@@ -33,17 +33,17 @@ Target: commodore-900-toolchain, cc0 front end (cc1 where noted). Motivation: HA
   - Integer to pointer, or pointer to integer, without a cast is an error.
 - A wrong argument count is an error.
 - Arguments matching `...` get the default promotions: char/short become int, float becomes double. A 16-bit int therefore stays 16 bits.
-- A call with no prototype in scope behaves exactly as today.
+- A call with no prototype in scope behaves as today.
 
 **ABI:**
 - Each parameter is passed as its promoted type: char/short/int as 16 bits, long and pointers as 32, float as double.
-- A prototyped callee is therefore interchangeable with a K&R one. The compiler also accepts a K&R definition after a prototype when the promoted types agree.
+- So a prototyped callee is interchangeable with a K&R one, and a K&R definition after a prototype is accepted when the promoted types agree.
 
 **Checking:**
 - Error on a redeclaration whose parameter list or return type conflicts.
 - An empty `()` list stays "unspecified" and is compatible with any prototype.
 
-**Optional:** a warning when an int-typed expression is passed in a `...` position. That would catch most tag-list mistakes, which are hazard 3.
+**Optional:** a warning for an int-typed expression in a `...` position, catching most tag-list mistakes (hazard 3).
 
 **Tests:**
 - int and 0 passed to LONG and pointer parameters
@@ -55,7 +55,7 @@ Target: commodore-900-toolchain, cc0 front end (cc1 where noted). Motivation: HA
 
 ## 2. `//` comments
 
-- The lexer and the preprocessor (in cc0) accept C99 line comments, which end at the newline.
+- cc0's lexer and preprocessor accept C99 line comments, ending at the newline.
 - Not recognised inside string or character constants.
 - A comment inside a `#define` ends the macro body.
 - Backslash-newline splicing happens before comment recognition, as C99 specifies.
@@ -68,7 +68,7 @@ Target: commodore-900-toolchain, cc0 front end (cc1 where noted). Motivation: HA
 - `for (T i = e; ...; ...)` declares `i` with the loop as its scope.
 - Shadowing an outer name follows the existing block rules.
 - Jumping into a block past an initialized declaration is allowed and leaves the value indeterminate (C99 without VLAs).
-- Frame layout may differ from the equivalent top-of-block code, but code with all declarations at the top must not change.
+- Frame layout may differ from equivalent top-of-block code; code with all declarations at the top must not change.
 - **Tests:** declaration after statements, use before and after the declaration, a `for` declaration with an outer variable of the same name, nested blocks, `goto` past a declaration.
 
 ## 4. `switch` on long and unsigned long
@@ -96,7 +96,7 @@ char *p[] = { a };				/* accepted */
 unsigned long t[] = { (unsigned long)a };	/* cc1: initializer too complex */
 ```
 
-Expected: the same relocated long the pointer initializer emits. **Blocks** keymap.library: libs/keymap/defaultkeymap.c, the `DEAD()`/`STRING()` entries of `lokeymap` and `hikeymap` (40 sites from line 384).
+Expected: the relocated long the pointer initializer emits. **Blocks** keymap.library: libs/keymap/defaultkeymap.c, the `DEAD()`/`STRING()` entries of `lokeymap` and `hikeymap` (40 sites from line 384).
 
 ## 6. Automatic struct initialised from a struct expression (opened 2026-11-14; landed in toolchain 337f2b6)
 
@@ -107,7 +107,7 @@ struct R { short a, b; };
 int f(struct R *p) { struct R o = *p; return o.a; }	/* cc0: type clash */
 ```
 
-`struct R o; o = *p;` and brace initialisers (even non-constant ones) compile. Expected: the same code as the declaration followed by the assignment. **Blocks** graphics.library: libs/graphics/andrectregion.c:54, gfxfuncsupport.c:109 (`struct Rectangle part = parts[i], sb;`) and :165 (`struct Rectangle torender = *rr;`). Also **blocks** layers.library: libs/layers/basicfuncs.c:647, :663 and :770 (`struct Rectangle rect = intersect;`). intuition has more.
+`struct R o; o = *p;` and brace initialisers (even non-constant) compile. Expected: the code of the declaration plus the assignment. **Blocks** graphics.library: libs/graphics/andrectregion.c:54, gfxfuncsupport.c:109 (`struct Rectangle part = parts[i], sb;`) and :165 (`struct Rectangle torender = *rr;`). Also **blocks** layers.library: libs/layers/basicfuncs.c:647, :663 and :770 (`struct Rectangle rect = intersect;`). intuition has more.
 
 ## 7. cc1 internal error EDFA69 (opened 2026-11-14; landed in toolchain 337f2b6)
 
@@ -124,7 +124,7 @@ struct A { long x; };
 struct A *f(struct A **pp) { register struct A *a = *pp; a++; return *pp = a; }
 ```
 
-cc2 stores `a` (RR10) through `pp` and returns without moving it into RR0, so the function returns garbage. MWC makes plain locals into registers on its own, so AROS code hits this with no `register` in sight. **Blocks** graphics.library's regions, and with them layers: libs/graphics/intregions.c:170 (`return *LastRectPtr = (struct RegionRectangle *)RRE;`) returns 0x00000001, and the next region operation traps.
+cc2 stores `a` (RR10) through `pp` and returns without moving it into RR0: garbage. MWC puts plain locals in registers itself, so AROS code hits this with no `register`. **Blocks** graphics.library's regions, and with them layers: libs/graphics/intregions.c:170 (`return *LastRectPtr = (struct RegionRectangle *)RRE;`) returns 0x00000001, and the next region operation traps.
 
 ## 9. Automatic array sized by its initializer (opened 2026-11-14; landed in toolchain 337f2b6)
 
@@ -138,7 +138,7 @@ Since 337f2b6, a cast of an address to a word or byte in a static initializer is
 
 ## 10. `&` applied to an array (opened 2026-11-14; landed in toolchain ca42506)
 
-cc0 rejects the address of an array, which C89 defines as a pointer to the array (the same address as its first element):
+cc0 rejects the address of an array, which C89 defines as a pointer to the array (at its first element):
 
 ```c
 struct S { short a[4]; } s;
@@ -149,7 +149,7 @@ short *g(void) { return (short *)&b; }		/* cc0: lvalue required */
 
 `offsetof(struct S, a)` fails the same way, since it takes `&((struct S *)0)->a`. Expected: the address of the first element. **Blocks** intuition.library: libs/intuition/openscreen.c (`(ULONG*)&IBase->DriPens2` and `memclr(&color_alloced,256)`), openwindow.c (`(struct TagItem *)&layertags`, 3 sites), setprefs.c:74-76 (`offsetof(struct Preferences, PointerMatrix)`, `memcmp(&prefbuffer->PointerMatrix, ...)`).
 
-`offsetof()` of any member is also not an integer constant expression for cc0 (`typedef char t[offsetof(struct S, a) == 0 ? 1 : -1];` gives "array bound must be a constant"), though a static initializer takes it. Nothing in the tree depends on that.
+`offsetof()` of any member is also not an integer constant expression for cc0 (`typedef char t[offsetof(struct S, a) == 0 ? 1 : -1];` gives "array bound must be a constant"), though a static initializer takes it. Nothing in the tree depends on that. Fixed above -VKR by toolchain d2cad6e.
 
 ## 11. cc2 internal error 2C59 (opened 2026-11-14; landed in toolchain ca42506)
 
@@ -170,7 +170,7 @@ void f(rp, c) char *rp; int c;
 }
 ```
 
-cc2 puts the constant 5 of the conditional in the data section as one byte and the address constants after it at odd offsets, which mkhunk refuses ("odd relocation"). `SetAPen(rp, c ? 5 : 0)` through `<lvo/graphics_lib.h>` does it, as in tests/gfxdemo.c. libs/intuition/drawimagestate.c:171 was a site too: its code changes with the fix.
+cc2 puts the conditional's constant 5 in the data section as one byte, and the address constants after it at odd offsets, which mkhunk refuses ("odd relocation"). `SetAPen(rp, c ? 5 : 0)` through `<lvo/graphics_lib.h>` does it, as in tests/gfxdemo.c. libs/intuition/drawimagestate.c:171 was a site too; its code changes with the fix.
 
 ## 13. as: local labels of more than one digit (opened 2026-11-15)
 
@@ -182,9 +182,9 @@ f_:
 	ret
 ```
 
-as-z8001 rejects it (`0003 q`, `0004 u`, `0004 a`); with `1:` and `1b` it assembles. Only `0:` to `9:` are local labels, so a routine with more than ten branch targets needs named ones. Not blocking: libs/graphics/gfxasm.s uses names (`tr1`, `ln1`, `sr1`). Expected: any decimal number, as in the Unix assemblers.
+as-z8001 rejects it (`0003 q`, `0004 u`, `0004 a`); `1:` and `1b` assemble. Only `0:` to `9:` are local, so a routine with over ten branch targets needs names. Not blocking: libs/graphics/gfxasm.s uses names (`tr1`, `ln1`, `sr1`). Expected: any decimal number, as in the Unix assemblers.
 
-## 14. as: RR0 or R0 as a base register (opened 2026-11-15)
+## 14. as: RR0 or R0 as a base register (opened 2026-11-15; landed in toolchain 853caaf, merged ecc0421)
 
 ```
 	.shri
@@ -194,9 +194,9 @@ f_:
 	ret
 ```
 
-The Z8000 has no based or indexed mode on register 0, but as-z8001 takes these without a word and emits direct-address loads (`LD R9,0x0014`, `LDL RR2,0x0004`), which read low memory. Expected: an error, as for any other mode the CPU lacks. Not blocking: libs/graphics/gfxasm.s now uses RR10 there.
+The Z8000 has no based or indexed mode on register 0, but as-z8001 silently emits direct-address loads (`LD R9,0x0014`, `LDL RR2,0x0004`), reading low memory. Expected: an error, as for any other mode the CPU lacks. Not blocking: libs/graphics/gfxasm.s now uses RR10 there.
 
-## 15. Wrong code: members missing from an automatic aggregate's initializer are not zeroed (opened 2026-11-15)
+## 15. Wrong code: members missing from an automatic aggregate's initializer are not zeroed (opened 2026-11-15; landed in toolchain d38dbf2, merged 27fc54d)
 
 ```c
 struct N { unsigned char t; char *l; char *k; short f; };
@@ -204,15 +204,15 @@ char *g(struct N *p);
 char *k(void) { struct N n[] = { {1, (char *)10, 0, 3}, {2} }; return g(n); }
 ```
 
-cc0 stores `n[1].t = 2` and leaves `n[1].l`, `k` and `f` as stack garbage; C89 zeroes them, as for a static. **Blocks** asl.library: its menus' `{NM_ITEM, NM_BARLABEL}` entries reach gadtools' CreateMenusA() with a garbage `nm_CommKey`, which traps. libs/asl spells the zeros out in its NewMenu tables meanwhile. AROS's `{TAG_DONE}` entries are hit too, harmlessly.
+cc0 stores `n[1].t = 2` and leaves `n[1].l`, `k` and `f` as stack garbage; C89 zeroes them, as for a static. **Blocks** asl.library: its menus' `{NM_ITEM, NM_BARLABEL}` entries reach gadtools' CreateMenusA() with a garbage `nm_CommKey`, which traps. Meanwhile libs/asl spells out the zeros in its NewMenu tables. AROS's `{TAG_DONE}` entries are hit too, harmlessly.
 
-## 16. `readonly` is a keyword (opened 2026-11-15)
+## 16. `readonly` is a keyword (opened 2026-11-15; landed in toolchain 98b790c, merged 27fc54d, under -VC89 and -VC99 only)
 
 ```c
 struct S { char readonly; };	/* cc0: class not allowed in structure body */
 ```
 
-cc0 is built with `READONLY`, which makes `readonly` (and `alien` with `ALIEN`) a storage class. Standard C has neither. Not blocking: libs/asl renamed AROS's listview field to `isreadonly`. Expected: both names are ordinary identifiers.
+cc0 is built with `READONLY`, making `readonly` (and `alien` with `ALIEN`) a storage class; standard C has neither. Not blocking: libs/asl renamed AROS's listview field `isreadonly`. Expected: both are ordinary identifiers.
 
 ## Out of scope (handled by the converter or by hand)
 

@@ -34,6 +34,9 @@
 #define CONFLAG_DEFAULT			0
 #define CONFLAG_NODRAW_ON_NEWSIZE	1
 
+/* The SM/RM linefeed mode, which <devices/console.h> lacks */
+#define M_LNM	20
+
 #define PMB_ASM		(M_LNM + 1)
 #define PMB_AWM		(PMB_ASM + 1)
 #define MAXTABS		80

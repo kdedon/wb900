@@ -34,18 +34,15 @@ LONG Workbench(char *args, LONG len);
 static LONG shell(char *args, LONG len)
 {
 	BPTR in, out;
-	APTR old;
 
 	if ((in = Open(SHELLWINDOW, MODE_OLDFILE)) == NULL)
 		return RETURN_FAIL;
-	/* Output, and the commands' "*", go to the same window */
-	old = SetConsoleTask(((struct FileHandle *)in)->fh_Type);
+	/* The window is this process's console, so "*" is the same window */
 	out = Open("*", MODE_NEWFILE);
 	if (out != NULL) {
 		Execute("", in, out);
 		Close(out);
 	}
-	SetConsoleTask(old);
 	Close(in);
 	return out != NULL ? RETURN_OK : RETURN_FAIL;
 }

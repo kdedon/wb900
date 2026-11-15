@@ -227,15 +227,36 @@ static void lowmem(void)
 		FreeMem(p, n);
 }
 
-static BOOL listed(WORD i)
+static BOOL listed(char *name, BOOL dev)
 {
-	struct List *l = mods[i].dev ? &SysBase->DeviceList : &SysBase->LibList;
+	struct List *l = dev ? &SysBase->DeviceList : &SysBase->LibList;
 	BOOL r;
 
 	Forbid();
-	r = FindName(l, mods[i].name) != NULL;
+	r = FindName(l, name) != NULL;
 	Permit();
 	return r;
+}
+
+/* asl's Expunge closes gadtools, which then goes too */
+static void nested(void)
+{
+	struct Library *gt, *asl;
+
+	lowmem();
+	gt = OpenLibrary("gadtools.library", 0L);
+	asl = OpenLibrary(AslName, 0L);
+	check(gt && asl, "nested open", AslName);
+	if (gt == NULL || asl == NULL)
+		return;
+	lowmem();
+	OpenLibrary(AslName, 0L);
+	CloseLibrary(asl);
+	CloseLibrary(asl);
+	CloseLibrary(gt);
+	lowmem();
+	check(!listed(AslName, FALSE) && !listed("gadtools.library", FALSE),
+	    "nested expunge", AslName);
 }
 
 int main(void)
@@ -252,11 +273,13 @@ int main(void)
 	for (cur = 0; cur < NMODS; cur++) {
 		runjob("first open");
 		lowmem();
-		check(listed(cur) != mods[cur].goes, "low-memory expunge",
-		    mods[cur].name);
+		check(listed(mods[cur].name, mods[cur].dev) != mods[cur].goes,
+		    "low-memory expunge", mods[cur].name);
 		runjob("second open");
-		check(listed(cur), "reloaded", mods[cur].name);
+		check(listed(mods[cur].name, mods[cur].dev), "reloaded",
+		    mods[cur].name);
 	}
+	nested();
 	CloseDevice((struct IORequest *)io);
 	if (fails != 0)
 		return 1;

@@ -1,6 +1,6 @@
 # Exec900 requests from wb900
 
-Opened 2026-11-14. Status reported by exec816-0f the same day. Exec work is a plan, not a commitment: the user approves each piece.
+Opened 2026-11-14; status from exec816-0f and the c900/exec900 log. The user approves each piece of Exec work.
 
 ## Status
 
@@ -25,54 +25,55 @@ Opened 2026-11-14. Status reported by exec816-0f the same day. Exec work is a pl
 | 16 | Faster `ObtainSemaphore`/`ReleaseSemaphore` and `Forbid`/`Permit` (below) | **Landed** 56d2a734: uncontended Obtain/Release about 2,200 to 650-770 clocks; Forbid/Permit 573 to 429 | done |
 | 17 | `<dos/dosextens.h>`: the NDK ST_* entry types | **Landed** cc58d673 | done |
 | 18 | `mkdisk.py --mkdir=PATH` | **Landed** cc58d673 | done |
-| 19 | Free the name `console.device` for the window console (below) | open | — |
-| 20 | `Open()`: set `pr_ConsoleTask` from the handle's `fh_Type` after the open packet (below) | open | — |
-| 21 | `NewShell WINDOW`: open the window once (below) | open | — |
-| 22 | dos.library: `DateToStr`, `CompareDates` and `SplitName`, with `<dos/datetime.h>` and `MAXFILENAMELENGTH` (below) | open | — |
-| 23 | A Shell command's default stack: 1600 B is too small for intuition programs (below) | open | — |
-| 24 | ramlib's low-memory handler walks freed list nodes (below) | open | — |
+| 19 | Free the name `console.device` for the window console (below) | **Landed** 19839cad: the kernel console is `textcon.device` (`TEXTCONNAME`, `<devices/textcon.h>`); units and flags move to `<devices/conunit.h>` | done |
+| 20 | `Open()`: set `pr_ConsoleTask` from the handle's `fh_Type` after the open packet (below) | **Landed** 1e6d4cf7: from the first interactive open; CreateNewProc takes NP_ConsoleTask | done |
+| 21 | `NewShell WINDOW`: open the window once (below) | **Landed** 1e6d4cf7 | done |
+| 22 | dos.library: `DateToStr`, `CompareDates` and `SplitName`, with `<dos/datetime.h>` and `MAXFILENAMELENGTH` (below) | **Landed** 0845a36e, with StrToDate (−750) and the other NDK dos.h constants | done |
+| 23 | A Shell command's default stack: 1600 B is too small for intuition programs (below) | **Landed** 58a2e88c: 4,000 B | done |
+| 24 | ramlib's low-memory handler walks freed list nodes (below) | **Landed** 0d59aadf: the walk restarts after an unload; devices expunge through RemDevice | done |
 | 25 | console.device: read the console ring (below) | open | — |
 | 26 | ExecBase: idle time, for a CPU load (below) | open | — |
+| 27 | `Close()`: clear the `pr_ConsoleTask` that the handle's `Open()` set (below) | **Landed** d2a5278b: Close clears the console its handle set; Open("*") afterwards fails with ERROR_DEVICE_NOT_MOUNTED | done |
 
 ### 16. Semaphore and Forbid cost
 
-An uncontended `ObtainSemaphore` plus `ReleaseSemaphore` takes about 1.5k cycles at 6 MHz (`obtain` calls `xForbid`, `take` and `xPermit`; `xReleaseSem` calls `xForbid` and `xPermit`), and `Forbid`/`Permit` about 330 cycles a pair. graphics.library takes the layer lock and the pointer lock around every primitive, so opening a window does about 420 obtains and 900 Forbid/Permit pairs: 12% of its 5.1M cycles. Repro: wbdemo's win2-open under the profiling emulator.
+An uncontended `ObtainSemaphore` + `ReleaseSemaphore` took ~1.5k cycles at 6 MHz (`obtain` calls `xForbid`, `take`, `xPermit`; `xReleaseSem` calls `xForbid`, `xPermit`), a `Forbid`/`Permit` pair ~330. graphics.library takes the layer and pointer locks around every primitive, so a window open did ~420 obtains and 900 Forbid/Permit pairs: 12% of its 5.1M cycles. Repro: wbdemo's win2-open under the profiling emulator.
 
-Asked for: an assembler fast path for the free, own-nested and shared cases (count and owner set with interrupts held off, no calls), falling back to the queue as now, and `Forbid`/`Permit` without the C call frame.
+Asked for: an assembler fast path for the free, own-nested and shared cases (count and owner set with interrupts off, no calls), else the queue as now; `Forbid`/`Permit` without the C frame.
 
 ### 19. The name console.device
 
-Amiga programs open `console.device` with a window in `io_Data` (CON: handlers, editors), or unit `CONU_LIBRARY` (-1) for `RawKeyConvert`. wb900's AROS console.device does both, but the kernel's text console holds the name, and ramlib refuses a second device of that name, so ours is `wincon.device` for now.
+Amiga programs open `console.device` with a window in `io_Data` (CON: handlers, editors), or unit `CONU_LIBRARY` (-1) for `RawKeyConvert`. wb900's AROS console.device does both, but the kernel's text console held the name and ramlib refuses a second, so ours is `wincon.device` for now.
 
-Asked for: rename the kernel's device (say `kcon.device`, with its own macro instead of `CONSOLENAME`) in the kernel, `con.c`, the display modules and the tests. wb900 then renames its device to `console.device`.
+Asked for: rename the kernel's device (say `kcon.device`, own macro instead of `CONSOLENAME`) in the kernel, `con.c`, the display modules and the tests. wb900 then renames its device `console.device`.
 
 ### 20. pr_ConsoleTask after Open
 
-wb900's CON: is one process per device that hands each open to a new window process; the window process sets `fh_Type` to its own port, as AmigaOS per-window handlers do. `xOpen` sets an unset `pr_ConsoleTask` to the device's port instead, so a later `Open("*")` (and `SystemTagList`'s default `SYS_Output`) reaches the device process, which has no window to give it. Repro: `Open("CON:0/0/300/100/x", MODE_OLDFILE)` from a process with no console, then `Open("*", MODE_NEWFILE)` fails.
+wb900's CON: device process hands each open to a new window process, which sets `fh_Type` to its own port, as AmigaOS per-window handlers do. `xOpen` set an unset `pr_ConsoleTask` to the device's port instead, so a later `Open("*")` (and `SystemTagList`'s default `SYS_Output`) reached the device process, which has no window. Repro: `Open("CON:0/0/300/100/x", MODE_OLDFILE)` from a process with no console, then `Open("*", MODE_NEWFILE)` fails.
 
-Asked for: `me->pr_ConsoleTask = fh->fh_Type` (the port after the packet). Meanwhile wb900's Shell launcher calls `SetConsoleTask(fh_Type)` itself.
+Asked for: `me->pr_ConsoleTask = fh->fh_Type` (the port after the packet). Meanwhile wb900's Shell launcher calls `SetConsoleTask(fh_Type)`.
 
 ### 21. NewShell WINDOW
 
-`newshell()` in `dos/shell.c` opens the WINDOW name twice, for input and output. With a window CON: that is two windows. AmigaOS opens it once and gets the output stream as `*` of that window.
+`newshell()` in `dos/shell.c` opened the WINDOW name twice, for input and output: two windows with a window CON:. AmigaOS opens it once and gets output as `*` of that window.
 
-Asked for: open the window once (`MODE_OLDFILE`), `SetConsoleTask(in's fh_Type)` around `Open("*", MODE_NEWFILE)` for the output, and give the new shell that console task. Until then `NewShell` from a Shell window opens two windows.
+Asked for: open it once (`MODE_OLDFILE`), `SetConsoleTask(in's fh_Type)` around `Open("*", MODE_NEWFILE)` for output, and give the new shell that console task.
 
 ### 22. DateToStr, CompareDates, SplitName
 
-asl.library's file requester lists each file's date and time with `DateToStr` (`FORMAT_DOS`), sorts by date with `CompareDates` and splits a volume name with `SplitName`. Exec900's dos.library lacks all three: `fd/dos_lib.fd` names them without types, so `<lvo/dos_lib.h>` has no call macros. `<dos/datetime.h>` (`struct DateTime`, `FORMAT_*`, `LEN_DATSTRING`) and `<dos/dos.h>`'s `MAXFILENAMELENGTH` are missing too.
+asl's file requester shows dates with `DateToStr` (`FORMAT_DOS`), sorts with `CompareDates` and splits volume names with `SplitName`. Exec900's dos.library lacked all three (`fd/dos_lib.fd` named them without types, so `<lvo/dos_lib.h>` had no macros), as well as `<dos/datetime.h>` (`struct DateTime`, `FORMAT_*`, `LEN_DATSTRING`) and `MAXFILENAMELENGTH`.
 
-Asked for: the three calls at AmigaDOS's LVOs (−744 DateToStr, −738 CompareDates, −414 SplitName) and the two headers' definitions. Meanwhile asl leaves the date and time columns empty, compares DateStamps itself, cuts the name at the colon itself and uses 108 for `MAXFILENAMELENGTH`.
+Asked for: the three at AmigaDOS's LVOs (−744 DateToStr, −738 CompareDates, −414 SplitName) and the header definitions. Meanwhile asl leaves date and time empty, compares DateStamps and cuts at the colon itself, and uses 108 for `MAXFILENAMELENGTH`.
 
 ### 23. Default command stack
 
-`CLISTACK` gives each Shell command 1600 bytes. More and Edit use 2.6-3.0 KB, as most intuition and gadtools programs will, so `SYS:Utilities/More file` from a Shell overflows: AN_StackProbe, then a trap that stops the machine. With `Stack 4096` first they run. Repro: tests/more.c without its `Stack 4096`.
+`CLISTACK` gave each Shell command 1600 bytes. More and Edit use 2.6-3.0 KB, like most intuition and gadtools programs, so `SYS:Utilities/More file` from a Shell overflowed: AN_StackProbe, then a trap that stops the machine. `Stack 4096` first works. Repro: tests/more.c without its `Stack 4096`.
 
 Asked for: a 4096-byte default (AmigaOS uses 4000), or a stack size taken from the program file.
 
 ### 24. ramlib's low-memory handler and nested expunges
 
-`rlmemh` keeps `n = r->r_Next`, then calls `r`'s Expunge. An Expunge that closes another library (asl closes gadtools, graphics its driver) runs the patched `CloseLibrary`; when that library has `LIBF_DELEXP` and goes, `rlgone` frees its `rlseg`. If that `rlseg` was `n`, the walk continues through freed memory: `Deallocate: block is free` or a segment trap. This is the trap in `OpenLibrary("asl.library")` reported from a Shell: a 62 KB hunk load ran the handler.
+`rlmemh` keeps `n = r->r_Next`, then calls `r`'s Expunge. An Expunge that closes another library (asl closes gadtools, graphics its driver) runs the patched `CloseLibrary`; if that library has `LIBF_DELEXP` and goes, `rlgone` frees its `rlseg`. If that was `n`, the walk continues through freed memory: `Deallocate: block is free` or a segment trap. This was the trap in `OpenLibrary("asl.library")` from a Shell: a 62 KB hunk load ran the handler.
 
 Repro (wb900 tests/expunge.c, after the loop; `lowmem()` allocates `AvailMem + 128 KB`):
 
@@ -102,31 +103,43 @@ for (r = rlsegs; r != NULL; ) {
 
 ### 25. Reading the console ring
 
-LogView would show the boot log and the console output since graphics took the display. `devices/console.c` keeps the last 1 KB of console output in `bootlog`, but no call reads it: `CMD_READ` returns typed characters.
+LogView would show the boot log and console output since graphics took the display. `devices/console.c` keeps the last 1 KB in `bootlog`, but nothing reads it: `CMD_READ` returns typed characters.
 
 Asked for: a console.device command (say `CD_READLOG`, `CMD_NONSTD + 18`) that copies the ring, oldest byte first, into `io_Data` up to `io_Length` and sets `io_Actual`; without a wrap, from the first byte. Meanwhile LogView shows files.
 
 ### 26. Idle time
 
-SysMon would show the CPU load. Amiga Exec counts it in `ExecBase->IdleCount` and `DispCount`; Exec900's ExecBase has neither, and the idle Task is not on `TaskReady` or `TaskWait`, so a program cannot measure it.
+SysMon would show CPU load. Amiga Exec counts `ExecBase->IdleCount` and `DispCount`; Exec900 has neither, and the idle Task is on neither `TaskReady` nor `TaskWait`, so a program cannot measure it.
 
 Asked for: `IdleCount`, incremented by the idle Task's loop or by the tick when it interrupts the idle Task, and `DispCount`, at the end of ExecBase. Meanwhile SysMon shows no load.
+
+### 27. pr_ConsoleTask after Close
+
+Since 20, a process's first interactive `Open()` makes the window its console, but nothing clears it when that handle is closed. wb900's window process ends at `ACTION_END` and its port goes, so `pr_ConsoleTask` dangles. Workbench's Execute opens `CON:` for a command's output only; after the command ends, a later child inherits the stale port, and its `Open("*")` sends a packet to freed memory. Repro, from a process with no console:
+
+```
+fh = Open("CON:0/0/300/100/x", MODE_NEWFILE);
+Close(fh);                         /* the window process ends */
+Open("*", MODE_NEWFILE);           /* packet to the freed port */
+```
+
+Asked for: `Close()` clears `pr_ConsoleTask` when this handle set it (a flag in the DOS handle). Clearing whenever it equals `fh_Type` would also clear a Shell's console when a command closes its `*`.
 
 ### 10. Keyboard raw codes
 
 keyboard.device sends XT set-1 codes; Amiga raw codes would be (set-1 → Amiga): 01 Esc→45, 02-0B 1..0→01-0A, 0C -→0B, 0D =→0C, 0E BS→41, 0F Tab→42, 10-1B q..]→10-1B, 1C Return→44, 1D Ctrl→63, 1E-28 a..'→20-2A, 29 `→00, 2A LShift→60, 2B \→0D, 2C-35 z../→31-3A, 36 RShift→61, 37 KP*→5D, 38 Alt→64, 39 Space→40, 3A Caps→62, 3B-44 F1-F10→50-59, 47-49 KP7-9→3D-3F, 4A KP-→4A, 4B-4D KP4-6→2D-2F, 4E KP+→5E, 4F-51 KP1-3→1D-1F, 52 KP0→0F, 54 Help→5F, 55 Del→46, 56 F12→6F, 59 KP.→3C, 5A KP/→5C, 5E KPEnter→43, 5F up→4C, 60 left→4F, 61 right→4E, 62 down→4D. No Amiga key: 45 F14, 46 F15, 53 KP00, 57 F13, 58 CE, 5B-5D W1-W3 (unused codes 0E, 1C, 2B, 2C, 3B and 6B-6D are free for them). With Amiga codes, `<devices/keyboard.h>`'s `RAWKEY_*` should become the NDK/AROS `<devices/rawkeycodes.h>` values (today's `RAWKEY_LSHIFT` 0x2A clashes with their 0x60). input.device drops events with `IEQUALIFIER_REPEAT` from keyboard.device, since it times repeat itself.
 
-Minor: `<exec/alerts.h>` lacks `AN_Unknown` and the `AG_*` general codes; input_intern.h defines the four it uses, as utility_init.c defines `AN_UtilityLib`.
+Minor (fixed by 9's alerts.h): `<exec/alerts.h>` lacked `AN_Unknown` and the `AG_*` codes; input_intern.h defines the four it uses, utility_init.c `AN_UtilityLib`.
 
 ## Owned by wb900, not Exec900
 
-- input.device (handler chain, IND_ADDHANDLER, timestamps) and keymap.library: ported from AROS (APL) in this repo.
-- graphics.library and layers.library: native graphics, AROS hyperlayers port.
+- input.device (handler chain, IND_ADDHANDLER, timestamps) and keymap.library: AROS ports (APL).
+- graphics.library (AROS over a driver table) and layers.library (AROS hyperlayers).
 
 ## Points exec816 raised for us to handle
 
 - Blitter-free bitmap ops at 6 MHz: budget the CPU.
-- HR framebuffer layout vs BitMap Planes: 1bpp mono is one plane. 4bpp RGBI is chunky, so BitMap needs a chunky variant.
+- HR framebuffer vs BitMap Planes: 1bpp mono is one plane; 4bpp RGBI is chunky, so BitMap needs a chunky variant.
 - Float is MWC soft-float (Z8070 optional): keep it out of hot paths.
 - No MEMF_CHIP: map AROS MEMF_CHIP requests to MEMF_ANY.
 - Cross-segment walking of blocks over 64 KB uses `PtrStep`.
@@ -137,4 +150,4 @@ Minor: `<exec/alerts.h>` lacks `AN_Unknown` and the `AG_*` general codes; input_
 
 ## Deferred: C900 keys with no PC key on the MiSTer (2026-11-15)
 
-The MiSTer core maps PC keys to C900 keyboard codes (rtl/host/ps2_kbd_matrix.sv). The arrows (0x5F-0x62), Del (0x55), keypad / (0x5A), keypad Enter (0x5E) and keypad . (0x59) are being mapped by c900-c0. These C900 keys stay unreachable from a PC keyboard: Help (0x54, Amiga 0x5F), F12-F15, CE, keypad 00 and W1-W3. Nothing in wb900 uses them yet. Pick PC keys for them when something needs them, and ask c900-c0 to add them to the core map. The C900 key numbers are in kernel3 os/hrtty/src/kbtab.c and Exec900 docs/platform.md#keyboard.
+The MiSTer core maps PC keys to C900 codes (rtl/host/ps2_kbd_matrix.sv). c900-c0 is mapping the arrows (0x5F-0x62), Del (0x55), keypad / (0x5A), Enter (0x5E) and . (0x59). Unreachable from a PC keyboard: Help (0x54, Amiga 0x5F), F12-F15, CE, keypad 00, W1-W3. wb900 uses none yet; when something does, pick PC keys and ask c900-c0 to map them. C900 key numbers: kernel3 os/hrtty/src/kbtab.c, Exec900 docs/platform.md#keyboard.

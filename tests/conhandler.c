@@ -182,8 +182,7 @@ static void tests(void)
 	check(n == 2 && streq(buf, "ab", 2), "raw Read");
 	SetMode(con, 0);
 
-	/* "*" is the console the process names */
-	SetConsoleTask(((struct FileHandle *)con)->fh_Type);
+	/* "*" is the process's first window */
 	star = Open("*", MODE_OLDFILE);
 	check(star != NULL && window(star) == w, "Open *");
 	if (star != NULL)

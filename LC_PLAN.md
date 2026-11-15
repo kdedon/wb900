@@ -87,7 +87,7 @@ Each R31 access, R30 write and R18/R19 write waits for Update Ready. A write whi
 
 Window open in C: background fill 10 ms, borders 10 ms, title 5 ms, gadgets 5 ms, about 2 ms per icon.
 
-**C wins:** shadow reads are free (ReadPixel, BltBitMap from the screen, sprite save-under), drawing reuses gfx_Planar, and fills and scrolls run at VDC block speed. B loses on every read-modify-write. A loses on clears and scrolls.
+**C wins:** shadow reads are free (ReadPixel, BltBitMap from the screen, sprite save-under), drawing reuses gfx_Planar, and fills and scrolls run at VDC block speed. B loses on read-modify-write, A on clears and scrolls.
 
 ### How C works
 
@@ -188,11 +188,11 @@ Changes in graphics.library:
 
 ## Phases and tests
 
-The commodore-900-emulator and the Go model have no LC card. Until the board, tests are emulator root programs that link the driver sources against a C model of the 8568's port interface instead of the assembly port layer.
+The commodore-900-emulator and the Go model have no LC card. Until the board, tests are emulator root programs linking the driver sources against a C model of the 8568's port interface instead of the assembly port layer.
 
 | Phase | Work | Test |
 |---|---|---|
-| 0 | Answers to the questions above | n/a |
+| 0 | Answers to the questions above (c900-c0's: below) | n/a |
 | 1 | Assembly port layer (select, poll, push run, fill, copy) and its C model: registers 18/19/24/30/31/32/33, auto-increment, random busy counts, lost writes when not ready | `tests/lcvdc.c`: model and layer agree; a write without a poll is caught |
 | 2 | `lc.gfxdriver`: shadow, wrappers, dirty bits, `gd_Flush`; the graphics changes | `tests/lcgfx.c`: after each scripted operation (RectFill, Text, Draw, BltBitMap, sprite move) model VRAM equals the shadow; port-operation counts printed as a cost regression; HR tests unchanged |
 | 3 | Fill and copy fast paths, overlap cases | `lcgfx` cases: aligned, unaligned, up, down, rightward same-row, full width |

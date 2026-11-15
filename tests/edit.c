@@ -417,7 +417,6 @@ struct sync {
 
 static struct sync s;
 
-/* A Shell's commands get 1600 bytes of stack unless Stack sets more */
 static LONG shell(char *args, LONG len)
 {
 	BPTR in;
@@ -425,7 +424,7 @@ static LONG shell(char *args, LONG len)
 
 	if ((in = Open("SYS:EditScript", MODE_OLDFILE)) == NULL)
 		return RETURN_FAIL;
-	rc = Execute("Stack 6144", in, NULL);
+	rc = Execute("", in, NULL);
 	Close(in);
 	return rc ? RETURN_OK : RETURN_FAIL;
 }

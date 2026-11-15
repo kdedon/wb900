@@ -68,8 +68,6 @@ LIBS	= utility keymap graphics layers intuition gadtools icon workbench commodit
 # graphics.library's display drivers (LIBS:NAME.gfxdriver)
 GFXDRIVERS = hr
 DEVS	= input console
-# The device names that differ from their directory's
-console_DEVNAME = wincon
 TESTS	= $(basename $(notdir $(wildcard $(TOP)/tests/*.c)))
 # The tests that open intuition.library
 ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin asl more edit expunge
@@ -284,7 +282,7 @@ DISK	= --module=$(EXEC900_OUT)/hunks/dos.library \
 	  --file=$(EXEC900_OUT)/hunks/gameport.dev \
 	  $(foreach l,$(call DISKLIBS,$(1)),--put=Libs/$(l).library=$(OUT)/libs/$(l).library) \
 	  $(foreach g,$(GFXDRIVERS),--put=Libs/$(g).gfxdriver=$(OUT)/libs/$(g).gfxdriver) \
-	  $(foreach d,$(DEVS),--put=Devs/$(or $($(d)_DEVNAME),$(d)).device=$(OUT)/devs/$(d).device) \
+	  $(foreach d,$(DEVS),--put=Devs/$(d).device=$(OUT)/devs/$(d).device) \
 	  $($(1)_PUT)
 
 # A test's more files on its disk: NAME_PUT, mkdisk --put options

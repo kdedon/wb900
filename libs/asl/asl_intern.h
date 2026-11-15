@@ -493,7 +493,7 @@ struct AslListViewData
     BYTE                dosavemode;
     BYTE                domultiselect;
     BYTE                multiselecting;
-    BYTE                isreadonly;
+    BYTE                isreadonly;	/* readonly is a keyword to cc0 */
 };
 
 /* AslButton class */

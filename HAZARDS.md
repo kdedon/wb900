@@ -20,10 +20,10 @@ No floats, no static array over 64 KB, no local array over 256 B, no bool/stdint
 
 ## Top hazards, by effort
 
-1. **Argument widths without prototypes.** 1017 library parameters, 592 of them pointers and 172 LONG. Any int or `0` argument is pushed as 16 bits.
+1. **Argument widths without prototypes.** 1017 library parameters, 592 pointers and 172 LONG. Any int or `0` argument is pushed as 16 bits.
 2. **Graphics on the driver table.** 54 files, ~830 HIDD/OOP references (allocbitmap.c, gfxfuncsupport.c, graphics_display.c, getdisplayinfodata.c).
 3. **Varargs tag/method calls.** ~115 sites; every slot must be cast to ULONG.
-4. **switch on 32-bit values.** ~113 switches with 622 tag cases. MWC rejects them, and case labels are int only.
+4. **switch on 32-bit values.** ~113 switches with 622 tag cases; MWC took int only.
 5. **BOOPSI class glue.** 33 classes, 252 methods. AROS's genmodule generates it; we have to.
 6. **IPTR casts and arithmetic under segmented pointers.** ~470 casts, ~144 arithmetic expressions.
 7. **monitorclass/CGX in intuition.** 34 files.
@@ -40,12 +40,10 @@ No floats, no static array over 64 KB, no local array over 256 B, no bool/stdint
 
 ## Manual effort
 
-About 159 of 528 files need manual attention (Int 63, Gfx 70, Lay 6, GT 17, K+I 3). The rest convert automatically, but only if the converter knows types, because of hazard 1.
+About 159 of 528 files need manual attention (Int 63, Gfx 70, Lay 6, GT 17, K+I 3). The rest convert automatically, but only with type knowledge (hazard 1).
 
-## Compiler vs converter
+## Compiler vs converter (decided: compiler)
 
-The MWC donor (COHERENT 4.6.3) never parsed prototypes: `garglist` (gdecl.c:390) takes identifiers only, and `cproto` (gdecl.c:720) is a stub.
+The MWC donor (COHERENT 4.6.3) never parsed prototypes: `garglist` (gdecl.c:390) takes identifiers only; `cproto` (gdecl.c:720) is a stub. A converter could only match prototype support by becoming a type checker.
 
-Adding prototype parsing and argument conversion at calls to cc0 (est. 600–1000 lines) removes hazard 1 and lets the headers be used unchanged. `//` comments and mixed declarations are cheap additions in the lexer and locals handling. Switch on long needs cc0 plus cc1's switch table.
-
-A converter could only match prototype support by becoming a type checker.
+So cc0 gained prototype parsing and call-site argument conversion (est. 600–1000 lines), which removes hazard 1 and keeps the headers unchanged, plus `//` comments, mixed declarations (lexer and locals) and switch on long (cc0 and cc1's switch table). Landed: COMPILER_ASKS.md 1–4.

@@ -10,6 +10,7 @@
 #include <exec/memory.h>
 #include <dos/dos.h>
 #include <dos/dosasl.h>
+#include <dos/datetime.h>
 #include <dos/filehandler.h>
 #include <intuition/gadgetclass.h>
 #include <clib/macros.h>
@@ -297,9 +298,7 @@ static WORD FRCompareDirectoryNodes(struct IntFileReq *ifreq, struct ASLLVFileRe
                 break;
 
             case ASLFRSORTBY_Date:
-                bigdiff = node1->date.ds_Days - node2->date.ds_Days;
-                if (!bigdiff) bigdiff = node1->date.ds_Minute - node2->date.ds_Minute;
-                if (!bigdiff) bigdiff = node1->date.ds_Tick - node2->date.ds_Tick;
+                bigdiff = CompareDates(&node2->date, &node1->date);
                 if (bigdiff < 0)
                 {
                     diff = -1;
@@ -483,6 +482,9 @@ BOOL FRGetDirectory(STRPTR path, struct LayoutData *ld, struct AslBase_intern *A
                 {
                     if ((node = AllocPooled(ld->ld_IntReq->ir_MemPool, sizeof(struct ASLLVFileReqNode))))
                     {
+                        struct DateTime dt;
+                        char datebuf[LEN_DATSTRING], timebuf[LEN_DATSTRING];
+
                         if (fib->fib_FileName[0])
                         {
                             node->text[0] = node->node.ln_Name = PooledCloneString(fib->fib_FileName,
@@ -508,6 +510,18 @@ BOOL FRGetDirectory(STRPTR path, struct LayoutData *ld, struct AslBase_intern *A
                         if (fib->fib_Comment[0])
                         {
                             node->text[4] = PooledCloneString(fib->fib_Comment, NULL, ld->ld_IntReq->ir_MemPool, AslBase);
+                        }
+
+                        dt.dat_Stamp   = fib->fib_Date;
+                        dt.dat_Format  = FORMAT_DOS;
+                        dt.dat_Flags   = 0;
+                        dt.dat_StrDay  = NULL;
+                        dt.dat_StrDate = datebuf;
+                        dt.dat_StrTime = timebuf;
+                        if (DateToStr(&dt))
+                        {
+                            node->text[2] = PooledCloneString(datebuf, NULL, ld->ld_IntReq->ir_MemPool, AslBase);
+                            node->text[3] = PooledCloneString(timebuf, NULL, ld->ld_IntReq->ir_MemPool, AslBase);
                         }
 
                         node->userdata = ld;
@@ -1407,10 +1421,8 @@ BOOL FRIsDupeVolume(CONST_STRPTR volname, struct LayoutData *ld, struct AslBase_
     BOOL ret = FALSE;
     struct DosList *dl;
     UBYTE name[64]; /* Should be more than enough. - Piru */
-    STRPTR colon;
 
-    strlcpy(name, volname, sizeof(name));
-    if ((colon = strchr(name, ':')) != NULL) *colon = '\0';
+    SplitName(volname, ':', name, 0, sizeof(name));
 
     dl = LockDosList(LDF_READ | LDF_VOLUMES);
     dl = FindDosEntry(dl, name, LDF_VOLUMES);

@@ -914,16 +914,16 @@ STATIC BOOL FOGadInit(struct LayoutData *ld, struct AslBase_intern *AslBase)
     {
         struct NewMenu nm[] =
         {
-            {NM_TITLE, (STRPTR)MSG_FONTREQ_MEN_CONTROL, 0, 0, 0, 0                                                  },
+            {NM_TITLE, (STRPTR)MSG_FONTREQ_MEN_CONTROL},
              {NM_ITEM, (STRPTR)MSG_FONTREQ_MEN_CONTROL_LASTFONT , 0, 0, 0, (APTR)FOMEN_LASTFONT         },
              {NM_ITEM, (STRPTR)MSG_FONTREQ_MEN_CONTROL_NEXTFONT , 0, 0, 0, (APTR)FOMEN_NEXTFONT         },
-             {NM_ITEM, NM_BARLABEL, 0, 0, 0, 0                                                                      },
+             {NM_ITEM, NM_BARLABEL},
              {NM_ITEM, (STRPTR)MSG_FONTREQ_MEN_CONTROL_RESTORE  , 0, 0, 0, (APTR)FOMEN_RESTORE          },
              {NM_ITEM, (STRPTR)MSG_FONTREQ_MEN_CONTROL_RESCAN   , 0, 0, 0, (APTR)FOMEN_RESCAN           },
-             {NM_ITEM, NM_BARLABEL, 0, 0, 0, 0                                                                      },
+             {NM_ITEM, NM_BARLABEL},
              {NM_ITEM, (STRPTR)MSG_FONTREQ_MEN_CONTROL_OK       , 0, 0, 0, (APTR)FOMEN_OK               },
              {NM_ITEM, (STRPTR)MSG_FONTREQ_MEN_CONTROL_CANCEL   , 0, 0, 0, (APTR)FOMEN_CANCEL           },
-            {NM_END, 0, 0, 0, 0, 0                                                                                                                             }
+            {NM_END}
         };
 
         struct TagItem menu_tags[] =
