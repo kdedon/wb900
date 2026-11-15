@@ -32,6 +32,12 @@ static ULONG check_sizes(ULONG tagID, ULONG size, struct GfxBase *GfxBase);
  */
 static void CalcScreenResolution(Point *res, const struct GfxMode *m)
 {
+    if (m->gm_ResX)
+    {
+        res->x = m->gm_ResX;
+        res->y = m->gm_ResY;
+        return;
+    }
     res->x = 1280L * 11 / m->gm_Width;
     res->y = 1024L * 11 / m->gm_Height;
 }
@@ -147,8 +153,8 @@ static UBYTE *putnum(UBYTE *s, UWORD n)
     case DTAG_DISP: {
         struct DisplayInfo *di = (struct DisplayInfo *)qh;
 
-        /* All modes of the driver are available */
-        di->NotAvailable = FALSE;
+        di->NotAvailable = gd->gd_Jumper && m != gd->gd_Jumper ?
+            DI_AVAIL_NOMONITOR : 0;
 
         /*
          * We always set DIPF_IS_SPRITES because we always emulate
@@ -217,6 +223,12 @@ static UBYTE *putnum(UBYTE *s, UWORD n)
         UBYTE *n = ni->Name;
         const char *c;
 
+        if(m->gm_Name) {
+            for(c = m->gm_Name; *c && n < ni->Name + DISPLAYNAMELEN - 1; c++)
+                *n++ = *c;
+            *n = 0;
+            break;
+        }
         /* "HR:1024x800 Mono" */
         for(c = gd->gd_Node.ln_Name; *c && n < ni->Name + 8; c++)
             *n++ = *c >= 'a' && *c <= 'z' ? *c - 'a' + 'A' : *c;

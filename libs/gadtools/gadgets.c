@@ -876,9 +876,9 @@ const struct TagItem scroller2lv[] =
 static const struct TagItem listviewtags[] =
 {
     {GA_Disabled            , FALSE                 }, /* 0  */
-    {GTLV_Top               , 0L                    }, /* 1  */
-    {GTLV_MakeVisible       , 0L                    }, /* 2  */
-    {GTLV_Labels            , (IPTR)NULL            }, /* 3  */
+    {GTLV_Labels            , (IPTR)NULL            }, /* 1: before the top it resets */
+    {GTLV_Top               , 0L                    }, /* 2  */
+    {GTLV_MakeVisible       , 0L                    }, /* 3  */
     {GTLV_Selected          , ~0L                   }, /* 4  */
     {GTLV_ItemHeight        , 0L                    }, /* 5  */
     {GTLV_CallBack          , (IPTR)NULL            }, /* 6  */

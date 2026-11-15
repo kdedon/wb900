@@ -6,7 +6,7 @@
 
 	.globl	lcb_djnz_, lcb_sel_, lcb_selp_, lcb_r31_, lcb_r31np_
 	.globl	lcb_otir_, lcb_read_, lcb_seek_, lcb_block_, lcb_wr_
-	.globl	lcb_ready_
+	.globl	lcb_ready_, lcb_rd_
 
 	.shri
 
@@ -168,4 +168,13 @@ lcb_ready_:
 	calr	ports
 	calr	rdy
 	ld	r1, r5
+	ret
+
+/ lcb_rd(reg): register reg as it reads
+lcb_rd_:
+	calr	ports
+	ld	r1, rr14(4)
+	outb	@r2, rl1
+	inb	rl1, @r3
+	clrb	rh1
 	ret

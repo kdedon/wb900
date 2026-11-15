@@ -14,21 +14,20 @@
 
 #include <exec/types.h>
 
-#define LCP_ROWS	200
-#define LCP_BPR		80
+#define LCP_ROWS	256	/* the most rows of a mode */
 #define LCP_PIECE	1000	/* microseconds of a piece */
 #define LCP_NOADDR	0xFFFF	/* an update address never used */
 
 /* The offsets are lcport.s's. */
 struct LCPort {
-	UBYTE	*lp_Shadow;	/* VRAM 0x0000 */
+	UBYTE	*lp_Shadow;	/* VRAM 0x0000, rows of lp_BPR bytes */
 	UWORD	lp_UA;		/* update address, or LCP_NOADDR */
 	UWORD	lp_BA;		/* copy source address, or LCP_NOADDR */
 	WORD	lp_Budget;	/* microseconds left in the piece */
 	UWORD	lp_OK;		/* the chip answers */
 	UWORD	lp_R24;		/* as written: bit 7 copy, else fill */
 	WORD	lp_Y0, lp_Y1;	/* rows that may be dirty */
-	UWORD	lp_Pad;
+	UWORD	lp_BPR;		/* bytes a row: 80, or 40 at double width */
 	ULONG	lp_SP;
 	UBYTE	lp_Lo[LCP_ROWS];	/* each row's dirty bytes: 0xFF, 0 when clean */
 	UBYTE	lp_Hi[LCP_ROWS];
@@ -42,7 +41,7 @@ int lcv_ready(struct LCPort *lp);
 /* n bytes from the shadow at a */
 int lcv_push(struct LCPort *lp, UWORD a, UWORD n);
 /*
- * rows rows LCP_BPR bytes apart from a, n bytes of v each; edges bit 0
+ * rows rows lp_BPR bytes apart from a, n bytes of v each; edges bit 0
  * also pushes the byte before each row, bit 1 the byte after it
  */
 int lcv_fill(struct LCPort *lp, UWORD a, int v, UWORD n, UWORD rows,

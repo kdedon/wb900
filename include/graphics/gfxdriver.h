@@ -61,6 +61,10 @@ struct GfxMode
     UWORD	gm_Width, gm_Height;
     UWORD	gm_Depth;
     UWORD	gm_Format;	/* GDF_ */
+    /* A pixel's size in ticks; 0: square on a 5:4 screen */
+    UWORD	gm_ResX, gm_ResY;
+    /* NameInfo's name; NULL: "<DRIVER>:<W>x<H> Mono" (or RGBI) */
+    const char	*gm_Name;
 };
 
 struct GfxDriver
@@ -124,6 +128,12 @@ struct GfxDriver
      * NULL: drawing shows at once.
      */
     void	(*gd_Flush)(struct GfxDriver *gd, struct BitMap *bm);
+    /*
+     * A card whose mode is a jumper: the mode it is taken to be set to,
+     * the only one available.  gd_AllocDisplay() of another of gd_Modes
+     * takes the jumper to be that one.  NULL: every mode is available.
+     */
+    const struct GfxMode *gd_Jumper;
 };
 
 /*

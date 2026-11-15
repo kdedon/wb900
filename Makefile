@@ -178,10 +178,21 @@ $(OUT)/progs/lcdemo: $(ALIB)
 lcdemo_PUT = $(lcwb_PUT) $(LCMOUSE)
 $(OUT)/lcdemo.bin: $(OUT)/devs/system-configuration
 all: $(OUT)/wbboot-lc.bin
-$(OUT)/wbboot-lc.bin: $(OUT)/wbboot-1x.bin
+$(OUT)/wbboot-lc.bin: $(OUT)/wbboot-1x.bin $(OUT)/lcmode.prefs
 	$(MKDISK) --kboot=$(KBOOT) --root=$(OUT)/progs/wbboot $(call DISK,wbboot) \
 	  --put=Devs/system-configuration=$(OUT)/devs/system-configuration \
+	  $(if $(LCMODE),--put=Prefs/Env-Archive/Sys/screenmode.prefs=$(OUT)/lcmode.prefs) \
 	  $(LCMOUSE) $@ $(EXEC900_OUT)/exec900.sys
+# make LCMODE=320x256: wbboot-lc.bin's Workbench in that LC mode, as its
+# saved ScreenMode setting; empty: the card's first mode, 640x200
+LCMODES	= 640x200=0x00110000 320x200=0x00110100 640x256=0x00110200 320x256=0x00110300
+$(OUT)/lcmode.prefs: $(TOP)/tools/screenmodeprefs.py FORCE
+	@mkdir -p $(OUT)
+	$(if $(LCMODE),python3 $< $@.new $(patsubst $(LCMODE)=%,%,$(filter $(LCMODE)=%,$(LCMODES))) $(subst x, ,$(LCMODE)) 1,: >$@.new)
+	@cmp -s $@.new $@ || mv $@.new $@; rm -f $@.new
+FORCE:
+# lcmodes: each LC mode on the board for 4 seconds, timed
+$(OUT)/progs/lcmodes: $(ALIB)
 intuition_LINK = $(ALIB)
 intuition_SRC = $(TOP)/lib
 $(eval $(call LIBRARY,intuition,Intuition,it))
@@ -224,7 +235,7 @@ $(OUT)/progs/%: $(OBJ)/startup.o $(OBJ)/t_%.o $(OBJ)/amiga.o $(OBJ)/portio.o $(O
 	$(LD) -r -o $(OBJ)/p_$*.r $^
 	$(MKHUNK) --entry=start $@ $(OBJ)/p_$*.r
 # The tests that link amiga.lib
-ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin asl expunge wbmulti
+ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin asl expunge wbmulti screenmode
 $(patsubst %,$(OUT)/progs/%,$(ALIBTESTS)): $(ALIB)
 # amiga.lib's commodities calls
 CXLIB	= $(patsubst $(TOP)/lib/%.c,$(OBJ)/lib/%.o,$(wildcard $(TOP)/lib/cx/*.c))
@@ -266,6 +277,11 @@ $(eval $(call UTIL,Clock,clock))
 $(eval $(call UTIL,KeyShow,keyshow))
 $(eval $(call UTIL,SysMon,sysmon))
 $(eval $(call UTIL,LogView,logview))
+# The preferences editors, in Prefs, and the drawer of the saved settings
+$(eval $(call UTIL,ScreenMode,prefs))
+PREFSPUT = --put=Prefs/ScreenMode=$(OUT)/util/ScreenMode \
+	--put=Prefs/ScreenMode.info=$(OUT)/wb/ScreenMode.info --mkdir=Prefs/Env-Archive/Sys
+PREFSDEPS = $(OUT)/util/ScreenMode $(OUT)/wb/ScreenMode.info
 # Workbench, which tests/wbboot.c starts
 WBSRC	= $(patsubst %,$(TOP)/wb/%.c,workbench drawer selftest)
 $(OUT)/progs/wbboot $(OUT)/progs/shellwin: $(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC))
@@ -293,7 +309,10 @@ Clock_INFO = --type=tool --art=$(TOP)/wb/clock/clock.txt --stack=2048
 KeyShow_INFO = --type=tool --art=$(TOP)/wb/keyshow/keyshow.txt --stack=2048
 SysMon_INFO = --type=tool --art=$(TOP)/wb/sysmon/sysmon.txt --stack=3072
 LogView_INFO = --type=tool --art=$(TOP)/wb/logview/logview.txt --stack=3072
-$(patsubst %,$(OUT)/wb/%.info,Calculator Clock KeyShow SysMon LogView): $(wildcard $(TOP)/wb/*/*.txt)
+ScreenMode_INFO = --type=tool --art=$(TOP)/wb/prefs/screenmode.txt --stack=3072
+$(patsubst %,$(OUT)/wb/%.info,Calculator Clock KeyShow SysMon LogView ScreenMode): $(wildcard $(TOP)/wb/*/*.txt)
+Prefs_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
+	--window=200,120,300,100
 Tools_INFO = --type=drawer --art=builtin:drawer --select=builtin:drawer_open \
 	--window=180,150,300,100
 Commodities_INFO = --type=drawer --art=builtin:drawer \
@@ -316,7 +335,8 @@ $(OUT)/wb/%.info: $(TOP)/tools/mkinfo.py $(TOP)/wb/hello.txt $(TOP)/libs/icon/su
 # The exec partition holds 512 KB, so only the tests that open
 # intuition.library carry it.
 DISKLIBS = $(if $(filter $(ITESTS),$(1)),$(LIBS),$(filter-out intuition gadtools icon workbench asl,$(LIBS)))
-DISK	= $(if $(filter $(LNAMES),$(1)),--lnames) \
+# make HRMODE=800|1024|rgbi: tell Exec900 the HR jumper on every disk
+DISK	= $(if $(filter $(LNAMES),$(1)),--lnames) $(if $(HRMODE),--hrmode=$(HRMODE)) \
 	  --module=$(EXEC900_OUT)/hunks/dos.library \
 	  --module=$(EXEC900_OUT)/hunks/v7fs-handler \
 	  $(if $(filter $(ITESTS),$(1)),--module=$(OUT)/l/con-handler) \
@@ -333,31 +353,34 @@ LNAMES	= wbboot shellwin wbmulti more edit cxtools $(TOOLTESTS)
 # A test's more files on its disk: NAME_PUT, mkdisk --put options
 workbench_PUT = --put=Demos/Hello=$(OUT)/wb/hello --put=Demos/Hello.info=$(OUT)/wb/Hello.info
 $(OUT)/workbench.bin: $(OUT)/wb/hello $(OUT)/wb/Hello.info
-# asl's test picks a file in Demos.  Its 125 KB chunky bitmap needs two
-# whole heap pages, which a 63 KB stack segment leaves none of on 1 MB.
-asl_PUT = --put=Demos/Notes=$(TOP)/wb/Notes --put=Demos/ReadMe=$(TOP)/wb/ReadMe --stack=32
+asl_PUT = --put=Demos/Notes=$(TOP)/wb/Notes --put=Demos/ReadMe=$(TOP)/wb/ReadMe
 # The utilities, with their icons
 UTILPUT	= $(foreach u,$(UTILS),--put=Utilities/$(u)=$(OUT)/util/$(u) --put=Utilities/$(u).info=$(OUT)/wb/$(u).info)
 UTILDEPS = $(patsubst %,$(OUT)/util/%,$(UTILS)) $(patsubst %,$(OUT)/wb/%.info,$(UTILS))
 # Workbench's disk: a few drawers, a tool and a project with icons
 WBDISK	= Disk.info Demos.info Demos/Hello.info Demos/Notes.info Demos/ReadMe.info \
 	Trashcan.info Tools.info Tools/Commodities.info \
-	$(patsubst %,Tools/Commodities/%.info,$(CXTOOLS)) Utilities.info
+	$(patsubst %,Tools/Commodities/%.info,$(CXTOOLS)) Utilities.info Prefs.info
 CXPUT	= $(foreach t,$(CXTOOLS),--put=Tools/Commodities/$(t)=$(OUT)/cx/$(t))
 # The root program uses under 800 B of its stack, boot about 500;
 # shellwin's opens CON: and needs over 2 KB
 WBSTACK	= --rootstack=2
 wbboot_PUT = $(workbench_PUT) --put=Demos/Notes=$(TOP)/wb/Notes \
-	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan $(CXPUT) $(UTILPUT) \
+	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan $(CXPUT) $(UTILPUT) $(PREFSPUT) \
 	$(foreach i,$(filter-out Demos/Hello.info,$(WBDISK)),--put=$(i)=$(OUT)/wb/$(notdir $(i))) \
 	--module=$(EXEC900_OUT)/hunks/ram-handler $(WBSTACK)
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
-$(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin $(OUT)/shellwin.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS)
+$(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin $(OUT)/shellwin.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS) $(PREFSDEPS)
 # More's test: the utilities and the Shell
 more_PUT = $(UTILPUT) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg
 $(OUT)/more.bin: $(UTILDEPS)
 edit_PUT = $(more_PUT)
 $(OUT)/edit.bin: $(UTILDEPS)
+# ScreenMode's test: the tool on HR's modes
+ITESTS	+= screenmode
+LNAMES	+= screenmode
+screenmode_PUT = $(PREFSPUT)
+$(OUT)/screenmode.bin: $(PREFSDEPS)
 # The other utilities' tests, on More's disk
 TOOLTESTS = calculator clock keyshow sysmon logview
 ITESTS	+= $(TOOLTESTS)
@@ -373,7 +396,7 @@ $(OUT)/shellwin.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)
 # Workbench, a Shell and four tools at once
 wbmulti_PUT = $(shellwin_PUT)
 $(OUT)/wbmulti.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK))) \
-	$(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS)
+	$(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS) $(PREFSDEPS)
 
 BINDEPS	= $(patsubst %,$(OUT)/libs/%.library,$(LIBS)) $(patsubst %,$(OUT)/libs/%.gfxdriver,$(GFXDRIVERS)) $(patsubst %,$(OUT)/devs/%.device,$(DEVS)) $(OUT)/l/con-handler $(EXEC900_OUT)/exec900.sys
 $(OUT)/%.bin: $(OUT)/progs/% $(BINDEPS)

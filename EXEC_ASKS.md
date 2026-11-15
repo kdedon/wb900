@@ -37,14 +37,16 @@ Opened 2026-11-14; status from exec816-0f and the c900/exec900 log. The user app
 | 28 | `InLoadSeg`: read a hunk's RELOC32 offsets in blocks (below) | **Landed** d547e925: 128-entry reloc buffer; a 2,219-reloc file loads in 0.32 s instead of 1.50 s at 6 MHz | done |
 | 29 | A smaller root (boot) stack, so a Workbench disk gives the rest to the pool (below) | **Landed** 9159ccc8: `--rootstack=KB`, 1-16, default 4; boot uses about 500 B, so 2 KB is the safe choice for our root program | done |
 | 30 | DH1:'s handler: share DH0:'s code instead of a second copy (below) | **Landed** 49f8df91: one shared v7fs-handler seglist; first use of DH1: costs 11,240 B (7,096 with `--sysbuffers=8`) instead of 37,760 | done |
-| 31 | A 63 KB stack segment on 1 MB leaves no two free heap pages for a 640x400x4 bitmap (below) | open | — |
-| 32 | Tell framebuf.resource the HR jumper at boot (below) | open | — |
+| 31 | A 63 KB stack segment on 1 MB leaves no two free heap pages for a 640x400x4 bitmap (below) | **Landed** 8c2497f3: blocks of 128 B or less take the stack region's top first, so whole heap pages stay free; asl passes on 1 MB again | done |
+| 32 | Tell framebuf.resource the HR jumper at boot (below) | **Landed** 8a6c0d5d: `mkdisk --hrmode=auto|800|1024|rgbi`; framebuf and hr.display follow it. The ScreenMode prefs may still drive a corrected mode while Workbench owns the display | done |
 
 ### 32. The HR jumper at boot
 
 The strap reads the same for 1024x800 and 1024x1024, and nothing sets `BF_HR1024`, so a 1024x1024 card is drawn as 1024x800. The mono/colour read is inferred from undumped PALs and could disagree with the jumper. Either way HR can boot into a mode the display isn't set for.
 
 Asked for: a boot setting that tells framebuf.resource the jumper (say `mkdisk --hrmode=800|1024|rgbi` into the kboot flags, or a config line read before the console starts), reported by framebuf and used by the console, with the strap read as the default. wb900's ScreenMode preferences then confirm it, and a boot key forces the reported mode.
+
+hr.gfxdriver lists all three jumper modes, the reported one first and the others `DI_AVAIL_NOMONITOR`; opening another (a saved ScreenMode) takes the jumper to be that one. This stays after the boot setting: the ScreenMode tool fixes a wrong jumper without rebuilding the disk, and the console returns to the boot mode at FreeFB.
 
 ### 31. Whole heap pages on 1 MB
 

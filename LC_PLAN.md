@@ -289,3 +289,25 @@ Changes:
 
 Expect about 11 clocks an instruction, so roughly: clear 45 ms, scroll 55 ms, 40-byte scroll 55 ms, aligned move 50 ms, pointer move 16 ms, window open 0.5 s. `lcbench.bin` measures what is left: clocks per select, seek, R31 write (polled and not, lost bytes read back), R30 fill and R32/R33 copy by block size, display on and with R1 = 8, the port layer's loops, and graphics' RAM drawing.
 
+
+## Modes (2026-11-15)
+
+`lc.gfxdriver` lists four modes; graphics' database is that list, so ScreenMode and `BestModeIDA()` see them all. Every mode is 1 bit deep, bitmap at VRAM 0x0000 (R12/R13 = 0, R27 = 0), attributes off, copy scratch at 0x8000.
+
+| ModeID | Name | Ticks | Bitmap | R0 R1 R2 R22 R25 R34 R35 | R4 R5 R6 R7 | Line, frame |
+|---|---|---|---|---|---|---|
+| `LCHIRES_ID` 0x00110000 | LC:640x200 | 22 x 53 | 80 x 200 = 16000 B | 7E 50 66 78 87 7D 64 | 20 00 19 1D | 63.5 µs x 264, 59.65 Hz |
+| `LCLORES_ID` 0x00110100 | LC:320x200 | 44 x 53 | 40 x 200 = 8000 B | 3F 28 33 89 97 3E 32 | 20 00 19 1D | 64 µs x 264, 59.18 Hz |
+| `LCHIRESPAL_ID` 0x00110200 | LC:640x256 | 22 x 41 | 80 x 256 = 20480 B | as 640x200 | 26 00 20 23 | 63.5 µs x 312, 50.47 Hz |
+| `LCLORESPAL_ID` 0x00110300 | LC:320x256 | 44 x 41 | 40 x 256 = 10240 B | as 320x200 | 26 00 20 23 | 64 µs x 312, 50.08 Hz |
+
+- **Lores:** R25 bit 4 halves the character clock, so a 40-byte row shows 320 pixels of 2 dots. The shadow is 320 wide and VRAM has the same layout: no doubling in software. R22 = 0x89 makes a column 8 doubled pixels, as the C128's 40-column mode does.
+- **Ticks:** a pixel on a 4:3 screen, 22 for 640 across (Amiga hires is 22 x 44). `GfxMode` gained `gm_ResX/gm_ResY` and `gm_Name`; HR keeps the computed ticks and names.
+- **Port layer:** rows of `lp_BPR` bytes (80 or 40), up to 256 rows. A seek writes R18 and R19 only when their byte changes.
+- **Not built:**
+  - *Interlace (R8 = 3).* In the core's RTL, bitmap mode restarts both fields at R12/R13 and steps one row per scan line; the field after an odd one fetches one extra row first. A column-level transliteration of the vertical counters gives rows 0-199 in one field and 1-200 in the other, at 640x400 and 320x400 settings alike (R9 = 15 or R9 = 7 with R4/R6 doubled). So R8 = 3 shows the same 200-line image twice, a line apart, and no VRAM layout gives 400 distinct lines. A real 400-line bitmap would need R12/R13 switched every field, and the card gives no field interrupt. Text interlace (exec816's 80x25 in 8x16 cells) is unaffected.
+  - *Overscan.* R1 up to about 88 (704 pixels) or 240 lines at 60 Hz would fit VRAM and timing, but they're not Amiga sizes and need tuning on the board.
+  - *Attribute colour.* 8x8 cells at +2000 B (bitmap) are possible, but intuition draws 3-4 pens per title bar and gadget, so cells clash. Not useful for the Workbench.
+- **Verified on the port model:** `lcgfx` checks the list, names, ticks and `BestModeIDA()`; `lcwb` opens the Workbench at 640x200 and a screen in each other mode, opens, moves, sizes and closes a window and moves the pointer; after each step VRAM equals the shadow, and `lcm_frame()` reads from the registers the bitmap they show (start, width, stride, lines, dot width, frame rate). The model reads unused register bits as 1, as the chip does. 50 Hz and lores are untested on the board.
+- **Board:** `lcmodes.bin` shows each mode for 4 s (border, 8-pixel ticks, a square by the ticks, checkerboard and stripes, the name in topaz 8) and prints open, pattern and clear times and the frame rate measured from status bit 5. `make LCMODE=320x256 wbboot-lc.bin` boots the Workbench in that mode through a saved ENV:Sys/screenmode.prefs; Shift at boot ignores it.
+- **lcbench:** every setup reads the status before `Enable()`, so no INTR is left pending. It prints R1, R6, R24, R25, R28 and R36 read back, and checks that the R30 copies and `lcv_copy` wrote the source bytes. The board's copy timing matched a fill. The driver sets R24 bit 7 before every copy, and the model copies only with bit 7 set and is checked byte by byte, so the board run of these checks decides it.

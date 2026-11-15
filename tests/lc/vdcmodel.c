@@ -28,6 +28,13 @@ static BOOL intr;
 static APTR oldenable;
 static BOOL hang;
 
+/* The bits each register reads as 1 */
+static const UBYTE rdones[38] = {
+	0, 0, 0, 0, 0, 0xE0, 0, 0, 0xFC, 0xE0, 0x80, 0xE0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0xE0, 0, 0, 0, 0, 0x0F, 0xE0, 0, 0,
+	0, 0, 0, 0, 0xF0, 0x3F
+};
+
 #define RAM(a)	ram[(UWORD)(a) >> 15][(UWORD)(a) & 0x7FFF]
 
 static UWORD random(void)
@@ -110,7 +117,7 @@ void lcm_data(int v, int fcw)
 	lcm_stats.ls_Data[sel]++;
 	if (act != A_NONE && (sel == 18 || sel == 19 || (sel >= 30 && sel <= 33)))
 		lcm_stats.ls_Lost++;
-	lcm_reg[sel] = v;
+	lcm_reg[sel] = v | rdones[sel];
 	switch (sel) {
 	case 18:
 		ua = (ua & 0x00FF) | (v << 8);
@@ -155,7 +162,7 @@ BOOL lcm_init(UWORD seed, UBYTE fill)
 	for (i = 0; i < 0x8000; i++)
 		ram[0][i] = ram[1][i] = fill;
 	for (i = 0; i < 38; i++)
-		lcm_reg[i] = 0;
+		lcm_reg[i] = rdones[i];
 	sel = 0;
 	ua = ba = wc = 0;
 	wda = da = 0;
@@ -212,4 +219,21 @@ void lcm_watch(BOOL on)
 		SetFunction(SysBase, LVOEnable, oldenable);
 		oldenable = NULL;
 	}
+}
+
+BOOL lcm_frame(struct LCMFrame *f)
+{
+	UWORD cth = lcm_reg[22] >> 4, dbl = (lcm_reg[25] >> 4) & 1;
+
+	f->lf_Start = lcm_reg[12] << 8 | lcm_reg[13];
+	f->lf_Width = lcm_reg[1] * 8;
+	f->lf_Stride = lcm_reg[1] + lcm_reg[27];
+	f->lf_Lines = lcm_reg[6] * ((lcm_reg[9] & 0x1F) + 1);
+	f->lf_Dots = dbl + 1;
+	f->lf_Total = (lcm_reg[4] + 1) * ((lcm_reg[9] & 0x1F) + 1) +
+	    (lcm_reg[5] & 0x1F);
+	/* a column is pixels 0 to R22's upper nibble, or 1 to it doubled */
+	f->lf_LineNs = (lcm_reg[0] + 1L) * (dbl ? 2 * cth : cth + 1) * 125 / 2;
+	return (lcm_reg[8] & 3) == 0 && (lcm_reg[25] & 0xC0) == 0x80 &&
+	    (dbl ? cth : cth + 1) == 8;
 }

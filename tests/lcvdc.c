@@ -72,13 +72,15 @@ int main(void)
 		KPutStr("FAIL lcvdc: no memory\n");
 		return 1;
 	}
-	check((UBYTE *)&lp.lp_Bits - (UBYTE *)&lp == 424 &&
+	check((UBYTE *)&lp.lp_Bits - (UBYTE *)&lp == 536 &&
+	    (UBYTE *)&lp.lp_BPR - (UBYTE *)&lp == 18 &&
 	    (UBYTE *)&lp.lp_SP - (UBYTE *)&lp == 20 &&
-	    (UBYTE *)&lp.lp_Cx - (UBYTE *)&lp == 2506, "struct LCPort offsets");
+	    (UBYTE *)&lp.lp_Cx - (UBYTE *)&lp == 3178, "struct LCPort offsets");
 	lcm_watch(TRUE);
 	for (i = 0; i < 16000; i++)
 		shadow[i] = i * 7 + 3;
 	lp.lp_Shadow = shadow;
+	lp.lp_BPR = 80;
 	lp.lp_OK = TRUE;
 	lp.lp_UA = lp.lp_BA = LCP_NOADDR;
 	lp.lp_Y0 = LCP_ROWS;
@@ -94,8 +96,8 @@ int main(void)
 	ok = lcv_wr(&lp, 28, 0x10) && lcv_wr(&lp, 26, 0xF2) &&
 	    lcv_wr(&lp, 25, 0x87);
 	check(leave(ok), "register writes");
-	check(lcm_reg[28] == 0x10 && lcm_reg[26] == 0xF2 && lcm_reg[25] == 0x87,
-	    "register values");
+	check(lcm_reg[28] == 0x1F && lcm_reg[26] == 0xF2 && lcm_reg[25] == 0x87,
+	    "register values, unused bits 1");
 
 	/* a push in two runs, the address carried over, then a long one */
 	enter();
@@ -184,6 +186,22 @@ int main(void)
 	check(lp.lp_Y1 == -1 && lp.lp_Lo[11] == 0xFF && lp.lp_Bits[111] == 0,
 	    "clean after the flush");
 	check(faultless(), "faults after the flush");
+
+	/* rows of 40 bytes, as at double width */
+	lp.lp_BPR = 40;
+	for (i = 0; i < 16000; i++)
+		shadow[i] ^= 0xFF;
+	lcv_mark(&lp, 5, 6, 30, 39, TRUE);
+	lcv_mark(&lp, 255, 255, 0, 3, TRUE);
+	enter();
+	ok = lcv_flush(&lp) && lcv_fill(&lp, 100 * 40 + 2, 0x81, 30, 3, 3);
+	check(leave(ok) && same(5 * 40 + 30, 10) && same(6 * 40 + 30, 10) &&
+	    same(255 * 40, 4) && lcm_peek(5 * 40 + 29) != shadow[5 * 40 + 29] &&
+	    lcm_peek(7 * 40 + 30) != shadow[7 * 40 + 30], "flush, 40 a row");
+	check(ramis(102 * 40 + 2, 30, 0x81) && same(102 * 40 + 1, 1) &&
+	    same(102 * 40 + 32, 1) && same(100 * 40 + 1, 1),
+	    "fill, 40 a row");
+	lp.lp_BPR = 80;
 
 	/* the model's checks */
 	Disable();

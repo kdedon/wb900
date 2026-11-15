@@ -1087,6 +1087,34 @@ static void closelibs(void)
 	CloseLibrary((struct Library *)DOSBase);
 }
 
+/*
+ * Without ENV:, the assigns a Startup-Sequence makes: ENVARC: for
+ * SYS:Prefs/Env-Archive and ENV: for a copy of it in RAM:, or for the
+ * archive itself without a RAM disk.
+ */
+static void envinit(void)
+{
+	BPTR lock;
+	UBYTE *buf;
+
+	if ((lock = Lock("ENV:", ACCESS_READ)) != NULL) {
+		UnLock(lock);
+		return;
+	}
+	if ((lock = Lock("SYS:Prefs/Env-Archive", ACCESS_READ)) == NULL)
+		return;
+	if (!AssignLock("ENVARC", lock))
+		UnLock(lock);
+	if ((buf = AllocVec(COPYBUF, MEMF_ANY)) != NULL) {
+		copytree("ENVARC:", "RAM:ENV", buf);
+		FreeVec(buf);
+	}
+	if ((lock = Lock("RAM:ENV", ACCESS_READ)) == NULL)
+		lock = Lock("ENVARC:", ACCESS_READ);
+	if (lock != NULL && !AssignLock("ENV", lock))
+		UnLock(lock);
+}
+
 BOOL selftest(void);
 LONG selftestdone(void);
 
@@ -1103,6 +1131,7 @@ LONG Workbench(char *args, LONG len)
 		closelibs();
 		return RETURN_FAIL;
 	}
+	envinit();
 	NewList((struct List *)&wins);
 	idport = CreateMsgPort();
 	wbport = CreateMsgPort();

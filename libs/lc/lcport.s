@@ -15,10 +15,11 @@
 
 LCPOLL	= 30000
 PIECE	= 1000
+NOADDR	= 0xFFFF
 US_PUSH	= 16
 US_REG	= 10
 GAP	= 1
-SCRATCH	= 0x4000
+SCRATCH	= 0x8000
 
 / struct LCPort
 SHADOW	= 0
@@ -29,12 +30,14 @@ OK	= 10
 R24	= 12
 Y0	= 14
 Y1	= 16
+BPR	= 18
 SP	= 20
 LO	= 24
-HI	= 224
-BITS	= 424
-RUNS	= 2424
-CX	= 2506
+HI	= 280
+BITS	= 536
+RUNS	= 3096
+CX	= 3178
+ROWS	= 256
 
 	.shri
 
@@ -112,21 +115,29 @@ wreg:
 	outb	@r3, rl1
 	ret
 
-/ The update address to r6; R18 only when its high byte changes.
+/ The update address to r6: R18 and R19 each only when its byte
+/ changes, as each write costs a read-ahead.
 seek:
 	cp	r10, r6
 	ret	eq
 	ld	r0, r10
 	xor	r0, r6
-	and	r0, $0xFF00
-	jr	z, 1f
+	cp	r10, $NOADDR
+	jr	ne, 1f
+	ld	r0, $NOADDR
+1:	push	(rr14), r0
+	testb	rh0
+	jr	z, 2f
 	ldb	rh1, rh6
 	ldb	rl1, $18
 	calr	wreg
-1:	ldb	rh1, rl6
+2:	pop	r0, (rr14)
+	testb	rl0
+	jr	z, 3f
+	ldb	rh1, rl6
 	ldb	rl1, $19
 	calr	wreg
-	ld	r10, r6
+3:	ld	r10, r6
 	ret
 
 / R24 bit 7 to rl0's.
@@ -315,7 +326,8 @@ lcv_fill_:
 	ld	r1, $1
 	calr	wpush
 3:	ld	r0, rr14(24)
-	add	r0, $80
+	ld	r1, rr12(BPR)
+	add	r0, r1
 	ld	rr14(24), r0
 	ld	r0, rr14(30)
 	dec	r0, $1
@@ -417,11 +429,11 @@ frow:
 	ldb	rr12(r4), rl0
 	clrb	rl0
 	ldb	rr12(r5), rl0
+	ld	r5, rr12(BPR)
+	mult	rr0, r5
 	ld	r5, r1
-	sll	r5, $4
-	ld	r0, r5
-	sll	r5, $2
-	add	r5, r0
+	ld	r1, rr14(0)
+	dec	r1, $1
 	ld	rr14(2), r5
 	ld	r2, r4
 	add	r2, $CX-LO
@@ -509,7 +521,7 @@ femit:
 	calr	wpush
 	jr	femit
 fend:
-	ld	r0, $200
+	ld	r0, $ROWS
 	ld	rr12(Y0), r0
 	ld	r0, $-1
 	ld	rr12(Y1), r0

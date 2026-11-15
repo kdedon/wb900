@@ -1,9 +1,13 @@
 /* SPDX-License-Identifier: MIT */
 /*
  * hr.gfxdriver: the HR card's bitmap in VRAM as graphics.library's
- * display, in the mode framebuf.resource reports (1024x800 mono or
- * 640x400 RGBI).  It draws with graphics' planar or chunky 4-bit
- * operations; the palette is fixed, and pens take its nearest colour.  The card holds one display bitmap.
+ * display, in the mode of its jumper.  The strap read can't tell
+ * 1024x800 from 1024x1024 and may be wrong about mono or RGBI, so the
+ * three jumper modes are listed, the one framebuf.resource reports
+ * first and available; opening another takes the jumper to be that.  It
+ * draws with graphics' planar or chunky 4-bit operations; the palette is
+ * fixed, and pens take its nearest colour.  The card holds one display
+ * bitmap.
  * The driver takes the display from the console with the bitmap
  * (blanked until shown) and gives it back when the bitmap is freed and
  * not shown.
@@ -34,17 +38,40 @@ static char hrid[] = "hr.gfxdriver 45.1 (14.11.2026)";
 static char hrowner[] = "graphics.library";
 
 static struct FBMode *hr_fbm;
-static struct GfxMode hr_mode;
+static struct GfxDriver **hr_fmts;
+static const struct GfxMode hr_jumper[3] = {
+	{ HRMONO_800_ID, 1024, 800, 1, GDF_PLANAR },
+	{ HRMONO_1024_ID, 1024, 1024, 1, GDF_PLANAR },
+	{ HRCOLOR_ID, 640, 400, 4, GDF_CHUNKY4 }
+};
+static struct GfxMode hr_modes[3];
 static struct GfxBitMap hr_bm;
 static UBYTE hr_pixtab[256];
 static BOOL hr_alloc, hr_shown;
+
+/* Take the jumper to be m: draw in its format */
+static void hr_setmode(struct GfxDriver *gd, const struct GfxMode *m)
+{
+	struct GfxDriver *f = hr_fmts[m->gm_Format - 1];
+
+	gd->gd_Jumper = m;
+	gd->gd_Format = m->gm_Format;
+	gd->gd_Fill = f->gd_Fill;
+	gd->gd_Template = f->gd_Template;
+	gd->gd_Copy = f->gd_Copy;
+	gd->gd_ReadPixel = f->gd_ReadPixel;
+	gd->gd_WritePixel = f->gd_WritePixel;
+	gd->gd_Line = f->gd_Line;
+	gd->gd_ReadRow = f->gd_ReadRow;
+	gd->gd_WriteRow = f->gd_WriteRow;
+}
 
 /* RGBI: a gun that is on is at 0xAA, or 0xFF with I */
 static ULONG hr_GetColor(struct GfxDriver *gd, UWORD n)
 {
 	ULONG on, c;
 
-	if (hr_fbm->fbm_Format == FBF_MONO)
+	if (gd->gd_Format == GDF_PLANAR)
 		return (n & 1) ? 0xFFFFFFL : 0;
 	on = (n & 8) ? 0xFF : 0xAA;
 	c = 0;
@@ -63,17 +90,19 @@ static struct BitMap *hr_AllocDisplay(struct GfxDriver *gd,
 	struct BitMap *bm = &hr_bm.gb_BitMap;
 	UWORD i;
 
-	if (hr_alloc || m != &hr_mode)
+	if (hr_alloc)
 		return NULL;
 	if (!hr_shown) {
 		if (AllocFB(hrowner) != NULL)
 			return NULL;
 		outb(FBHR_CTL, FBHR_BLANK);
 	}
+	if (m != gd->gd_Jumper)
+		hr_setmode(gd, m);
 	hr_alloc = TRUE;
-	bm->BytesPerRow = hr_fbm->fbm_BytesPerRow;
-	bm->Rows = hr_fbm->fbm_Height;
-	bm->Depth = hr_fbm->fbm_Depth;
+	bm->BytesPerRow = m->gm_Width * m->gm_Depth / 8;
+	bm->Rows = m->gm_Height;
+	bm->Depth = m->gm_Depth;
 	bm->pad = GFXBM_MAGIC;
 	bm->Planes[0] = hr_fbm->fbm_Half[0];
 	hr_bm.gb_Half1 = hr_fbm->fbm_Half[1];
@@ -116,18 +145,20 @@ static struct GfxDriver hr_driver = {
 	{ NULL, NULL, 0, 0, "hr" },
 	0,
 	NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
-	&hr_mode, 1,
+	hr_modes, 3,
 	NULL,
 	hr_GetColor,
 	hr_AllocDisplay,
 	hr_FreeDisplay,
-	hr_Show
+	hr_Show,
+	NULL,
+	NULL
 };
 
 struct GfxDriver *HR_5(struct HRBase *base, struct GfxDriver **fmts)
 {
 	struct FBInfo *fi;
-	struct GfxDriver *f;
+	UWORD r, i, n;
 
 	if (FrameBufBase == NULL)
 		FrameBufBase = OpenResource(FRAMEBUFNAME);
@@ -137,27 +168,13 @@ struct GfxDriver *HR_5(struct HRBase *base, struct GfxDriver **fmts)
 	if (fi->fbi_Card != FBC_HR)
 		return NULL;
 	hr_fbm = &fi->fbi_Modes[fi->fbi_Mode];
-	hr_mode.gm_Width = hr_fbm->fbm_Width;
-	hr_mode.gm_Height = hr_fbm->fbm_Height;
-	hr_mode.gm_Depth = hr_fbm->fbm_Depth;
-	if (hr_fbm->fbm_Format == FBF_MONO) {
-		hr_mode.gm_Format = GDF_PLANAR;
-		hr_mode.gm_ModeID = hr_fbm->fbm_Height > 800 ?
-		    HRMONO_1024_ID : HRMONO_800_ID;
-	} else {
-		hr_mode.gm_Format = GDF_CHUNKY4;
-		hr_mode.gm_ModeID = HRCOLOR_ID;
-	}
-	f = fmts[hr_mode.gm_Format - 1];
-	hr_driver.gd_Format = hr_mode.gm_Format;
-	hr_driver.gd_Fill = f->gd_Fill;
-	hr_driver.gd_Template = f->gd_Template;
-	hr_driver.gd_Copy = f->gd_Copy;
-	hr_driver.gd_ReadPixel = f->gd_ReadPixel;
-	hr_driver.gd_WritePixel = f->gd_WritePixel;
-	hr_driver.gd_Line = f->gd_Line;
-	hr_driver.gd_ReadRow = f->gd_ReadRow;
-	hr_driver.gd_WriteRow = f->gd_WriteRow;
+	hr_fmts = fmts;
+	r = hr_fbm->fbm_Format != FBF_MONO ? 2 : hr_fbm->fbm_Height > 800;
+	hr_modes[0] = hr_jumper[r];
+	for (i = 0, n = 1; i < 3; i++)
+		if (i != r)
+			hr_modes[n++] = hr_jumper[i];
+	hr_setmode(&hr_driver, &hr_modes[0]);
 	return &hr_driver;
 }
 

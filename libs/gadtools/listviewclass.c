@@ -96,7 +96,7 @@ AROS_UFH3(IPTR, RenderHook,
         WORD max_x = msg->lvdm_Bounds.MaxX;
         WORD max_y = msg->lvdm_Bounds.MaxY;
 
-        UWORD erasepen = BACKGROUNDPEN;
+        UWORD erasepen = BACKGROUNDPEN, textpen = TEXTPEN;
 
 
         SetDrMd(rp, JAM1);
@@ -108,6 +108,7 @@ AROS_UFH3(IPTR, RenderHook,
             case LVR_SELECTEDDISABLED:
                 /* We must fill the backgound with FILLPEN */
                 erasepen = FILLPEN;
+                textpen = FILLTEXTPEN;
 
                 /* Fall through */
                 
@@ -123,7 +124,7 @@ AROS_UFH3(IPTR, RenderHook,
                 numfit = TextFit(rp, node->ln_Name, strlen(node->ln_Name),
                         &te, NULL, 1, max_x - min_x + 1, max_y - min_y + 1);
 
-                SetAPen(rp, dri->dri_Pens[TEXTPEN]);
+                SetAPen(rp, dri->dri_Pens[textpen]);
                 
                 /* Render text */
                 Move(rp, min_x, min_y + rp->Font->tf_Baseline);

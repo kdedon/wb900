@@ -37,6 +37,7 @@ int lcb_seek(UWORD n, UWORD a);
 int lcb_block(UWORD n, UWORD count);
 int lcb_wr(UWORD reg, UWORD val);
 int lcb_ready(void);
+int lcb_rd(UWORD reg);
 
 struct GfxBase *GfxBase;
 struct Device *TimerBase;
@@ -60,6 +61,7 @@ static ULONG nsdjnz;		/* ns of a DJNZ pass, 11 clocks */
 static ULONG sum, busy;
 static UBYTE buf[256], back[256];
 static struct LCPort lp;
+static int fails;
 
 static void t0(void)
 {
@@ -110,13 +112,23 @@ static UWORD lost(UWORD n)
 	return k;
 }
 
+/* The registers the cases depend on, unused bits masked */
+static void regs24(char *mode)
+{
+	xKPrintf("lcbench: %sR1 %x R6 %x R24 %x R25 %x R28 %x R36 %x\n", mode,
+	    lcb_rd(1), lcb_rd(6), lcb_rd(24), lcb_rd(25), lcb_rd(28) & 0xF0,
+	    lcb_rd(36) & 0x0F);
+}
+
 static void chip(char *mode)
 {
+	regs24(mode);
 	UWORD i, k;
 
 	for (i = 0; i < REPS; i++) {
 		Disable();
 		seek(0x4000);
+		lcb_ready();
 		Enable();
 		t0();
 		busy += lcb_r31(256, 0x55);
@@ -128,6 +140,7 @@ static void chip(char *mode)
 		buf[0] = i;
 		Disable();
 		seek(0x4000);
+		lcb_ready();
 		Enable();
 		t0();
 		lcb_r31np(buf, 256);
@@ -141,6 +154,7 @@ static void chip(char *mode)
 		buf[0] = i + 100;
 		Disable();
 		seek(0x4000);
+		lcb_ready();
 		Enable();
 		t0();
 		lcb_otir(buf, 256);
@@ -156,6 +170,7 @@ static void chip(char *mode)
 			lcb_wr(24, 0x00);
 			seek(0x4000);
 			lcb_wr(31, 0xAA);
+			lcb_ready();
 			Enable();
 			t0();
 			busy += lcb_block(4096 / k, k & 0xFF);
@@ -164,6 +179,14 @@ static void chip(char *mode)
 		xKPrintf("lcbench: %sR30 fill of %d bytes, a block:\n", mode, k);
 		show(mode, "  fill", REPS * (4096L / k), 0);
 	}
+	/* the copies' source: buf at 0x6000 */
+	Disable();
+	lcb_wr(24, 0x00);
+	seek(0x6000);
+	for (i = 0; i < 256; i++)
+		lcb_r31(1, buf[i]);
+	lcb_ready();
+	Enable();
 	for (k = 256; k >= 16; k >>= 2) {
 		for (i = 0; i < REPS; i++) {
 			Disable();
@@ -171,6 +194,7 @@ static void chip(char *mode)
 			lcb_wr(32, 0x60);
 			lcb_wr(33, 0x00);
 			seek(0x4000);
+			lcb_ready();
 			Enable();
 			t0();
 			busy += lcb_block(4096 / k, k & 0xFF);
@@ -179,8 +203,16 @@ static void chip(char *mode)
 		xKPrintf("lcbench: %sR32/R33 copy of %d bytes, a block:\n", mode, k);
 		show(mode, "  copy", REPS * (4096L / k), 0);
 	}
+	regs24(mode);
+	k = lost(256);
+	xKPrintf("lcbench: %scopied bytes wrong: %d of 256\n", mode, k);
+	if (k != 0) {
+		xKPrintf("FAIL lcbench: %sR30 copies are not copies\n", mode);
+		fails++;
+	}
 	Disable();
 	lcb_wr(24, 0x00);
+	lcb_ready();
 	Enable();
 }
 
@@ -191,6 +223,7 @@ static void port(void)
 	lp.lp_Shadow = AllocMem(16000, MEMF_CLEAR);
 	if (lp.lp_Shadow == NULL)
 		return;
+	lp.lp_BPR = 80;
 	lp.lp_OK = TRUE;
 	lp.lp_UA = lp.lp_BA = LCP_NOADDR;
 	lp.lp_R24 = 0;
@@ -219,6 +252,17 @@ static void port(void)
 		t1();
 	}
 	show("", "lcv_copy, a row of 78 and 2 edges", REPS * 20L, 0);
+	Disable();
+	seek(81 + 60 * 80);
+	lcb_read(back, 78);
+	lcb_ready();
+	Enable();
+	for (i = 0; i < 78 && back[i] == 0xAA; i++)
+		;
+	if (i < 78) {
+		KPutStr("FAIL lcbench: lcv_copy's rows are not the source\n");
+		fails++;
+	}
 	for (i = 0; i < REPS; i++) {
 		t0();
 		lcv_mark(&lp, 0, 99, 10, 13, TRUE);
@@ -423,6 +467,8 @@ int main(void)
 
 	FreeFB();
 	CloseDevice((struct IORequest *)tr);
+	if (fails != 0)
+		return 1;
 	KPutStr("PASS lcbench\n");
 	return 0;
 }

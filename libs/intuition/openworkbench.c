@@ -7,37 +7,86 @@
 #include <intuition/iprefs.h>
 #include <proto/intuition.h>
 #include <proto/graphics.h>
+#include <proto/dos.h>
+#include <proto/input.h>
+#include <devices/inputevent.h>
+#include <graphics/displayinfo.h>
+#include <prefs/prefhdr.h>
+#include <prefs/screenmode.h>
 
 #include "intuition_intern.h"
 
-static ULONG FindMode(ULONG width, ULONG height, ULONG depth, struct IntuitionBase *IntuitionBase)
+#define SCREENMODE_ENV "ENV:Sys/screenmode.prefs"
+
+/* The SCRM chunk of the saved FORM PREF */
+static BOOL LoadScreenMode(struct ScreenModePrefs *smp, struct IntuitionBase *IntuitionBase)
+{
+    struct DosLibrary *DOSBase = GetPrivIBase(IntuitionBase)->DOSBase;
+    ULONG buf[24];
+    UBYTE *b = (UBYTE *)buf;
+    LONG len, at, size;
+    BPTR fh;
+
+    if (!DOSBase || !(fh = Open(SCREENMODE_ENV, MODE_OLDFILE)))
+        return FALSE;
+    len = Read(fh, buf, sizeof(buf));
+    Close(fh);
+    if (len < 12 || buf[0] != ID_FORM || buf[2] != ID_PREF)
+        return FALSE;
+    for (at = 12; at + 8 <= len; at += 8 + ((size + 1) & ~1L))
+    {
+        size = *(LONG *)(b + at + 4);
+        if (*(ULONG *)(b + at) == ID_SCRM && size >= sizeof(*smp) &&
+            at + 8 + sizeof(*smp) <= len)
+        {
+            CopyMem(b + at + 8, smp, sizeof(*smp));
+            return TRUE;
+        }
+    }
+    return FALSE;
+}
+
+/*
+ * The Workbench's mode and size: the saved mode when the display has it,
+ * else the display's first mode, the card's own.  A saved mode may be one
+ * the display has no monitor for, the other setting of a jumper.  Shift
+ * held ignores the saved mode, so a bad one can be undone.
+ */
+static ULONG ChooseMode(struct IntuitionBase *IntuitionBase)
 {
     struct GfxBase *GfxBase = GetPrivIBase(IntuitionBase)->GfxBase;
-    ULONG modeid;
-    struct TagItem modetags[] =
+    struct Library *InputBase = GetPrivIBase(IntuitionBase)->InputBase;
+    struct IScreenModePrefs *smp = GetPrivIBase(IntuitionBase)->ScreenModePrefs;
+    struct ScreenModePrefs saved;
+    struct DimensionInfo dim;
+    ULONG id = NextDisplayInfo(INVALID_ID);
+    char *why;
+
+    if (id == INVALID_ID)
+        return INVALID_ID;
+    if (PeekQualifier() & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))
+        why = "Shift held";
+    else if (!LoadScreenMode(&saved, IntuitionBase))
+        why = "no saved mode";
+    else if (!FindDisplayInfo(saved.smp_DisplayID) ||
+             (ModeNotAvailable(saved.smp_DisplayID) & ~DI_AVAIL_NOMONITOR))
+        why = "saved mode not available";
+    else
     {
-        { BIDTAG_DesiredWidth,  0 }, /* 0 */
-        { BIDTAG_DesiredHeight, 0 }, /* 1 */
-        { BIDTAG_Depth,         0 }, /* 2 */
-        { TAG_DONE,             0 }
-    };
-
-    modetags[0].ti_Data = width;
-    modetags[1].ti_Data = height;
-    modetags[2].ti_Data = depth;
-
-    /* Try to find the specified mode */
-    modeid = BestModeIDA(modetags);
-
-    if (modeid == INVALID_ID)
-    {
-        /* If failed, we can have this resolution, but not this depth. Try 4 colors. */
-        modetags[2].ti_Data = 2;
-
-        modeid = BestModeIDA(modetags);
+        smp->smp_Width  = saved.smp_Width;
+        smp->smp_Height = saved.smp_Height;
+        smp->smp_Depth  = saved.smp_Depth;
+        smp->smp_Control = saved.smp_Control;
+        return saved.smp_DisplayID;
     }
-
-    return modeid;
+    xKPrintf("intuition: %s, Workbench in mode %lx\n", why, id);
+    if (GetDisplayInfoData(NULL, (UBYTE *)&dim, sizeof(dim), DTAG_DIMS, id))
+    {
+        smp->smp_Width  = dim.Nominal.MaxX + 1;
+        smp->smp_Height = dim.Nominal.MaxY + 1;
+    }
+    smp->smp_Control = 0;
+    return id;
 }
 
 /*****************************************************************************
@@ -137,53 +186,12 @@ static ULONG FindMode(ULONG width, ULONG height, ULONG depth, struct IntuitionBa
         if (!GetPrivIBase(IntuitionBase)->ScreenModePrefs)
             SetDisplayDefaults(IntuitionBase);
 
+        modeid = ChooseMode(IntuitionBase);
         width  = GetPrivIBase(IntuitionBase)->ScreenModePrefs->smp_Width;
         height = GetPrivIBase(IntuitionBase)->ScreenModePrefs->smp_Height;
         depth  = GetPrivIBase(IntuitionBase)->ScreenModePrefs->smp_Depth;
-        modeid = GetPrivIBase(IntuitionBase)->ScreenModePrefs->smp_DisplayID;
-
-        /* First check if the specified ModeID exists in the system */
-        if (!FindDisplayInfo(modeid))
-            modeid = INVALID_ID;
-
-        if (modeid == INVALID_ID)
-        {
-            /*
-             * We were unable to find the ModeID specified in our prefs. Need to find a replacement.
-             * First we'll try to look up a mode corresponding to user-specified width, height and depth.
-             */
-
-            /* Specifying -1's here causes BestModeIDA() to fail, fix up the values */
-            if (width == STDSCREENWIDTH)
-                width = GfxBase->NormalDisplayColumns;
-            if (height == STDSCREENHEIGHT)
-                height = GfxBase->NormalDisplayRows;
-            if (depth == -1)
-                depth = AROS_NOMINAL_DEPTH;
-
-            modeid = FindMode(width, height, depth, IntuitionBase);
-        }
-
-        if (modeid == INVALID_ID)
-        {
-            /* We don't have any modes with the specified resolution. Try SVGA default (800x600) */
-            modeid = FindMode(800, 600, depth, IntuitionBase);
-        }
-
-        if (modeid == INVALID_ID)
-        {
-            /* We don't have any modes with the specified resolution. Try VGA default (640x480) */
-            modeid = FindMode(640, 480, depth, IntuitionBase);
-        }
-
-        if (modeid == INVALID_ID)
-        {
-            /* We don't have any modes with the specified resolution. Try Amiga default (640x200) */
-            modeid = FindMode(640, 200, depth, IntuitionBase);
-        }
 
         /* wb900: without a display (the C emulator) the screen is in RAM */
-        if (modeid != INVALID_ID || NextDisplayInfo(INVALID_ID) == INVALID_ID)
         {
             struct DimensionInfo dim;
 

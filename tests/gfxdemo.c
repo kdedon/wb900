@@ -183,11 +183,10 @@ int main(void)
 		goto done;
 	}
 
-	/* The database: the card's one mode */
+	/* The database: the card's mode first */
 	fi = GetFBInfo();
 	check(id != INVALID_ID && NextDisplayInfo(INVALID_ID) == id &&
-	    NextDisplayInfo(id) == INVALID_ID && FindDisplayInfo(id) != NULL,
-	    "the display's mode");
+	    FindDisplayInfo(id) != NULL, "the display's mode");
 	check(ModeNotAvailable(id) == 0, "ModeNotAvailable");
 	check(GetDisplayInfoData(NULL, (UBYTE *)&dims, sizeof(dims), DTAG_DIMS,
 	    id) == sizeof(dims) && dims.Header.DisplayID == id &&

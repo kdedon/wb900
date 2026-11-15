@@ -1,10 +1,11 @@
 /*
  * intuition's Workbench screen on lc.gfxdriver and a model of the LC
  * card's 8568 (the emulator has none), in the 1.x style of
- * DEVS:system-configuration: 640x200 mono, white on blue.  After opening
- * the screen and a window, moving and closing it and moving the pointer,
- * the model's bitmap must be the shadow and the chip idle, with each
- * step's port actions and their time printed as a cost regression.
+ * DEVS:system-configuration: 640x200 mono, white on blue; then a screen
+ * in each of the other modes.  After opening the screen and a window,
+ * moving and closing it and moving the pointer, the model's bitmap must
+ * be the shadow, the registers must show it, and the chip be idle, with
+ * each step's port actions and their time printed as a cost regression.
  */
 #include <exec/exec.h>
 #include <devices/input.h>
@@ -71,12 +72,87 @@ static void step(char *what, ULONG limit)
 	}
 }
 
-int main(void)
+/* A window on s: open, draw, move, size, the pointer, close */
+static void windows(struct Screen *s)
 {
-	struct Screen *wb;
 	struct Window *w;
 	struct TagItem t[12];
 	WORD i;
+
+	t[0].ti_Tag = WA_Left;		t[0].ti_Data = 40;
+	t[1].ti_Tag = WA_Top;		t[1].ti_Data = 30;
+	t[2].ti_Tag = WA_Width;		t[2].ti_Data = s->Width / 2;
+	t[3].ti_Tag = WA_Height;	t[3].ti_Data = 120;
+	t[4].ti_Tag = WA_Title;		t[4].ti_Data = (ULONG)"An LC window";
+	t[5].ti_Tag = WA_DragBar;	t[5].ti_Data = TRUE;
+	t[6].ti_Tag = WA_DepthGadget;	t[6].ti_Data = TRUE;
+	t[7].ti_Tag = WA_CloseGadget;	t[7].ti_Data = TRUE;
+	t[8].ti_Tag = WA_SizeGadget;	t[8].ti_Data = TRUE;
+	t[9].ti_Tag = WA_SimpleRefresh;	t[9].ti_Data = TRUE;
+	t[10].ti_Tag = WA_CustomScreen;	t[10].ti_Data = (ULONG)s;
+	t[11].ti_Tag = TAG_DONE;
+	w = OpenWindowTagList(NULL, t);
+	check(w != NULL, "OpenWindow");
+	step("window open", s->Width == 640 ? 75000 : 0);
+	if (w == NULL)
+		return;
+	SetAPen(w->RPort, 1);
+	Move(w->RPort, 20, 30);
+	Text(w->RPort, "Hello, LC", 9);
+	step("text in the window", 0);
+	MoveWindow(w, 80, 16);
+	step("window move by 80, 16", 0);
+	MoveWindow(w, -3, 5);
+	step("window move by -3, 5", 0);
+	SizeWindow(w, 40, 20);
+	step("window size", 0);
+	for (i = 0; i < 4; i++) {
+		event(IECLASS_RAWMOUSE, IECODE_NOBUTTON, 4, 2);
+		step("pointer move", 2000);
+	}
+	CloseWindow(w);
+	step("window close", 0);
+}
+
+/* A screen in mode i of the list after 640x200 */
+static void othermode(UWORD i)
+{
+	static const ULONG ids[3] = {
+		LCLORES_ID, LCHIRESPAL_ID, LCLORESPAL_ID
+	};
+	static const UWORD size[3][3] = {
+		{ 320, 200, 60 }, { 640, 256, 50 }, { 320, 256, 50 }
+	};
+	struct TagItem t[7];
+	struct Screen *s;
+	UWORD allocs = lct_allocs, frees = lct_frees;
+
+	t[0].ti_Tag = SA_DisplayID;	t[0].ti_Data = ids[i];
+	t[1].ti_Tag = SA_Width;		t[1].ti_Data = size[i][0];
+	t[2].ti_Tag = SA_Height;	t[2].ti_Data = size[i][1];
+	t[3].ti_Tag = SA_Depth;		t[3].ti_Data = 1;
+	t[4].ti_Tag = SA_Title;		t[4].ti_Data = (ULONG)"An LC screen";
+	t[5].ti_Tag = SA_SharePens;	t[5].ti_Data = TRUE;
+	t[6].ti_Tag = TAG_DONE;
+	s = OpenScreenTagList(NULL, t);
+	check(s != NULL, "OpenScreen");
+	if (s == NULL)
+		return;
+	bm = s->RastPort.BitMap;
+	check(s->Width == size[i][0] && s->Height == size[i][1] &&
+	    GetVPModeID(&s->ViewPort) == ids[i] && lct_allocs == allocs + 1,
+	    "the mode's display");
+	check(lct_mode(bm, size[i][2]), "the mode's registers");
+	step("OpenScreen", 0);
+	windows(s);
+	CloseScreen(s);
+	check(lct_frees == frees + 1, "the display goes back");
+}
+
+int main(void)
+{
+	struct Screen *wb;
+	UWORD i;
 
 	if (!lct_setup("lcwb", 0xAA)) {
 		KPutStr("FAIL lcwb: setup\n");
@@ -103,47 +179,18 @@ int main(void)
 	bm = wb->RastPort.BitMap;
 	check(wb->Width == 640 && wb->Height == 200 &&
 	    GetBitMapAttr(bm, BMA_DEPTH) == 1 &&
-	    GetVPModeID(&wb->ViewPort) == LCMONO_200_ID, "640x200 mono");
+	    GetVPModeID(&wb->ViewPort) == LCHIRES_ID, "640x200 mono");
 	check(lct_allocs == 1 && bm->Planes[0] != NULL, "the display's bitmap");
+	check(lct_mode(bm, 60), "640x200 registers");
 	step("OpenWorkBench", 0);
 	check(lcm_reg[26] == 0xF2, "white on blue");
-
-	t[0].ti_Tag = WA_Left;		t[0].ti_Data = 40;
-	t[1].ti_Tag = WA_Top;		t[1].ti_Data = 30;
-	t[2].ti_Tag = WA_Width;		t[2].ti_Data = 320;
-	t[3].ti_Tag = WA_Height;	t[3].ti_Data = 120;
-	t[4].ti_Tag = WA_Title;		t[4].ti_Data = (ULONG)"An LC window";
-	t[5].ti_Tag = WA_DragBar;	t[5].ti_Data = TRUE;
-	t[6].ti_Tag = WA_DepthGadget;	t[6].ti_Data = TRUE;
-	t[7].ti_Tag = WA_CloseGadget;	t[7].ti_Data = TRUE;
-	t[8].ti_Tag = WA_SizeGadget;	t[8].ti_Data = TRUE;
-	t[9].ti_Tag = WA_SimpleRefresh;	t[9].ti_Data = TRUE;
-	t[10].ti_Tag = WA_PubScreen;	t[10].ti_Data = (ULONG)wb;
-	t[11].ti_Tag = TAG_DONE;
-	w = OpenWindowTagList(NULL, t);
-	check(w != NULL, "OpenWindow");
-	step("window open 320x120", 75000);
-	if (w) {
-		SetAPen(w->RPort, 1);
-		Move(w->RPort, 20, 30);
-		Text(w->RPort, "Hello, LC", 9);
-		step("text in the window", 0);
-		MoveWindow(w, 80, 16);
-		step("window move by 80, 16", 0);
-		MoveWindow(w, -3, 5);
-		step("window move by -3, 5", 0);
-		SizeWindow(w, 40, 20);
-		step("window size", 0);
-		for (i = 0; i < 4; i++) {
-			event(IECLASS_RAWMOUSE, IECODE_NOBUTTON, 4, 2);
-			step("pointer move", 2000);
-		}
-		CloseWindow(w);
-		step("window close", 0);
-	}
+	windows(wb);
 	UnlockPubScreen(NULL, wb);
 	check(CloseWorkBench(), "CloseWorkBench");
 	check(lct_frees == 1, "the display goes back");
+	for (i = 0; i < 3; i++)
+		othermode(i);
+
 done:
 	lct_cleanup();
 	CloseLibrary((struct Library *)IntuitionBase);

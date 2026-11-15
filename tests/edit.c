@@ -7,8 +7,6 @@
  * starts Edit on its file with E, and a Shell runs Edit with a file
  * argument.  It reports Edit's stack use.
  */
-/* asl.library does not fit in 1 MB beside the second disk handler */
-/* EMUFLAGS: --ram=08-18 */
 #include <exec/exec.h>
 #include <dos/dos.h>
 #include <dos/dosextens.h>

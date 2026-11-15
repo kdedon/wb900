@@ -24,4 +24,10 @@ void lct_cleanup(void);
  */
 BOOL lct_step(struct BitMap *bm, char *what, ULONG *us);
 
+/*
+ * The registers show bm, 640 dots wide, from VRAM 0x0000 at hz frames a
+ * second (rounded down, or 1 less); the geometry is printed.
+ */
+BOOL lct_mode(struct BitMap *bm, UWORD hz);
+
 #endif

@@ -83,13 +83,13 @@ BOOL lct_step(struct BitMap *bm, char *what, ULONG *us)
 	struct LCMStats *s = &lcm_stats;
 	UBYTE *p = bm->Planes[0];
 	ULONG push, seek, regs, t;
-	UWORD a, i;
+	UWORD a, i, n = bm->BytesPerRow * bm->Rows;
 	BOOL ok = TRUE;
 
-	for (a = 0; a < 16000; a++)
+	for (a = 0; a < n; a++)
 		if (lcm_peek(a) != p[a]) {
 			xKPrintf("FAIL %s: %s: byte %u (row %u) is %x, shadow %x\n",
-			    test, what, a, a / 80, lcm_peek(a), p[a]);
+			    test, what, a, a / bm->BytesPerRow, lcm_peek(a), p[a]);
 			ok = FALSE;
 			break;
 		}
@@ -118,4 +118,28 @@ BOOL lct_step(struct BitMap *bm, char *what, ULONG *us)
 	if (us)
 		*us = t;
 	return ok;
+}
+
+BOOL lct_mode(struct BitMap *bm, UWORD hz)
+{
+	struct LCMFrame f;
+	ULONG mhz;
+
+	if (!lcm_frame(&f)) {
+		xKPrintf("FAIL %s: not a bitmap of 8-pixel columns\n", test);
+		return FALSE;
+	}
+	/* frames a second, times 100 */
+	mhz = 100000000L / (f.lf_LineNs * f.lf_Total / 1000);
+	xKPrintf("%s: %u x %u, %u dots a pixel, stride %u, %u lines of %ld ns,"
+	    " %ld.%02ld Hz\n", test, f.lf_Width, f.lf_Lines, f.lf_Dots,
+	    f.lf_Stride, f.lf_Total, f.lf_LineNs, mhz / 100, mhz % 100);
+	if (f.lf_Start != 0 || f.lf_Width != bm->BytesPerRow * 8 ||
+	    f.lf_Stride != bm->BytesPerRow || f.lf_Lines != bm->Rows ||
+	    f.lf_Width * f.lf_Dots != 640 || mhz / 100 + 1 < hz ||
+	    mhz / 100 > hz) {
+		xKPrintf("FAIL %s: the registers show another bitmap\n", test);
+		return FALSE;
+	}
+	return TRUE;
 }

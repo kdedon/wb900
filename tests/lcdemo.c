@@ -111,7 +111,7 @@ static void graphics(void)
 	WORD i;
 
 	t[0].ti_Tag = BMATags_DisplayID;
-	t[0].ti_Data = LCMONO_200_ID;
+	t[0].ti_Data = LCHIRES_ID;
 	t[1].ti_Tag = TAG_DONE;
 	bm = AllocBitMap(640, 200, 1, BMF_CLEAR | BMF_DISPLAYABLE | EXTTAGS,
 	    (struct BitMap *)t);
@@ -128,7 +128,7 @@ static void graphics(void)
 	vp.ColorMap = cm;
 	vp.DWidth = 640;
 	vp.DHeight = 200;
-	cm->VPModeID = LCMONO_200_ID;
+	cm->VPModeID = LCHIRES_ID;
 	v.ViewPort = &vp;
 	LoadRGB32(&vp, palette);
 	MakeVPort(&v, &vp);

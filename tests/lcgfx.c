@@ -216,6 +216,51 @@ static void pointer(struct ViewPort *vp, struct RastPort *rp)
 	FreeSpriteData(es);
 }
 
+/* The modes, their names and ticks, and BestModeIDA()'s choices */
+static void database(void)
+{
+	static const ULONG ids[4] = {
+		LCHIRES_ID, LCLORES_ID, LCHIRESPAL_ID, LCLORESPAL_ID
+	};
+	static const char *names[4] = {
+		"LC:640x200", "LC:320x200", "LC:640x256", "LC:320x256"
+	};
+	static const WORD ticks[4][2] = {
+		{ 22, 53 }, { 44, 53 }, { 22, 41 }, { 44, 41 }
+	};
+	struct TagItem t[3];
+	struct DisplayInfo di;
+	struct NameInfo ni;
+	ULONG id = INVALID_ID;
+	UWORD i, k;
+
+	for (i = 0; i < 4; i++) {
+		id = NextDisplayInfo(id);
+		check(id == ids[i], "the mode list");
+		GetDisplayInfoData(NULL, (UBYTE *)&ni, sizeof(ni), DTAG_NAME, id);
+		for (k = 0; ni.Name[k] && ni.Name[k] == names[i][k]; k++)
+			;
+		check(ni.Name[k] == names[i][k], names[i]);
+		check(GetDisplayInfoData(NULL, (UBYTE *)&di, sizeof(di),
+		    DTAG_DISP, id) == sizeof(di) && !di.NotAvailable &&
+		    di.Resolution.x == ticks[i][0] &&
+		    di.Resolution.y == ticks[i][1], "the ticks");
+	}
+	check(NextDisplayInfo(id) == INVALID_ID, "4 modes");
+	t[0].ti_Tag = BIDTAG_DesiredWidth;
+	t[1].ti_Tag = BIDTAG_DesiredHeight;
+	t[2].ti_Tag = TAG_DONE;
+	t[0].ti_Data = 320;
+	t[1].ti_Data = 200;
+	check(BestModeIDA(t) == LCLORES_ID, "best for 320x200");
+	t[0].ti_Data = 600;
+	t[1].ti_Data = 220;
+	check(BestModeIDA(t) == LCHIRESPAL_ID, "best for 600x220");
+	t[0].ti_Data = 300;
+	t[1].ti_Data = 256;
+	check(BestModeIDA(t) == LCLORESPAL_ID, "best for 300x256");
+}
+
 int main(void)
 {
 	struct TagItem t[2];
@@ -239,9 +284,9 @@ int main(void)
 		return 1;
 	}
 
+	database();
 	id = BestModeIDA(NULL);
-	check(id == LCMONO_200_ID && NextDisplayInfo(INVALID_ID) == id &&
-	    NextDisplayInfo(id) == INVALID_ID, "the LC mode");
+	check(id == LCHIRES_ID, "the LC mode");
 	check(GetDisplayInfoData(NULL, (UBYTE *)&dims, sizeof(dims), DTAG_DIMS,
 	    id) == sizeof(dims) && dims.Nominal.MaxX == 639 &&
 	    dims.Nominal.MaxY == 199 && dims.MaxDepth == 1, "DTAG_DIMS");
@@ -255,8 +300,9 @@ int main(void)
 	cm = GetColorMap(32);
 	if (bm == NULL || cm == NULL)
 		goto done;
-	check(lcm_reg[25] == 0x87 && lcm_reg[28] == 0x10 && lcm_reg[36] == 5 &&
+	check(lcm_reg[25] == 0x87 && lcm_reg[28] == 0x1F && lcm_reg[36] == 0xF5 &&
 	    lcm_reg[26] == 0x00, "bitmap mode, blank");
+	check(lct_mode(bm, 60), "640x200 at 60 Hz");
 	step("allocate", 40000);
 
 	InitView(&v);
