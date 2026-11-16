@@ -4,7 +4,7 @@ Date: 2026-11-15. Status: phases 1-3 built and passing on the port model; phase 
 
 ## Decisions
 
-1. **Mode:** 640x200 mono bitmap, attributes off. Interlace later, if the core supports it. No attribute colour.
+1. **Mode:** 640x200 mono bitmap, attributes off; more modes, interlace included, in [Modes](#modes-2026-11-15). No attribute colour.
 2. **Drawing:** option C. A RAM shadow bitmap is the truth, drawn by the existing planar engine. Changed bytes are pushed through R31, and fills and aligned copies run as VDC blocks.
 3. **Driver:** `LIBS:lc.gfxdriver` (MIT), shaped like `hr.gfxdriver`. Graphics gains one table entry, `gd_Flush`.
 4. **Pointer:** the existing soft sprite. Save-under and reads come from the shadow, so the VDC is never read.
@@ -38,8 +38,8 @@ Date: 2026-11-15. Status: phases 1-3 built and passing on the port model; phase 
 | 640x200 mono | bitmap 16000 B at 0x0000 | **Default** |
 | 640x200, 8x8 attributes | +2000 B | No: pen clash, 25% less CPU bandwidth |
 | 640x200, 8x2 attributes | +8000 B | No: the attribute fetch uses almost all of the CPU slots on display lines |
-| 640x400 interlaced mono | 32000 B | Phase 5, if the core and scaler handle R8=3 |
-| 640x480 interlaced mono | 38400 B | Same as 640x400 |
+| 640x400 interlaced mono | 32000 B | Built, see [Interlace](#interlace-2026-11-16) |
+| 640x480 interlaced mono | 38400 B | Built |
 
 - The timing registers are lc.display's 80x25 set (8-line rows, 25 rows, 264 lines). Only R25 changes (bitmap on, attributes off), and R26 holds the colours. R12/R13 = 0, R27 = 0, and R28 selects 64 KB.
 - **Free VRAM:** 0x4000-0xFFFF is scratch for overlapping copies.
@@ -57,7 +57,7 @@ Date: 2026-11-15. Status: phases 1-3 built and passing on the port model; phase 
 | Item | Value |
 |---|---|
 | VDC RAM slot | one per character column, 0.5 µs (16 MHz dots, 8 dots) |
-| Free slots, display line | columns 86-127, about 21 µs of every 64 µs (bitmap fetch 0-79, refresh 80-85) |
+| Free slots, display line | columns 85-126, about 21 µs of every 63.5 µs (bitmap fetch 0-79, refresh 80-84) |
 | Free slots, 64 blank lines | all but refresh |
 | Slots per CPU byte write | 2 (write, then read-ahead) |
 | Slots per fill / copy byte | 1 / 2 |
@@ -203,7 +203,7 @@ The commodore-900-emulator and the Go model have no LC card. Until the board, te
 
 Source: C900_MiSTer rtl/vendor/vdc856x and rtl/lc_display.
 
-- **Slots:** the CPU gets one RAM slot per column, after fetch and refresh. R36 resets to 0 in the core, so set it to 5. With R1=80, the free columns are 86-126: 41 a display line and about 121 a blank line. An R31 write takes 2 slots, a fill byte 1, a copy byte 2. That is about 20 R31 bytes a display line, so a 16 KB push takes 1.5-2 frames.
+- **Slots:** the CPU gets one RAM slot per column, after fetch and refresh. R36 resets to 0 in the core; the driver sets 5 refresh cycles a line (R36 = 5, the count itself). With R1=80, the free columns are 85-126: 42 a display line and about 122 a blank line. An R31 write takes 2 slots, a fill byte 1, a copy byte 2. That is about 20 R31 bytes a display line, so a 16 KB push takes 1.5-2 frames.
 - **/WAIT:** it covers only the register access, never the RAM slot. 0 extra waits at 6 MHz, about 5-6 at 48 MHz.
 - **Ordering:** R18, then R19, then R31 back to back is safe. But writing R31 while an update is pending drops the earlier byte, and there is a 1-clock race. Poll status bit 7 before each R18/R19/R30/R31 write.
 - **Fill:** fills with the last byte written to R31. R31 writes one byte itself, so N bytes = R31 value, then R30 = N-1. R30 = 0 means 256 (the same for copy). Unverified on a real 8568.
@@ -292,26 +292,45 @@ Expect about 11 clocks an instruction, so roughly: clear 45 ms, scroll 55 ms, 40
 
 ## Modes (2026-11-15)
 
-`lc.gfxdriver` lists four modes; graphics' database is that list, so ScreenMode and `BestModeIDA()` see them all. Every mode is 1 bit deep, bitmap at VRAM 0x0000 (R12/R13 = 0, R27 = 0), attributes off, copy scratch at 0x8000.
+`lc.gfxdriver` lists eight modes; graphics' database is that list, so ScreenMode and `BestModeIDA()` see them all. Every mode is 1 bit deep, attributes off (R27 = 0), with R36 = 5 refresh cycles a line and R37 = 0xC0 (positive syncs). VRAM holds as many bitmaps of the mode as fit ("Slots"), each from a 256-byte boundary, with copy scratch at 0xFFB0-0xFFFF.
 
-| ModeID | Name | Ticks | Bitmap | R0 R1 R2 R22 R25 R34 R35 | R4 R5 R6 R7 | Line, frame |
-|---|---|---|---|---|---|---|
-| `LCHIRES_ID` 0x00110000 | LC:640x200 | 22 x 53 | 80 x 200 = 16000 B | 7E 50 66 78 87 7D 64 | 20 00 19 1D | 63.5 µs x 264, 59.65 Hz |
-| `LCLORES_ID` 0x00110100 | LC:320x200 | 44 x 53 | 40 x 200 = 8000 B | 3F 28 33 89 97 3E 32 | 20 00 19 1D | 64 µs x 264, 59.18 Hz |
-| `LCHIRESPAL_ID` 0x00110200 | LC:640x256 | 22 x 41 | 80 x 256 = 20480 B | as 640x200 | 26 00 20 23 | 63.5 µs x 312, 50.47 Hz |
-| `LCLORESPAL_ID` 0x00110300 | LC:320x256 | 44 x 41 | 40 x 256 = 10240 B | as 320x200 | 26 00 20 23 | 64 µs x 312, 50.08 Hz |
+| ModeID | Name | Ticks | Bitmap | Slots | R0 R1 R2 R22 R25 R34 R35 | R4 R5 R6 R7 | Line, frame |
+|---|---|---|---|---|---|---|---|
+| `LCHIRES_ID` 0x00110000 | LC:640x200 | 22 x 53 | 80 x 200 = 16000 B | 4 of 0x3F00 | 7E 50 66 78 87 7D 64 | 20 00 19 1D | 63.5 µs x 264, 59.65 Hz |
+| `LCLORES_ID` 0x00110100 | LC:320x200 | 44 x 53 | 40 x 200 = 8000 B | 7 of 0x2000 | 3F 28 33 89 97 3E 32 | 20 00 19 1D | 64 µs x 264, 59.18 Hz |
+| `LCHIRESPAL_ID` 0x00110200 | LC:640x256 | 22 x 41 | 80 x 256 = 20480 B | 3 of 0x5000 | as 640x200 | 26 00 20 23 | 63.5 µs x 312, 50.47 Hz |
+| `LCLORESPAL_ID` 0x00110300 | LC:320x256 | 44 x 41 | 40 x 256 = 10240 B | 6 of 0x2800 | as 320x200 | 26 00 20 23 | 64 µs x 312, 50.08 Hz |
+| `LCHIRESLACE_ID` 0x00110004 | LC:640x400 Interlace | 22 x 26 | 80 x 400 = 32000 B | 2 of 0x7D00 | as 640x200 | 1F 0D 19 1D | 63.5 µs x 525, 59.99 fields |
+| `LCLORESLACE_ID` 0x00110104 | LC:320x400 Interlace | 44 x 26 | 40 x 400 = 16000 B | 4 of 0x3F00 | as 320x200 | 1F 0D 19 1D | 64 µs x 525, 59.52 fields |
+| `LCHIRESLACE480_ID` 0x00110404 | LC:640x480 Interlace | 22 x 22 | 80 x 480 = 38400 B | 1 | as 640x200 | 1F 0D 1E 1E | 63.5 µs x 525, 59.99 fields |
+| `LCLORESLACE480_ID` 0x00110504 | LC:320x480 Interlace | 44 x 22 | 40 x 480 = 19200 B | 3 of 0x4B00 | as 320x200 | 1F 0D 1E 1E | 64 µs x 525, 59.52 fields |
 
 - **Lores:** R25 bit 4 halves the character clock, so a 40-byte row shows 320 pixels of 2 dots. The shadow is 320 wide and VRAM has the same layout: no doubling in software. R22 = 0x89 makes a column 8 doubled pixels, as the C128's 40-column mode does.
-- **Ticks:** a pixel on a 4:3 screen, 22 for 640 across (Amiga hires is 22 x 44). `GfxMode` gained `gm_ResX/gm_ResY` and `gm_Name`; HR keeps the computed ticks and names.
-- **Port layer:** rows of `lp_BPR` bytes (80 or 40), up to 256 rows. A seek writes R18 and R19 only when their byte changes.
+- **Ticks:** a pixel on a 4:3 screen with the active lines filling its height, 22 for 640 across (Amiga hires is 22 x 44). `GfxMode` gained `gm_ResX/gm_ResY` and `gm_Name`; HR keeps the computed ticks and names. The interlaced modes set LACE (bit 2) in the ModeID, and `DIPF_IS_LACE`.
+- **Port layer:** rows of `lp_BPR` bytes (80 or 40), up to 480 rows. A seek writes R18 and R19 only when their byte changes.
 - **Not built:**
-  - *Interlace (R8 = 3).* In the core's RTL, bitmap mode restarts both fields at R12/R13 and steps one row per scan line; the field after an odd one fetches one extra row first. A column-level transliteration of the vertical counters gives rows 0-199 in one field and 1-200 in the other, at 640x400 and 320x400 settings alike (R9 = 15 or R9 = 7 with R4/R6 doubled). So R8 = 3 shows the same 200-line image twice, a line apart, and no VRAM layout gives 400 distinct lines. A real 400-line bitmap would need R12/R13 switched every field, and the card gives no field interrupt. Text interlace (exec816's 80x25 in 8x16 cells) is unaffected.
   - *Overscan.* R1 up to about 88 (704 pixels) or 240 lines at 60 Hz would fit VRAM and timing, but they're not Amiga sizes and need tuning on the board.
+  - *640x512 interlaced (PAL).* 40960 B fits; not asked for.
   - *Attribute colour.* 8x8 cells at +2000 B (bitmap) are possible, but intuition draws 3-4 pens per title bar and gadget, so cells clash. Not useful for the Workbench.
-- **Verified on the port model:** `lcgfx` checks the list, names, ticks and `BestModeIDA()`; `lcwb` opens the Workbench at 640x200 and a screen in each other mode, opens, moves, sizes and closes a window and moves the pointer; after each step VRAM equals the shadow, and `lcm_frame()` reads from the registers the bitmap they show (start, width, stride, lines, dot width, frame rate). The model reads unused register bits as 1, as the chip does. 50 Hz and lores are untested on the board.
-- **Board:** `lcmodes.bin` shows each mode for 4 s (border, 8-pixel ticks, a square by the ticks, checkerboard and stripes, the name in topaz 8) and prints open, pattern and clear times and the frame rate measured from status bit 5. `make LCMODE=320x256 wbboot-lc.bin` boots the Workbench in that mode through a saved ENV:Sys/screenmode.prefs; Shift at boot ignores it.
+- **Verified on the port model:** `lcgfx` checks the list, names, ticks, `DIPF_IS_LACE` and `BestModeIDA()`, and draws its cases at 640x200, 640x400 and 640x480; `lcwb` opens the Workbench at 640x200 and a screen in each other mode, opens, moves, sizes and closes a window (all but the last three interlaced modes) and moves the pointer; after each step the bitmap the model shows equals the shadow, and `lcm_frame()` reads from the registers the bitmap they show (start, width, stride, lines, fields, dot width, field rate). The model reads unused register bits as 1, as the chip does. 50 Hz and lores are untested on the board.
+- **Board:** `lcmodes.bin` shows each mode for 4 s (border, 8-pixel ticks, a square by the ticks, checkerboard and stripes, the name in topaz 8), then a second bitmap of the mode, black on white with a box, in turns with the first, 1 s each. It prints open, pattern, clear and turn times and the field rate measured from status bit 5. `make LCMODE=640x400 wbboot-lc.bin` boots the Workbench in that mode through a saved ENV:Sys/screenmode.prefs; Shift at boot ignores it.
 - **lcbench:** every setup reads the status before `Enable()`, so no INTR is left pending. It prints R1, R6, R24, R25, R28 and R36 read back, and checks that the R30 copies and `lcv_copy` wrote the source bytes. The board's copy timing matched a fill. The driver sets R24 bit 7 before every copy, and the model copies only with bit 7 set and is checked byte by byte, so the board run of these checks decides it.
 
-## Interlace (2026-11-15)
+## Interlace (2026-11-16)
 
-Core C900_1611d1e drives the scaler's field flag with R8=3, so 640x400 text (8x16 cells) weaves properly. Bitmap interlace doesn't alternate: the vendored VDC reloads R12/R13 every field in bitmap mode, so both fields fetch lines 0-199. What a real 8568 does is undocumented. LC Workbench stays at 200/256 lines; a 400-line Workbench would need R12/R13 switched every field with no field interrupt.
+Core C900_e005332 supports interlaced bitmaps: with R8 = 3 and R25 bit 7, R12/R13 load once a frame, at the even field, and the odd field fetches on from where the even field ended. The core flags the odd field to the scaler, which weaves.
+
+- **Registers:** R8 = 3, R9 = 0x0F (16-line rows, 8 a field), R23 = 0x10, R4 = 0x1F and R5 = 0x0D (32 rows and 13 half lines: 262.5 lines a field), R6 = 25 or 30 rows. VSYNC at row 29 (R7 = 0x1D) for 400 lines, as the core's bench; right below the picture (R7 = 0x1E) for 480, leaving 22.5 lines a field of blanking. R9 = 15 splits the fields exactly; O-35 (Bowen's odd R9) does not apply.
+- **Layout:** the shadow stays top to bottom. Row y is at slot + (y odd ? rows / 2 * bpr : 0) + (y / 2) * bpr. The port layer keeps the slot's base and the VRAM step from an even row and from an odd row (`lp_Base`, `lp_Step`); a progressive mode has both steps bpr. Dirty marks, flushes, fills and copies all go by shadow row, the layer turning rows into VRAM addresses.
+- **Fills:** a fill of whole rows is a block a field: rows y, y + 2, ... are contiguous in VRAM.
+- **Copies:** whole rows moved by an even number of lines stay in their field, so they copy as a block a field (bottom up in blocks when moving down, as before). An odd number of lines crosses fields; the rows chain even, odd, even..., so no two blocks can do it without scratch, and they copy a row at a time in shadow order, each a seek, R32/R33 and R30 (scroll up 1 at 640x400: 82 ms against 65 ms for 2 lines). Partial rows go a row at a time in either case, as at 200 lines.
+- **Measured on the model (lcgfx, 640x400, at the plan's rates):** clear 33 ms; scroll by 2 lines, 400 rows, 65 ms; by 1 or 3 lines 83 ms; 40-byte window by 1 line 48 ms; text and a line over all rows 138 ms.
+
+## Screen switches (2026-11-16)
+
+With two or more screens in one LC mode, each bitmap keeps a VRAM slot, so bringing a screen to the front writes R12 (slots start on 256-byte boundaries, so R13 stays 0 and the start changes at once) and R26 for its colours.
+
+- **Flush all:** a screen behind keeps its own RAM shadow and its slot, and is pushed as it is drawn, the same as the front. A switch then never pushes, and drawing behind costs the same as in front. Flushing only the front would make every switch push the bytes drawn behind, up to the whole bitmap.
+- **How:** `gd_Adopt` (graphics' screen trade) gives the incoming bitmap its slot, or a free one, pushed whole while the old one is still shown. The outgoing bitmap keeps `lc.gfxdriver`'s table, so its drawing reaches the driver, which finds its slot and makes it the port's target (pushing the last target's dirty bytes first). `FreeBitMap()` of such a bitmap calls `gd_FreeDisplay`, which frees its slot; freeing the display bitmap sends the others back to RAM.
+- **VRAM full:** a bitmap with no slot takes the one longest behind, pushed whole before it is shown; with one slot (640x480) it takes the front's, as before.
+- **Cost (lcwb, port model):** a switch at 640x200 is 1.6 ms, of which 64 pushed bytes are the pointer moving between the bitmaps and 3 register writes (R12, R26 twice, about 30 µs) the switch; at 640x400, 1.7 ms. Before: 240 ms (16 KB pushed). A new screen's first switch, or one into an evicted slot, pushes its bitmap (0.24 s at 640x200, 0.49 s at 640x400, 0.58 s at 640x480).

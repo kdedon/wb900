@@ -19,7 +19,7 @@ NOADDR	= 0xFFFF
 US_PUSH	= 16
 US_REG	= 10
 GAP	= 1
-SCRATCH	= 0x8000
+SCRATCH	= 0xFFB0
 
 / struct LCPort
 SHADOW	= 0
@@ -32,12 +32,15 @@ Y0	= 14
 Y1	= 16
 BPR	= 18
 SP	= 20
-LO	= 24
-HI	= 280
-BITS	= 536
-RUNS	= 3096
-CX	= 3178
-ROWS	= 256
+BASE	= 24
+STEP0	= 26
+STEP1	= 28
+LO	= 30
+HI	= 510
+BITS	= 990
+RUNS	= 5790
+CX	= 5872
+ROWS	= 480
 
 	.shri
 
@@ -154,14 +157,61 @@ mode:
 	ldb	rl1, $24
 	jr	wreg
 
-/ r1 > 0 bytes from the shadow at r6, as many a piece as its budget
-/ allows.  Uses r0, r1, r4-r7.
+/ The VRAM address of row r1's byte r0 to r6.  Uses r4, r5, r7.
+vad:
+	ld	r6, r0
+	ld	r5, r1
+	srl	r5, $1
+	ld	r7, rr12(STEP0)
+	ld	r4, rr12(STEP1)
+	add	r7, r4
+	mult	rr4, r7
+	add	r6, r5
+	ld	r7, rr12(BASE)
+	add	r6, r7
+	bit	r1, $0
+	ret	z
+	ld	r7, rr12(STEP0)
+	add	r6, r7
+	ret
+
+/ Row r1's byte r0: its VRAM address to r6, its shadow address to rr4.
+/ Uses r0, r7.
+rowad:
+	calr	vad
+	ld	r7, rr12(BPR)
+	ld	r5, r1
+	mult	rr4, r7
+	add	r0, r5
+	ldl	rr4, rr12(SHADOW)
+	add	r5, r0
+	ret
+
+/ Row r1 at VRAM r6 to the next one down (r0 > 0) or up.  Uses r7.
+nrow:
+	test	r0
+	jr	mi, 2f
+	ld	r7, rr12(STEP0)
+	bit	r1, $0
+	jr	z, 1f
+	ld	r7, rr12(STEP1)
+1:	add	r6, r7
+	inc	r1, $1
+	ret
+2:	dec	r1, $1
+	ld	r7, rr12(STEP0)
+	bit	r1, $0
+	jr	z, 3f
+	ld	r7, rr12(STEP1)
+3:	sub	r6, r7
+	ret
+
+/ r1 > 0 bytes from the shadow at rr4 to VRAM r6, as many a piece as
+/ its budget allows.  Uses r0, r1, r4-r7.
 wpush:
 	push	(rr14), r1
 	calr	seek
 	pop	r1, (rr14)
-	ldl	rr4, rr12(SHADOW)
-	add	r5, r6
 	add	r10, r1
 	ld	r6, r1
 	ld	r1, $31
@@ -285,117 +335,168 @@ lcv_ready_:
 	calr	rdy
 	jp	done
 
-/ int lcv_push(lp, a, n)
+/ int lcv_push(lp, y, x, n)
 lcv_push_:
 	sub	r15, $16
 	ldm	(rr14), r6, $8
 	ldl	rr12, rr14(20)
 	calr	load
 	jp	z, fail
-	ld	r6, rr14(24)
-	ld	r1, rr14(26)
+	ld	r1, rr14(24)
+	ld	r0, rr14(26)
+	calr	rowad
+	ld	r1, rr14(28)
 	test	r1
 	jp	z, done
 	calr	wpush
 	jp	done
 
-/ int lcv_fill(lp, a, v, n, rows, edges)
+/ int lcv_fill(lp, y, x, v, n, rows, edges).  Locals: rr14(0) the row's
+/ VRAM address, (2) its shadow address; the arguments from rr14(30).
 lcv_fill_:
 	sub	r15, $16
 	ldm	(rr14), r6, $8
 	ldl	rr12, rr14(20)
 	calr	load
 	jp	z, fail
-1:	ld	r0, rr14(32)
+	sub	r15, $6
+	ld	r1, rr14(30)
+	ld	r0, rr14(32)
+	calr	rowad
+	ld	rr14(0), r6
+	ldl	rr14(2), rr4
+1:	ld	r0, rr14(40)
 	bit	r0, $0
 	jr	z, 2f
-	ld	r6, rr14(24)
+	ld	r6, rr14(0)
 	dec	r6, $1
+	ldl	rr4, rr14(2)
+	dec	r5, $1
 	ld	r1, $1
 	calr	wpush
-2:	ld	r6, rr14(24)
-	ld	r5, rr14(26)
-	ld	r4, rr14(28)
+2:	ld	r6, rr14(0)
+	ld	r5, rr14(34)
+	ld	r4, rr14(36)
 	calr	fill
-	ld	r0, rr14(32)
+	ld	r0, rr14(40)
 	bit	r0, $1
 	jr	z, 3f
-	ld	r6, rr14(24)
-	ld	r0, rr14(28)
+	ld	r0, rr14(36)
+	ld	r6, rr14(0)
 	add	r6, r0
+	ldl	rr4, rr14(2)
+	add	r5, r0
 	ld	r1, $1
 	calr	wpush
-3:	ld	r0, rr14(24)
-	ld	r1, rr12(BPR)
-	add	r0, r1
-	ld	rr14(24), r0
-	ld	r0, rr14(30)
+3:	ld	r0, $1
+	ld	r1, rr14(30)
+	ld	r6, rr14(0)
+	calr	nrow
+	ld	rr14(30), r1
+	ld	rr14(0), r6
+	ld	r0, rr12(BPR)
+	ldl	rr4, rr14(2)
+	add	r5, r0
+	ldl	rr14(2), rr4
+	ld	r0, rr14(38)
 	dec	r0, $1
-	ld	rr14(30), r0
+	ld	rr14(38), r0
 	jr	nz, 1b
+	add	r15, $6
 	jp	done
 
-/ int lcv_copy(lp, d, s, n, rows, step, edges)
+/ int lcv_copy(lp, y, x, sy, sx, n, rows, step, edges).  Locals: rr14(0)
+/ the row's VRAM address, (2) its source's, (4) the row's shadow
+/ address; the arguments from rr14(32).
 lcv_copy_:
 	sub	r15, $16
 	ldm	(rr14), r6, $8
 	ldl	rr12, rr14(20)
 	calr	load
 	jp	z, fail
-1:	ld	r0, rr14(34)
+	sub	r15, $8
+	ld	r1, rr14(36)
+	ld	r0, rr14(38)
+	calr	vad
+	ld	rr14(2), r6
+	ld	r1, rr14(32)
+	ld	r0, rr14(34)
+	calr	rowad
+	ld	rr14(0), r6
+	ldl	rr14(4), rr4
+1:	ld	r0, rr14(46)
 	bit	r0, $2
 	jr	z, 2f
 	ld	r6, $SCRATCH
-	ld	r0, rr14(26)
-	ld	r4, rr14(28)
+	ld	r0, rr14(2)
+	ld	r4, rr14(40)
 	calr	copy
-2:	ld	r0, rr14(34)
+2:	ld	r0, rr14(46)
 	bit	r0, $0
 	jr	z, 3f
-	ld	r6, rr14(24)
+	ld	r6, rr14(0)
 	dec	r6, $1
+	ldl	rr4, rr14(4)
+	dec	r5, $1
 	ld	r1, $1
 	calr	wpush
-3:	ld	r6, rr14(24)
-	ld	r0, rr14(26)
-	ld	r1, rr14(34)
+3:	ld	r6, rr14(0)
+	ld	r0, rr14(2)
+	ld	r1, rr14(46)
 	bit	r1, $2
 	jr	z, 4f
 	ld	r0, $SCRATCH
-4:	ld	r4, rr14(28)
+4:	ld	r4, rr14(40)
 	calr	copy
-	ld	r0, rr14(34)
+	ld	r0, rr14(46)
 	bit	r0, $1
 	jr	z, 5f
-	ld	r6, rr14(24)
-	ld	r0, rr14(28)
+	ld	r0, rr14(40)
+	ld	r6, rr14(0)
 	add	r6, r0
+	ldl	rr4, rr14(4)
+	add	r5, r0
 	ld	r1, $1
 	calr	wpush
-5:	ld	r1, rr14(32)
-	ld	r0, rr14(24)
-	add	r0, r1
-	ld	rr14(24), r0
-	ld	r0, rr14(26)
-	add	r0, r1
-	ld	rr14(26), r0
-	ld	r0, rr14(30)
+5:	ld	r0, rr14(44)
+	ld	r1, rr14(32)
+	ld	r6, rr14(0)
+	calr	nrow
+	ld	rr14(32), r1
+	ld	rr14(0), r6
+	ld	r0, rr14(44)
+	ld	r1, rr14(36)
+	ld	r6, rr14(2)
+	calr	nrow
+	ld	rr14(36), r1
+	ld	rr14(2), r6
+	ld	r0, rr12(BPR)
+	ld	r1, rr14(44)
+	test	r1
+	jr	pl, 6f
+	neg	r0
+6:	ldl	rr4, rr14(4)
+	add	r5, r0
+	ldl	rr14(4), rr4
+	ld	r0, rr14(42)
 	dec	r0, $1
-	ld	rr14(30), r0
+	ld	rr14(42), r0
 	jr	nz, 1b
+	add	r15, $8
 	jp	done
 
 / int lcv_flush(lp).  A row of one span pushes it; the bit bytes of a
 / row with more become a list of runs at RUNS (first and last byte, 0xFF
 / at the end), which are then pushed.  Locals: rr14(0) the next row,
-/ (2) the row's address, (4) the next run.
+/ (2) the row's VRAM address, (4) the next run, (6) the row's shadow
+/ address.
 lcv_flush_:
 	sub	r15, $16
 	ldm	(rr14), r6, $8
 	ldl	rr12, rr14(20)
 	calr	load
 	jp	z, fail
-	sub	r15, $6
+	sub	r15, $10
 	ld	r0, rr12(Y0)
 	ld	rr14(0), r0
 frow:
@@ -429,12 +530,18 @@ frow:
 	ldb	rr12(r4), rl0
 	clrb	rl0
 	ldb	rr12(r5), rl0
-	ld	r5, rr12(BPR)
-	mult	rr0, r5
-	ld	r5, r1
+	push	(rr14), r4
+	push	(rr14), r6
+	push	(rr14), r7
+	clr	r0
+	calr	rowad
+	ld	rr14(8), r6
+	ldl	rr14(12), rr4
+	pop	r7, (rr14)
+	pop	r6, (rr14)
+	pop	r4, (rr14)
 	ld	r1, rr14(0)
 	dec	r1, $1
-	ld	rr14(2), r5
 	ld	r2, r4
 	add	r2, $CX-LO
 	ldb	rl0, rr12(r2)
@@ -444,7 +551,10 @@ frow:
 	ld	r1, r7
 	sub	r1, r6
 	inc	r1, $1
-	add	r6, r5
+	ldl	rr4, rr14(6)
+	add	r5, r6
+	ld	r0, rr14(2)
+	add	r6, r0
 	calr	wpush
 	jr	frow
 / scan: r6 the byte, r7 the last, r4 the bit byte's offset, r5 the run
@@ -516,6 +626,8 @@ femit:
 	clrb	rh1
 	sub	r1, r6
 	inc	r1, $1
+	ldl	rr4, rr14(6)
+	add	r5, r6
 	ld	r0, rr14(2)
 	add	r6, r0
 	calr	wpush
@@ -525,7 +637,7 @@ fend:
 	ld	rr12(Y0), r0
 	ld	r0, $-1
 	ld	rr12(Y1), r0
-	add	r15, $6
+	add	r15, $10
 	jp	done
 
 / Byte r6 is dirty: it extends the run in rl1/rh1, or ends it and

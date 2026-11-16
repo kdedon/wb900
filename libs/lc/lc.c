@@ -2,14 +2,22 @@
 /*
  * lc.gfxdriver: the LC card's 8568 as graphics.library's display, 1 bit
  * deep in bitmap mode: 640 or 320 pixels wide (double width), 200 lines
- * at 60 Hz or 256 at 50 Hz.  The CPU reaches the chip's RAM only through its
- * registers, so the display bitmap is a shadow in RAM, drawn by graphics'
- * planar operations.  Each operation marks the bytes it changed, and
- * gd_Flush pushes them through R31.  Fills of whole bytes and copies
- * that keep the bit alignment run as the chip's block fill and copy.
+ * at 60 Hz, 256 at 50 Hz, or 400 or 480 interlaced.  The CPU reaches the
+ * chip's RAM only through its registers, so the display bitmap is a
+ * shadow in RAM, drawn by graphics' planar operations.  Each operation
+ * marks the bytes it changed, and gd_Flush pushes them through R31.
+ * Fills of whole bytes and copies that keep the bit alignment run as the
+ * chip's block fill and copy.
  *
- *   shadow (<= 20 KB) --dirty spans--> push R18/R19, R31 ---> VRAM 0x0000
- *        \__ fill / aligned copy ---> R30 blocks -----------/  (scratch 0x8000)
+ *   shadow (<= 38 KB) --dirty spans--> push R18/R19, R31 ---> VRAM slot
+ *        \__ fill / aligned copy ---> R30 blocks -----------/
+ *
+ * VRAM holds as many bitmaps of the mode as fit, each in a slot, with a
+ * row of copy scratch at the end.  Screens behind keep their slots and
+ * are pushed as they are drawn, so bringing one to the front is a write
+ * of R12/R13.  An interlaced slot holds the even rows, then the odd ones:
+ * the chip loads R12/R13 once a frame and fetches the odd field on from
+ * where the even one ended.
  *
  * Every port sequence runs with interrupts off, in pieces of about 1 ms
  * at most, each ended by a status read that finds the chip ready: the
@@ -42,37 +50,55 @@ struct LCBase {
 APTR FrameBufBase;
 
 static char lcname[] = LCNAME;
-static char lcid[] = "lc.gfxdriver 45.3 (15.11.2026)";
+static char lcid[] = "lc.gfxdriver 45.4 (16.11.2026)";
 static char lcowner[] = "graphics.library";
 
 /*
- * Mode i is double width when i & 1, and 50 Hz when i & 2.  The ticks
- * are a pixel's size on a 4:3 screen, 22 for 640 pixels across.
+ * Mode i is double width when i & 1; i >> 1 picks the lines: 200, 256,
+ * 400 or 480.  The ticks are a pixel's size on a 4:3 screen, 22 for 640
+ * pixels across.
  */
 static const struct GfxMode lc_modes[] = {
 	{ LCHIRES_ID, 640, 200, 1, GDF_PLANAR, 22, 53, "LC:640x200" },
 	{ LCLORES_ID, 320, 200, 1, GDF_PLANAR, 44, 53, "LC:320x200" },
 	{ LCHIRESPAL_ID, 640, 256, 1, GDF_PLANAR, 22, 41, "LC:640x256" },
-	{ LCLORESPAL_ID, 320, 256, 1, GDF_PLANAR, 44, 41, "LC:320x256" }
+	{ LCLORESPAL_ID, 320, 256, 1, GDF_PLANAR, 44, 41, "LC:320x256" },
+	{ LCHIRESLACE_ID, 640, 400, 1, GDF_PLANAR, 22, 26,
+	    "LC:640x400 Interlace" },
+	{ LCLORESLACE_ID, 320, 400, 1, GDF_PLANAR, 44, 26,
+	    "LC:320x400 Interlace" },
+	{ LCHIRESLACE480_ID, 640, 480, 1, GDF_PLANAR, 22, 22,
+	    "LC:640x480 Interlace" },
+	{ LCLORESLACE480_ID, 320, 480, 1, GDF_PLANAR, 44, 22,
+	    "LC:320x480 Interlace" }
 };
-#define LC_NMODES	4
+#define LC_NMODES	8
 static struct GfxDriver *lc_fmt;	/* graphics' planar operations */
 static BOOL lc_alloc, lc_shown;
+
+/* The bitmaps in VRAM, slot i at i * lc_size; lc_cur is the port's */
+#define LC_SLOTS	8
+static struct BitMap *lc_slot[LC_SLOTS];
+static ULONG lc_used[LC_SLOTS];		/* when last in front */
+static UWORD lc_nslots, lc_size, lc_cur, lc_front;
+static ULONG lc_age;
+static UWORD lc_u;		/* rows from one in VRAM to the next: 2 interlaced */
 static struct SignalSemaphore lc_lock;	/* the chip's port sequences */
 static UBYTE lc_fg = 0xF, lc_bg = 0x2;	/* RGBI of pixels 1 and 0 */
 
 /*
- * The registers for bitmap mode, R0-R36: 80x25 cells of 8 lines, as the
+ * The registers for bitmap mode, R0-R37: 80x25 cells of 8 lines, as the
  * text console's timing; bitmap at 0x0000, attributes off (R25), 64 KB
- * RAM (R28), cursor off (R10), blank (R26), refresh 5 a line (R36).
- * lc_hregs and lc_vregs replace some for the other modes.
+ * RAM (R28), cursor off (R10), blank (R26), 5 refresh cycles a line
+ * (R36), positive syncs (R37).  lc_hregs and lc_vregs replace some for
+ * the other modes.
  */
-static const UBYTE lc_regs[37] = {
+static const UBYTE lc_regs[38] = {
 	0x7E, 0x50, 0x66, 0x49, 0x20, 0x00, 0x19, 0x1D,
 	0x00, 0x07, 0x20, 0x07, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x78, 0x08,
 	0x00, 0x87, 0x00, 0x00, 0x10, 0x07, 0x00, 0x00,
-	0x00, 0x00, 0x7D, 0x64, 0x05
+	0x00, 0x00, 0x7D, 0x64, 0x05, 0xC0
 };
 
 /*
@@ -88,11 +114,15 @@ static const UBYTE lc_hnum[7] = { 0, 1, 2, 22, 25, 34, 35 };
 
 /*
  * R4-R7: 25 rows shown of 33 (264 lines, 60 Hz), or 32 of 39 (312
- * lines, 50 Hz); vsync 4 rows before the top
+ * lines, 50 Hz); vsync 4 rows before the top.  Interlaced, rows of 16
+ * lines count 8 a field: 25 or 30 rows of 32 and 13 half lines (525
+ * lines, 60 fields a second); vsync at row 29, or right below 480.
  */
-static const UBYTE lc_vregs[2][4] = {
+static const UBYTE lc_vregs[4][4] = {
 	{ 0x20, 0x00, 0x19, 0x1D },
-	{ 0x26, 0x00, 0x20, 0x23 }
+	{ 0x26, 0x00, 0x20, 0x23 },
+	{ 0x1F, 0x0D, 0x19, 0x1D },
+	{ 0x1F, 0x0D, 0x1E, 0x1E }
 };
 
 /* The colours of RGBI 0-15 (R 8, G 4, B 2, I 1) */
@@ -124,18 +154,28 @@ static void lc_leave(void)
 	ReleaseSemaphore(&lc_lock);
 }
 
-/* Mode i, and its bitmap of size bytes cleared */
-static void lc_init(UWORD m, ULONG size)
+/* Mode m, of rows rows, with slot 0 cleared */
+static void lc_init(UWORD m, UWORD rows)
 {
-	UBYTE r[37];
-	UWORD i;
+	UBYTE r[38];
+	UWORD i, bpr = lc_lp.lp_BPR;
 
-	for (i = 0; i < 37; i++)
+	for (i = 0; i < 38; i++)
 		r[i] = lc_regs[i];
 	for (i = 0; i < 7; i++)
 		r[lc_hnum[i]] = lc_hregs[m & 1][i];
 	for (i = 0; i < 4; i++)
 		r[4 + i] = lc_vregs[m >> 1][i];
+	lc_lp.lp_Step[0] = lc_lp.lp_Step[1] = bpr;
+	if (m >= 4) {
+		/* interlaced 16-line rows */
+		r[8] = 0x03;
+		r[9] = 0x0F;
+		r[23] = 0x10;
+		lc_lp.lp_Step[0] = rows / 2 * bpr;
+		lc_lp.lp_Step[1] = bpr - lc_lp.lp_Step[0];
+	}
+	lc_u = m >= 4 ? 2 : 1;
 	lc_lp.lp_OK = TRUE;
 	lc_lp.lp_UA = lc_lp.lp_BA = LCP_NOADDR;
 	lc_lp.lp_Y0 = LCP_ROWS;
@@ -149,11 +189,11 @@ static void lc_init(UWORD m, ULONG size)
 		lc_lp.lp_Bits[i] = 0;
 	lc_enter();
 	lcv_wr(LP, 28, r[28]);
-	for (i = 0; i < 37; i++)
+	for (i = 0; i < 38; i++)
 		if (i != 16 && i != 17 && i != 18 && i != 19 && i != 28 &&
 		    i != 30 && i != 31)
 			lcv_wr(LP, i, r[i]);
-	lcv_fill(LP, 0, 0, size, 1, 0);
+	lcv_fill(LP, 0, 0, 0, rows * bpr, 1, 0);
 	lc_leave();
 }
 
@@ -170,6 +210,40 @@ static void lc_Flush(struct GfxDriver *gd, struct BitMap *bm)
 	lc_enter();
 	lcv_flush(LP);
 	lc_leave();
+}
+
+/* Slot i becomes the port's, another's dirty bytes pushed first */
+static void lc_port(UWORD i)
+{
+	if (i != lc_cur)
+		lc_Flush(NULL, NULL);
+	lc_cur = i;
+	lc_lp.lp_Shadow = lc_slot[i]->Planes[0];
+	lc_lp.lp_Base = i * lc_size;
+}
+
+/* bm's slot becomes the port's; FALSE when bm has none */
+static BOOL lc_target(struct BitMap *bm)
+{
+	UWORD i;
+
+	if (lc_slot[lc_cur] == bm)
+		return TRUE;
+	for (i = 0; i < lc_nslots && lc_slot[i] != bm; i++)
+		;
+	if (i == lc_nslots)
+		return FALSE;
+	lc_port(i);
+	return TRUE;
+}
+
+/* Whole rows y0-y1 of v: a block for each field's rows */
+static void lc_rows(WORD y0, WORD y1, WORD v)
+{
+	WORD y;
+
+	for (y = y0; y <= y1 && y < y0 + lc_u; y++)
+		lcv_fill(LP, y, 0, v, ((y1 - y) / lc_u + 1) * lc_lp.lp_BPR, 1, 0);
 }
 
 /* Drawing */
@@ -210,7 +284,7 @@ static void lc_Fill(struct BitMap *bm, const struct Rectangle *r,
 	WORD y, y1, v;
 
 	lc_fmt->gd_Fill(bm, r, p);
-	if (!(p->gp_Mask & 1))
+	if (!(p->gp_Mask & 1) || !lc_target(bm))
 		return;
 	if ((WORD)fb1 < (WORD)fb0 + 3 || (p->gp_DrMd & COMPLEMENT)) {
 		lc_mark(r->MinY, r->MaxY, r->MinX, r->MaxX);
@@ -233,9 +307,9 @@ static void lc_Fill(struct BitMap *bm, const struct Rectangle *r,
 			lcv_mark(LP, y, y1 - 1, fb0 - (edges & 1),
 			    fb1 + (edges >> 1), FALSE);
 			if (n == bpr)
-				lcv_fill(LP, y * bpr, v, n * (y1 - y), 1, 0);
+				lc_rows(y, y1 - 1, v);
 			else
-				lcv_fill(LP, y * bpr + fb0, v, n, y1 - y, edges);
+				lcv_fill(LP, y, fb0, v, n, y1 - y, edges);
 		}
 	}
 	lc_leave();
@@ -245,42 +319,47 @@ static void lc_Template(struct BitMap *bm, const struct Rectangle *r,
     const UBYTE *src, UWORD srcx, UWORD srcmod, const struct GfxPens *p)
 {
 	lc_fmt->gd_Template(bm, r, src, srcx, srcmod, p);
-	if (p->gp_Mask & 1)
+	if ((p->gp_Mask & 1) && lc_target(bm))
 		lc_mark(r->MinY, r->MaxY, r->MinX, r->MaxX);
 }
 
 /*
  * The aligned copy of r's whole bytes fb0-fb1 from (sx, sy), on the
  * display as already in the shadow, in the order overlaps need; partial
- * edge bytes go out beside each row's block
+ * edge bytes go out beside each row's block.  Whole rows moved within
+ * their field copy as a block a field; others go a row at a time.
  */
 static void lc_vcopy(const struct Rectangle *r, WORD sx, WORD sy,
     UWORD fb0, UWORD fb1)
 {
-	WORD bpr = lc_lp.lp_BPR;
-	UWORD n = fb1 - fb0 + 1, h = r->MaxY - r->MinY + 1, k, edges;
-	WORD dy = sy - r->MinY, y;
-	WORD off = dy * bpr + (sx >> 3) - (r->MinX >> 3);
+	WORD bpr = lc_lp.lp_BPR, u = lc_u;
+	UWORD n = fb1 - fb0 + 1, h, k, edges;
+	WORD dy = sy - r->MinY, dx = (sx >> 3) - (r->MinX >> 3), y, f;
+	WORD q = -dy / u;
 
 	edges = ((r->MinX & 7) != 0) | ((r->MaxX & 7) != 7) << 1;
 	lc_enter();
-	if (n == bpr && dy >= 0) {
-		lcv_copy(LP, r->MinY * bpr, r->MinY * bpr + off, h * bpr, 1, 0,
-		    0);
-	} else if (n == bpr) {
-		/* bottom up, in blocks of rows that do not overlap their source */
-		for (y = r->MaxY + 1; h > 0; h -= k) {
-			k = h < -dy ? h : -dy;
-			y -= k;
-			lcv_copy(LP, y * bpr, y * bpr + off, k * bpr, 1, 0, 0);
+	if (n == bpr && dy % u == 0) {
+		for (f = r->MinY; f <= r->MaxY && f < r->MinY + u; f++) {
+			h = (r->MaxY - f) / u + 1;
+			if (dy >= 0) {
+				lcv_copy(LP, f, 0, f + dy, 0, h * bpr, 1, 1, 0);
+				continue;
+			}
+			/* bottom up, in blocks that do not overlap their source */
+			for (y = f + h * u; h > 0; h -= k) {
+				k = h < q ? h : q;
+				y -= k * u;
+				lcv_copy(LP, y, 0, y + dy, 0, k * bpr, 1, 1, 0);
+			}
 		}
 	} else {
 		/* a move right within the row goes through scratch */
-		if (off < 0 && -off < n)
+		if (dy == 0 && dx < 0 && -dx < n)
 			edges |= 4;
 		y = dy < 0 ? r->MaxY : r->MinY;
-		lcv_copy(LP, y * bpr + fb0, y * bpr + fb0 + off, n, h,
-		    dy < 0 ? -bpr : bpr, edges);
+		lcv_copy(LP, y, fb0, y + dy, fb0 + dx, n, r->MaxY - r->MinY + 1,
+		    dy < 0 ? -1 : 1, edges);
 	}
 	lc_leave();
 }
@@ -290,7 +369,7 @@ static void lc_Copy(struct BitMap *src, WORD sx, WORD sy, struct BitMap *dst,
 {
 	UWORD fb0 = (r->MinX + 7) >> 3, fb1 = ((r->MaxX + 1) >> 3) - 1;
 
-	if (!(GFXBM(dst)->gb_Flags & GBF_DISPLAY) || !(mask & 1)) {
+	if (!(mask & 1) || !lc_target(dst)) {
 		lc_fmt->gd_Copy(src, sx, sy, dst, r, minterm, mask);
 		return;
 	}
@@ -309,7 +388,7 @@ static void lc_WritePixel(struct BitMap *bm, WORD x, WORD y,
     const struct GfxPens *p)
 {
 	lc_fmt->gd_WritePixel(bm, x, y, p);
-	if (p->gp_Mask & 1)
+	if ((p->gp_Mask & 1) && lc_target(bm))
 		lc_mark(y, y, x, x);
 }
 
@@ -323,7 +402,7 @@ static void lc_Line(struct BitMap *bm, const struct Rectangle *clip,
 	WORD t, dx, dy, sx, q, rem, e, k, xp, xc, xn, a, b, xmin, xmax;
 
 	lc_fmt->gd_Line(bm, clip, x0, y0, x1, y1, ptrn, p);
-	if (!(p->gp_Mask & 1))
+	if (!(p->gp_Mask & 1) || !lc_target(bm))
 		return;
 	if (y1 < y0) {
 		t = x0; x0 = x1; x1 = t;
@@ -376,7 +455,7 @@ static void lc_WriteRow(struct BitMap *bm, WORD x, WORD y, UWORD n,
     const UBYTE *pix, UBYTE mask)
 {
 	lc_fmt->gd_WriteRow(bm, x, y, n, pix, mask);
-	if ((mask & 1) && n > 0)
+	if ((mask & 1) && n > 0 && lc_target(bm))
 		lc_mark(y, y, x, x + n - 1);
 }
 
@@ -421,7 +500,7 @@ static BOOL lc_AllocDisplay(struct GfxDriver *gd, const struct GfxMode *m,
     struct BitMap *bm)
 {
 	struct GfxBitMap *gbm = (struct GfxBitMap *)bm;
-	UWORD bpr = m->gm_Width >> 3;
+	UWORD bpr = m->gm_Width >> 3, i;
 	ULONG size = (ULONG)bpr * m->gm_Height;
 
 	if (lc_alloc || m < lc_modes || m >= lc_modes + LC_NMODES)
@@ -434,10 +513,19 @@ static BOOL lc_AllocDisplay(struct GfxDriver *gd, const struct GfxMode *m,
 		return FALSE;
 	}
 	lc_alloc = TRUE;
+	/* slots start on a 256-byte boundary, so R12 alone moves the start */
+	lc_size = (size + 255) & ~255L;
+	lc_nslots = MIN(LCP_SCRATCH / lc_size, LC_SLOTS);
+	for (i = 0; i < LC_SLOTS; i++)
+		lc_slot[i] = NULL;
+	lc_slot[0] = bm;
+	lc_front = lc_cur = 0;
+	lc_used[0] = ++lc_age;
 	lc_lp.lp_Shadow = bm->Planes[0];
+	lc_lp.lp_Base = 0;
 	lc_lp.lp_BPR = bpr;
 	gbm->gb_PlaneSize = size;
-	lc_init(m - lc_modes, size);
+	lc_init(m - lc_modes, m->gm_Height);
 	bm->BytesPerRow = bpr;
 	bm->Rows = m->gm_Height;
 	bm->Depth = 1;
@@ -450,21 +538,72 @@ static BOOL lc_AllocDisplay(struct GfxDriver *gd, const struct GfxMode *m,
 	return TRUE;
 }
 
+/*
+ * The display bitmap, the bitmaps behind going back to RAM; or one
+ * behind, its slot freed
+ */
 static void lc_FreeDisplay(struct GfxDriver *gd, struct BitMap *bm)
 {
-	lc_alloc = FALSE;
+	UWORD i;
+
+	for (i = 0; i < lc_nslots && lc_slot[i] != bm; i++)
+		;
+	if (!(GFXBM(bm)->gb_Flags & GBF_DISPLAY)) {
+		if (i == lc_cur)
+			lc_port(lc_front);
+		if (i < lc_nslots)
+			lc_slot[i] = NULL;
+	} else {
+		for (i = 0; i < lc_nslots; i++) {
+			if (lc_slot[i] && lc_slot[i] != bm)
+				GFXBM(lc_slot[i])->gb_Driver = lc_fmt;
+			lc_slot[i] = NULL;
+		}
+		lc_nslots = 0;
+		lc_alloc = FALSE;
+		if (!lc_shown)
+			FreeFB();
+	}
 	FreeMem(bm->Planes[0], GFXBM(bm)->gb_PlaneSize);
 	bm->Planes[0] = NULL;
-	if (!lc_shown)
-		FreeFB();
 }
 
-/* The shadow moves to bm's planes, all of which go out */
+/*
+ * bm to the front.  Without a slot it takes a free one, else the one
+ * longest behind, else the front's, and is pushed whole.  The bitmap that
+ * was in front keeps its slot and this table.
+ */
 static void lc_Adopt(struct GfxDriver *gd, struct BitMap *bm)
 {
-	lc_lp.lp_Shadow = bm->Planes[0];
-	lc_mark(0, bm->Rows - 1, 0, (bm->BytesPerRow << 3) - 1);
-	lc_Flush(gd, bm);
+	struct BitMap *old = lc_slot[lc_front];
+	UWORD i, k;
+
+	for (i = 0; i < lc_nslots && lc_slot[i] != bm; i++)
+		;
+	if (i == lc_nslots) {
+		for (i = 0; i < lc_nslots && lc_slot[i]; i++)
+			;
+		if (i == lc_nslots) {
+			i = lc_front;
+			for (k = 0; k < lc_nslots; k++)
+				if (k != lc_front &&
+				    (i == lc_front || lc_used[k] < lc_used[i]))
+					i = k;
+			GFXBM(lc_slot[i])->gb_Driver = lc_fmt;
+		}
+		lc_Flush(gd, bm);
+		lc_slot[i] = bm;
+		lc_port(i);
+		lc_mark(0, bm->Rows - 1, 0, (bm->BytesPerRow << 3) - 1);
+		lc_Flush(gd, bm);
+	}
+	if (lc_slot[lc_front] == old)
+		GFXBM(old)->gb_Driver = gd;
+	lc_front = i;
+	lc_used[i] = ++lc_age;
+	lc_enter();
+	lcv_wr(LP, 12, (UWORD)(i * lc_size) >> 8);
+	lc_leave();
 }
 
 static BOOL lc_Show(struct GfxDriver *gd, struct BitMap *bm)
@@ -515,7 +654,7 @@ static struct Library *lcinit(struct Library *lib, APTR seg, APTR sysbase)
 	lib->lib_Node.ln_Name = lcname;
 	lib->lib_IdString = (APTR)lcid;
 	lib->lib_Version = LCVERSION;
-	lib->lib_Revision = 3;
+	lib->lib_Revision = 4;
 	((struct LCBase *)lib)->lb_Seg = seg;
 	InitSemaphore(&lc_lock);
 	return lib;

@@ -1,9 +1,10 @@
 /*
  * lc.gfxdriver under graphics.library, on a model of the LC card's 8568:
- * the display database, the display bitmap, and after every drawing step
- * (fills, patterns, text, lines, aligned and unaligned blits and scrolls,
- * the pointer) the model's bitmap must be the shadow, the chip idle and
- * every port write waited for.  Each step's port actions and their time
+ * the display database, the display bitmap at 640x200 and interlaced at
+ * 640x400 and 640x480, and after every drawing step (fills, patterns,
+ * text, lines, aligned and unaligned blits and scrolls, by odd and even
+ * lines when interlaced, the pointer) the bitmap the model shows must be
+ * the shadow, the chip idle and every port write waited for.  Each step's port actions and their time
  * at the expected rates are printed as a cost regression, and the main
  * cases checked against their limits.
  */
@@ -86,15 +87,46 @@ static void makearrow(void)
 static char line80[] =
     "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
 
+/* Scrolls and moves by odd and even lines over all of a tall bitmap */
+static void tall(struct RastPort *rp)
+{
+	WORD h = bm->Rows, y;
+
+	for (y = 0; y < h; y += 16) {
+		Move(rp, 8 * (y & 63), y + rp->TxBaseline);
+		Text(rp, line80, 40);
+	}
+	Move(rp, 0, 0);
+	Draw(rp, 639, h - 1);
+	step("text and a line, all rows", 0);
+	ScrollRaster(rp, 0, 1, 0, 0, 639, h - 1);
+	step("scroll up 1, full width", 0);
+	ScrollRaster(rp, 0, -3, 0, 0, 639, h - 1);
+	step("scroll down 3, full width", 0);
+	ScrollRaster(rp, 0, 2, 0, 0, 639, h - 1);
+	step("scroll up 2, full width", 0);
+	ScrollRaster(rp, 0, -16, 0, 0, 639, h - 1);
+	step("scroll down 16, full width", 0);
+	ScrollRaster(rp, 0, 1, 160, 20, 479, h - 1);
+	step("scroll up 1, 40 bytes", 0);
+	ScrollRaster(rp, 0, -2, 163, 20, 476, h - 1);
+	step("scroll down 2, unaligned", 0);
+	BltBitMap(bm, 104, 20, bm, 304, 61, 300, h - 100, 0xC0, 0xFF, NULL);
+	step("aligned move down 41", 0);
+	BltBitMap(bm, 0, 100, bm, 0, 99, 640, h - 100, 0xC0, 0xFF, NULL);
+	step("full rows up 1", 0);
+}
+
 static void draw(struct RastPort *rp)
 {
 	struct BitMap *ram;
+	ULONG clear = 20000L * bm->Rows / 200;
 	WORD i;
 
 	SetRast(rp, 1);
-	step("clear to 1", 20000);
+	step("clear to 1", clear);
 	SetRast(rp, 0);
-	step("clear to 0", 20000);
+	step("clear to 0", clear);
 
 	SetAPen(rp, 1);
 	SetDrMd(rp, JAM1);
@@ -183,6 +215,8 @@ static void draw(struct RastPort *rp)
 		step("RAM to display, all", 0);
 		FreeBitMap(ram);
 	}
+	if (bm->Rows > 256)
+		tall(rp);
 }
 
 static void pointer(struct ViewPort *vp, struct RastPort *rp)
@@ -219,14 +253,19 @@ static void pointer(struct ViewPort *vp, struct RastPort *rp)
 /* The modes, their names and ticks, and BestModeIDA()'s choices */
 static void database(void)
 {
-	static const ULONG ids[4] = {
-		LCHIRES_ID, LCLORES_ID, LCHIRESPAL_ID, LCLORESPAL_ID
+	static const ULONG ids[8] = {
+		LCHIRES_ID, LCLORES_ID, LCHIRESPAL_ID, LCLORESPAL_ID,
+		LCHIRESLACE_ID, LCLORESLACE_ID, LCHIRESLACE480_ID,
+		LCLORESLACE480_ID
 	};
-	static const char *names[4] = {
-		"LC:640x200", "LC:320x200", "LC:640x256", "LC:320x256"
+	static const char *names[8] = {
+		"LC:640x200", "LC:320x200", "LC:640x256", "LC:320x256",
+		"LC:640x400 Interlace", "LC:320x400 Interlace",
+		"LC:640x480 Interlace", "LC:320x480 Interlace"
 	};
-	static const WORD ticks[4][2] = {
-		{ 22, 53 }, { 44, 53 }, { 22, 41 }, { 44, 41 }
+	static const WORD ticks[8][2] = {
+		{ 22, 53 }, { 44, 53 }, { 22, 41 }, { 44, 41 },
+		{ 22, 26 }, { 44, 26 }, { 22, 22 }, { 44, 22 }
 	};
 	struct TagItem t[3];
 	struct DisplayInfo di;
@@ -234,7 +273,7 @@ static void database(void)
 	ULONG id = INVALID_ID;
 	UWORD i, k;
 
-	for (i = 0; i < 4; i++) {
+	for (i = 0; i < 8; i++) {
 		id = NextDisplayInfo(id);
 		check(id == ids[i], "the mode list");
 		GetDisplayInfoData(NULL, (UBYTE *)&ni, sizeof(ni), DTAG_NAME, id);
@@ -245,8 +284,10 @@ static void database(void)
 		    DTAG_DISP, id) == sizeof(di) && !di.NotAvailable &&
 		    di.Resolution.x == ticks[i][0] &&
 		    di.Resolution.y == ticks[i][1], "the ticks");
+		check(!(di.PropertyFlags & DIPF_IS_LACE) == (i < 4),
+		    "interlace flag");
 	}
-	check(NextDisplayInfo(id) == INVALID_ID, "4 modes");
+	check(NextDisplayInfo(id) == INVALID_ID, "8 modes");
 	t[0].ti_Tag = BIDTAG_DesiredWidth;
 	t[1].ti_Tag = BIDTAG_DesiredHeight;
 	t[2].ti_Tag = TAG_DONE;
@@ -259,17 +300,74 @@ static void database(void)
 	t[0].ti_Data = 300;
 	t[1].ti_Data = 256;
 	check(BestModeIDA(t) == LCLORESPAL_ID, "best for 300x256");
+	t[0].ti_Data = 640;
+	t[1].ti_Data = 400;
+	check(BestModeIDA(t) == LCHIRESLACE_ID, "best for 640x400");
+	t[0].ti_Data = 300;
+	t[1].ti_Data = 420;
+	check(BestModeIDA(t) == LCLORESLACE480_ID, "best for 300x420");
 }
 
-int main(void)
+/* The display in mode id, drawn, then given back */
+static void run(ULONG id, WORD w, WORD h, UWORD hz, struct TextFont *tf)
 {
 	struct TagItem t[2];
-	struct DimensionInfo dims;
 	struct View v;
 	struct ViewPort vp;
 	struct RasInfo ri;
 	struct RastPort rp;
 	struct ColorMap *cm;
+	UWORD allocs = lct_allocs, frees = lct_frees;
+
+	t[0].ti_Tag = BMATags_DisplayID;
+	t[0].ti_Data = id;
+	t[1].ti_Tag = TAG_DONE;
+	bm = AllocBitMap(w, h, 1, BMF_CLEAR | BMF_DISPLAYABLE | EXTTAGS,
+	    (struct BitMap *)t);
+	check(bm != NULL && lct_allocs == allocs + 1, "the display bitmap");
+	cm = GetColorMap(32);
+	if (bm == NULL || cm == NULL)
+		return;
+	check(lcm_reg[25] == 0x87 && lcm_reg[28] == 0x1F && lcm_reg[36] == 0xF5 &&
+	    lcm_reg[37] == 0xFF && lcm_reg[26] == 0x00, "bitmap mode, blank");
+	check(lct_mode(bm, hz), "the mode's registers");
+	step("allocate", 40000L * h / 200);
+
+	InitView(&v);
+	InitVPort(&vp);
+	ri.Next = NULL;
+	ri.BitMap = bm;
+	ri.RxOffset = ri.RyOffset = 0;
+	vp.RasInfo = &ri;
+	vp.ColorMap = cm;
+	vp.DWidth = w;
+	vp.DHeight = h;
+	cm->VPModeID = id;
+	v.ViewPort = &vp;
+	LoadRGB32(&vp, palette);
+	check(MakeVPort(&v, &vp) == MVP_OK && MrgCop(&v) == MCOP_OK,
+	    "MakeVPort, MrgCop");
+	LoadView(&v);
+	check(lcm_reg[26] == 0xF2, "shown, white on blue");
+	step("show", 0);
+
+	InitRastPort(&rp);
+	rp.BitMap = bm;
+	if (tf)
+		SetFont(&rp, tf);
+	draw(&rp);
+	pointer(&vp, &rp);
+
+	LoadView(NULL);
+	check(lcm_reg[26] == 0x00, "blank once not shown");
+	FreeBitMap(bm);
+	check(lct_frees == frees + 1, "the display goes back");
+	FreeColorMap(cm);
+}
+
+int main(void)
+{
+	struct DimensionInfo dims;
 	struct TextFont *tf;
 	struct TextAttr topaz8;
 	ULONG id;
@@ -290,60 +388,17 @@ int main(void)
 	check(GetDisplayInfoData(NULL, (UBYTE *)&dims, sizeof(dims), DTAG_DIMS,
 	    id) == sizeof(dims) && dims.Nominal.MaxX == 639 &&
 	    dims.Nominal.MaxY == 199 && dims.MaxDepth == 1, "DTAG_DIMS");
-
-	t[0].ti_Tag = BMATags_DisplayID;
-	t[0].ti_Data = id;
-	t[1].ti_Tag = TAG_DONE;
-	bm = AllocBitMap(640, 200, 1, BMF_CLEAR | BMF_DISPLAYABLE | EXTTAGS,
-	    (struct BitMap *)t);
-	check(bm != NULL && lct_allocs == 1, "the display bitmap");
-	cm = GetColorMap(32);
-	if (bm == NULL || cm == NULL)
-		goto done;
-	check(lcm_reg[25] == 0x87 && lcm_reg[28] == 0x1F && lcm_reg[36] == 0xF5 &&
-	    lcm_reg[26] == 0x00, "bitmap mode, blank");
-	check(lct_mode(bm, 60), "640x200 at 60 Hz");
-	step("allocate", 40000);
-
-	InitView(&v);
-	InitVPort(&vp);
-	ri.Next = NULL;
-	ri.BitMap = bm;
-	ri.RxOffset = ri.RyOffset = 0;
-	vp.RasInfo = &ri;
-	vp.ColorMap = cm;
-	vp.DWidth = 640;
-	vp.DHeight = 200;
-	cm->VPModeID = id;
-	v.ViewPort = &vp;
-	LoadRGB32(&vp, palette);
-	check(MakeVPort(&v, &vp) == MVP_OK && MrgCop(&v) == MCOP_OK,
-	    "MakeVPort, MrgCop");
-	LoadView(&v);
-	check(lcm_reg[26] == 0xF2, "shown, white on blue");
-	step("show", 0);
-
-	InitRastPort(&rp);
-	rp.BitMap = bm;
 	topaz8.ta_Name = "topaz.font";
 	topaz8.ta_YSize = 8;
 	topaz8.ta_Style = 0;
 	topaz8.ta_Flags = 0;
 	tf = OpenFont(&topaz8);
 	check(tf != NULL, "topaz 8");
-	if (tf)
-		SetFont(&rp, tf);
-	draw(&rp);
-	pointer(&vp, &rp);
-
-	LoadView(NULL);
-	check(lcm_reg[26] == 0x00, "blank once not shown");
-	FreeBitMap(bm);
-	check(lct_frees == 1, "the display goes back");
+	run(id, 640, 200, 60, tf);
+	run(LCHIRESLACE_ID, 640, 400, 60, tf);
+	run(LCHIRESLACE480_ID, 640, 480, 60, tf);
 	if (tf)
 		CloseFont(tf);
-	FreeColorMap(cm);
-done:
 	lct_cleanup();
 	if (fails == 0)
 		KPutStr("PASS lcgfx\n");

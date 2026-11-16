@@ -30,7 +30,12 @@ extern struct LCMStats lcm_stats;
 /* As the chip reads them back: unused bits are 1 */
 extern UBYTE lcm_reg[38];
 
-/* The bitmap the registers show, without interlace (R8 = 0) */
+/*
+ * The bitmap the registers show, progressive (R8 = 0) or interlaced
+ * (R8 = 3).  Interlaced, the even field's lines come from R12/R13 and
+ * the odd field's from where the even field ended, as the core fetches
+ * them.
+ */
 struct LCMFrame {
 	UWORD	lf_Start;	/* R12/R13 */
 	UWORD	lf_Width;	/* pixels a line: R1 columns of 8 */
@@ -39,10 +44,14 @@ struct LCMFrame {
 	UWORD	lf_Dots;	/* dots a pixel: 2 at double width (R25 bit 4) */
 	UWORD	lf_Total;	/* lines a frame: R4 + 1 rows, plus R5 */
 	ULONG	lf_LineNs;	/* time of a line, at 16 MHz dots */
+	UWORD	lf_Lace;	/* interlaced */
+	UWORD	lf_Even;	/* lines of the even field: R6 x (R9 + 1) / 2 */
 };
 
 /* FALSE unless bitmap mode, no attributes and 8 pixels a column */
 BOOL lcm_frame(struct LCMFrame *f);
+/* The VRAM address of line n of f, the fields woven */
+UWORD lcm_line(const struct LCMFrame *f, UWORD n);
 
 /* Reset with all registers 0 and RAM filled with fill; FALSE without memory */
 BOOL lcm_init(UWORD seed, UBYTE fill);

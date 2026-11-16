@@ -57,6 +57,17 @@
         struct GfxBitMap *gbm = GFXBM(bm);
         UWORD plane, planes = gbm->gb_Driver->gd_Format == GDF_PLANAR ? bm->Depth : 1;
 
+        /* A bitmap behind the display that its driver keeps */
+        if(!(gbm->gb_Flags & GBF_DISPLAY) && gbm->gb_Driver->gd_FreeDisplay) {
+            ObtainSemaphore(GfxBase->ActiViewCprSemaphore);
+            ObtainSemaphore(&PrivGBase(GfxBase)->sprite.ss_Lock);
+            gbm->gb_Driver->gd_FreeDisplay(gbm->gb_Driver, bm);
+            ReleaseSemaphore(&PrivGBase(GfxBase)->sprite.ss_Lock);
+            ReleaseSemaphore(GfxBase->ActiViewCprSemaphore);
+            FreeVec(gbm);
+            return;
+        }
+
         /* A display's bitmap leaves the display and goes back to its driver */
         if(gbm->gb_Flags & GBF_DISPLAY) {
             ObtainSemaphore(GfxBase->ActiViewCprSemaphore);

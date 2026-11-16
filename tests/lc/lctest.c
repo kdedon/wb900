@@ -81,18 +81,23 @@ void lct_cleanup(void)
 BOOL lct_step(struct BitMap *bm, char *what, ULONG *us)
 {
 	struct LCMStats *s = &lcm_stats;
+	struct LCMFrame f;
 	UBYTE *p = bm->Planes[0];
 	ULONG push, seek, regs, t;
-	UWORD a, i, n = bm->BytesPerRow * bm->Rows;
-	BOOL ok = TRUE;
+	UWORD a, i, x, y;
+	BOOL ok = lcm_frame(&f);
 
-	for (a = 0; a < n; a++)
-		if (lcm_peek(a) != p[a]) {
-			xKPrintf("FAIL %s: %s: byte %u (row %u) is %x, shadow %x\n",
-			    test, what, a, a / bm->BytesPerRow, lcm_peek(a), p[a]);
-			ok = FALSE;
-			break;
-		}
+	if (!ok)
+		xKPrintf("FAIL %s: %s: not a bitmap\n", test, what);
+	for (y = 0; ok && y < bm->Rows; y++)
+		for (a = lcm_line(&f, y), x = 0; x < bm->BytesPerRow; x++, a++)
+			if (lcm_peek(a) != *p++) {
+				xKPrintf("FAIL %s: %s: row %u byte %u (VRAM %x) is %x,"
+				    " shadow %x\n", test, what, y, x, a, lcm_peek(a),
+				    p[-1]);
+				ok = FALSE;
+				break;
+			}
 	if (!lcm_idle()) {
 		xKPrintf("FAIL %s: %s: the chip is left busy\n", test, what);
 		ok = FALSE;
@@ -129,11 +134,17 @@ BOOL lct_mode(struct BitMap *bm, UWORD hz)
 		xKPrintf("FAIL %s: not a bitmap of 8-pixel columns\n", test);
 		return FALSE;
 	}
-	/* frames a second, times 100 */
-	mhz = 100000000L / (f.lf_LineNs * f.lf_Total / 1000);
-	xKPrintf("%s: %u x %u, %u dots a pixel, stride %u, %u lines of %ld ns,"
-	    " %ld.%02ld Hz\n", test, f.lf_Width, f.lf_Lines, f.lf_Dots,
-	    f.lf_Stride, f.lf_Total, f.lf_LineNs, mhz / 100, mhz % 100);
+	/* fields a second, times 100 */
+	mhz = 100000000L / (f.lf_LineNs * f.lf_Total / 1000) << f.lf_Lace;
+	xKPrintf("%s: %u x %u%s, %u dots a pixel, stride %u, %u lines of %ld"
+	    " ns, %ld.%02ld Hz\n", test, f.lf_Width, f.lf_Lines,
+	    f.lf_Lace ? " interlaced" : "", f.lf_Dots, f.lf_Stride, f.lf_Total,
+	    f.lf_LineNs, mhz / 100, mhz % 100);
+	if (f.lf_Lace && f.lf_Even * 2 != f.lf_Lines) {
+		xKPrintf("FAIL %s: fields of %u and %u lines\n", test, f.lf_Even,
+		    f.lf_Lines - f.lf_Even);
+		return FALSE;
+	}
 	if (f.lf_Start != 0 || f.lf_Width != bm->BytesPerRow * 8 ||
 	    f.lf_Stride != bm->BytesPerRow || f.lf_Lines != bm->Rows ||
 	    f.lf_Width * f.lf_Dots != 640 || mhz / 100 + 1 < hz ||

@@ -40,10 +40,17 @@ Opened 2026-11-14; status from exec816-0f and the c900/exec900 log. The user app
 | 31 | A 63 KB stack segment on 1 MB leaves no two free heap pages for a 640x400x4 bitmap (below) | **Landed** 8c2497f3: blocks of 128 B or less take the stack region's top first, so whole heap pages stay free; asl passes on 1 MB again | done |
 | 32 | Tell framebuf.resource the HR jumper at boot (below) | **Landed** 8a6c0d5d: `mkdisk --hrmode=auto|800|1024|rgbi`; framebuf and hr.display follow it. The ScreenMode prefs may still drive a corrected mode while Workbench owns the display | done |
 | 33 | A recoverable `Alert()` on the screen through intuition while it lends the display (below) | **Landed** 6ff12776: dos.library patches Alert; a recoverable Task alert outside Forbid/Disable calls DisplayAlert(0, text, 40) as exec 1.2 does; kernel and dead-end alerts stay on the console | done |
-| 36 | Cheaper kernel console output (below) | open | — |
+| 36 | Cheaper kernel console output (below) | **Landed**: line-at-a-time console output and a 256-byte TX queue on the SCC interrupt; a KPrintf line on HR mono 494K to 127K clocks, RGBI 1,963K to 206K, LC 561K to 200K | done |
 | 35 | The boot assign `FONTS:` → `SYS:Fonts` (below) | **Landed** 9f4f7561: dos.library assigns FONTS: to SYS:Fonts at boot (DH1: on --lnames disks) | done |
 | 37 | gameport.device on the C emulator, so `GetGPButtons` can be tested (below) | **Fixed in the emulator** (dcfe4c0): ports 0x0400-0x0407 decode like the core under plain `--hr` | done |
 | 38 | runtest.sh: `MOUSE:` on the emulator (below) | open | — |
+| 39 | lc.display: positive syncs in R37 (below) | **Landed** 620f69eb: lc.display writes R37 = 0xC0 and restores it on hand-back | done |
+
+### 39. R37 in lc.display
+
+R37 bits 7 and 6 set the HSYNC and VSYNC polarity, 1 positive, and read FF after reset (C900_MiSTer D-VID-10). lc.display's `lcinit()` writes every register from `lcregs[]`, R37 included, as 0x00, so the text console runs with negative syncs, though its comment says R37 keeps its reset value. lc.gfxdriver writes 0xC0, the reset value and the C128's default, so the polarity flips at each hand-over. The core accepts either; a real monitor may not.
+
+Asked for: R37 = 0xC0 in `lcregs[]`.
 
 ### 38. MOUSE: on the emulator
 

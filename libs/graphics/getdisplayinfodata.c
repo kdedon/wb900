@@ -161,6 +161,8 @@ static UBYTE *putnum(UBYTE *s, UWORD n)
          * one sprite for mouse pointer. Every mode can be Workbench's.
          */
         di->PropertyFlags = DIPF_IS_SPRITES | DIPF_IS_WB;
+        if (m->gm_ModeID & LACE)
+            di->PropertyFlags |= DIPF_IS_LACE;
 
         /* RGBI has two levels and I for each gun, mono one */
         di->RedBits = di->GreenBits = di->BlueBits = m->gm_Depth > 1 ? 2 : 1;

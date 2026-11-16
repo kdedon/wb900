@@ -7,7 +7,9 @@
  * be the shadow, the registers must show it, and the chip be idle, with
  * each step's port actions and their time printed as a cost regression.
  * A second 640x200 screen takes turns in front with the Workbench, each
- * drawn into while behind and shown in its own colours.
+ * drawn into while behind and shown in its own colours, each switch a
+ * register write.  Three screens take turns at 640x400, two bitmaps of
+ * which fit VRAM, and two at 640x480, one of which does.
  */
 #include <exec/exec.h>
 #include <devices/input.h>
@@ -140,7 +142,7 @@ static void tofront(struct Screen *s, struct Screen *back, UBYTE colours)
 {
 	ScreenToFront(s);
 	bm = s->RastPort.BitMap;
-	step("screen to the front", 0);
+	step("screen to the front", 2000);
 	check(IntuitionBase->FirstScreen == s && isdisplay(s) && !isdisplay(back),
 	    "the front screen has the display");
 	check(lcm_reg[26] == colours, "the front screen's colours");
@@ -191,14 +193,63 @@ static void flips(struct Screen *wb)
 	    "the Workbench gets the display back");
 }
 
+/*
+ * n screens of mode id, w x h, each with its box, brought to the front
+ * in order; bit k of fast: the kth switch is a register write
+ */
+static void turns(ULONG id, WORD w, WORD h, WORD n, const char *order,
+    UWORD fast)
+{
+	struct TagItem t[6];
+	struct Screen *s[3];
+	ULONG us;
+	WORD i, k;
+
+	t[0].ti_Tag = SA_DisplayID;	t[0].ti_Data = id;
+	t[1].ti_Tag = SA_Width;		t[1].ti_Data = w;
+	t[2].ti_Tag = SA_Height;	t[2].ti_Data = h;
+	t[3].ti_Tag = SA_Depth;		t[3].ti_Data = 1;
+	t[4].ti_Tag = SA_SharePens;	t[4].ti_Data = TRUE;
+	t[5].ti_Tag = TAG_DONE;
+	for (i = 0; i < n; i++) {
+		s[i] = OpenScreenTagList(NULL, t);
+		check(s[i] != NULL, "a screen to take turns");
+		if (s[i] == NULL)
+			goto out;
+		drawbox(s[i], 100 + 40 * i, h - 40);
+	}
+	bm = s[n - 1]->RastPort.BitMap;
+	step("the screens open", 0);
+	for (k = 0; order[k]; k++) {
+		i = order[k] - '0';
+		ScreenToFront(s[i]);
+		event(IECLASS_NULL, 0, 0, 0);
+		TimeDelay(UNIT_VBLANK, 0, 40000);
+		bm = s[i]->RastPort.BitMap;
+		check(lct_step(bm, "turn in front", &us), "turn in front");
+		check(IntuitionBase->FirstScreen == s[i] && isdisplay(s[i]) &&
+		    hasbox(s[i], 100 + 40 * i, h - 40) &&
+		    !hasbox(s[i], 100 + 40 * ((i + 1) % n), h - 40),
+		    "the screen in front");
+		check(!(fast >> k & 1) || us < 2000, "a register write");
+	}
+	i = n;
+out:
+	while (i > 0)
+		CloseScreen(s[--i]);
+}
+
 /* A screen in mode i of the list after 640x200 */
 static void othermode(UWORD i)
 {
-	static const ULONG ids[3] = {
-		LCLORES_ID, LCHIRESPAL_ID, LCLORESPAL_ID
+	static const ULONG ids[7] = {
+		LCLORES_ID, LCHIRESPAL_ID, LCLORESPAL_ID, LCHIRESLACE_ID,
+		LCLORESLACE_ID, LCHIRESLACE480_ID, LCLORESLACE480_ID
 	};
-	static const UWORD size[3][3] = {
-		{ 320, 200, 60 }, { 640, 256, 50 }, { 320, 256, 50 }
+	static const UWORD size[7][3] = {
+		{ 320, 200, 60 }, { 640, 256, 50 }, { 320, 256, 50 },
+		{ 640, 400, 60 }, { 320, 400, 60 }, { 640, 480, 60 },
+		{ 320, 480, 60 }
 	};
 	struct TagItem t[7];
 	struct Screen *s;
@@ -221,7 +272,9 @@ static void othermode(UWORD i)
 	    "the mode's display");
 	check(lct_mode(bm, size[i][2]), "the mode's registers");
 	step("OpenScreen", 0);
-	windows(s);
+	/* windows on 640x400 stand for the other interlaced modes, to save time */
+	if (i < 4)
+		windows(s);
 	CloseScreen(s);
 	check(lct_frees == frees + 1, "the display goes back");
 }
@@ -266,8 +319,12 @@ int main(void)
 	UnlockPubScreen(NULL, wb);
 	check(CloseWorkBench(), "CloseWorkBench");
 	check(lct_frees == 1, "the display goes back");
-	for (i = 0; i < 3; i++)
+	for (i = 0; i < 7; i++)
 		othermode(i);
+	/* 2 slots: s0 gives its slot to s2, then s1 to s0 */
+	turns(LCHIRESLACE_ID, 640, 400, 3, "12020", 0x1B);
+	/* 1 slot: each switch pushes the bitmap */
+	turns(LCHIRESLACE480_ID, 640, 480, 2, "01", 0);
 
 done:
 	lct_cleanup();

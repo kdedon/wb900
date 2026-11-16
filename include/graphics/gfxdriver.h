@@ -134,8 +134,11 @@ struct GfxDriver
     /*
      * Show bm, a RAM bitmap of the display bitmap's format and size, from
      * its own planes, which become the display's; the display bitmap's
-     * planes become RAM.  NULL: the display's planes are fixed, so
-     * graphics trades their pixels and pointers with bm's.
+     * planes become RAM, with the format's table.  The driver may give
+     * that bitmap its own table again, to keep its pixels on the card;
+     * FreeBitMap() then frees it with gd_FreeDisplay().  NULL: the
+     * display's planes are fixed, so graphics trades their pixels and
+     * pointers with bm's.
      */
     void	(*gd_Adopt)(struct GfxDriver *gd, struct BitMap *bm);
 };

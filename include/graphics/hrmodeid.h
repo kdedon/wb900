@@ -13,11 +13,18 @@
 #define HRMONO_1024_ID		(HR_MONITOR_ID | 0x0100)	/* 1024x1024x1 */
 #define HRCOLOR_ID		(HR_MONITOR_ID | 0x0201)	/* 640x400x4 RGBI */
 
-/* The LC card: modes its driver programs, 1 bit deep, 60 Hz or 50 Hz */
+/*
+ * The LC card: modes its driver programs, 1 bit deep, 60 Hz or 50 Hz, or
+ * interlaced at 60 fields a second with LACE (bit 2) set, as on the Amiga
+ */
 #define LC_MONITOR_ID		0x00110000L
 #define LCHIRES_ID		(LC_MONITOR_ID | 0x0000)	/* 640x200 */
 #define LCLORES_ID		(LC_MONITOR_ID | 0x0100)	/* 320x200 */
 #define LCHIRESPAL_ID		(LC_MONITOR_ID | 0x0200)	/* 640x256 */
 #define LCLORESPAL_ID		(LC_MONITOR_ID | 0x0300)	/* 320x256 */
+#define LCHIRESLACE_ID		(LC_MONITOR_ID | 0x0004)	/* 640x400 */
+#define LCLORESLACE_ID		(LC_MONITOR_ID | 0x0104)	/* 320x400 */
+#define LCHIRESLACE480_ID	(LC_MONITOR_ID | 0x0404)	/* 640x480 */
+#define LCLORESLACE480_ID	(LC_MONITOR_ID | 0x0504)	/* 320x480 */
 
 #endif

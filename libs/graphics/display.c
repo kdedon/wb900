@@ -86,6 +86,12 @@ static void gfx_Trade(struct BitMap *bm, struct GfxBase *GfxBase)
     UWORD f;
 
     ObtainSemaphore(&gb->sprite.ss_Lock);
+    r->gb_Driver = gd;
+    d->gb_Driver = formats[gd->gd_Format - 1];
+    f = d->gb_Flags;
+    d->gb_Flags = r->gb_Flags;
+    r->gb_Flags = f;
+    gb->vram = bm;
     if (gd->gd_Adopt)
         gd->gd_Adopt(gd, bm);
     else {
@@ -106,12 +112,6 @@ static void gfx_Trade(struct BitMap *bm, struct GfxBase *GfxBase)
         d->gb_PlaneSize = r->gb_PlaneSize;
         r->gb_PlaneSize = size;
     }
-    r->gb_Driver = gd;
-    d->gb_Driver = formats[gd->gd_Format - 1];
-    f = d->gb_Flags;
-    d->gb_Flags = r->gb_Flags;
-    r->gb_Flags = f;
-    gb->vram = bm;
     ReleaseSemaphore(&gb->sprite.ss_Lock);
 }
 

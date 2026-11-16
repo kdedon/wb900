@@ -285,7 +285,7 @@ static void port(void)
 	lp.lp_Shadow = AllocMem(16000, MEMF_CLEAR);
 	if (lp.lp_Shadow == NULL)
 		return;
-	lp.lp_BPR = 80;
+	lp.lp_BPR = lp.lp_Step[0] = lp.lp_Step[1] = 80;
 	lp.lp_OK = TRUE;
 	lp.lp_UA = lp.lp_BA = LCP_NOADDR;
 	lp.lp_R24 = 0;
@@ -298,7 +298,7 @@ static void port(void)
 	}
 	for (i = 0; i < REPS; i++) {
 		t0();
-		lcv_push(&lp, i * 80, 80);
+		lcv_push(&lp, i, 0, 80);
 		t1();
 	}
 	show("", "lcv_push, a byte of 80", REPS * 80L, 47);
@@ -309,7 +309,7 @@ static void port(void)
 			lp.lp_Shadow[i] = 0xAA;
 	for (i = 0; i < REPS; i++) {
 		t0();
-		lcv_fill(&lp, 81, 0xAA, 78, 20, 3);
+		lcv_fill(&lp, 1, 1, 0xAA, 78, 20, 3);
 		t1();
 	}
 	show("", "lcv_fill, a row of 78 and 2 edges", REPS * 20L, 0);
@@ -317,7 +317,7 @@ static void port(void)
 	CopyMem(lp.lp_Shadow + 80, lp.lp_Shadow + 41 * 80, 20 * 80);
 	for (i = 0; i < REPS; i++) {
 		t0();
-		lcv_copy(&lp, 81 + 40 * 80, 81, 78, 20, 80, 3);
+		lcv_copy(&lp, 41, 1, 1, 1, 78, 20, 1, 3);
 		t1();
 	}
 	show("", "lcv_copy, a row of 78 and 2 edges", REPS * 20L, 0);

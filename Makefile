@@ -182,7 +182,8 @@ $(OUT)/wbboot-lc.bin: $(OUT)/wbboot-1x.bin $(OUT)/lcmode.prefs
 	  $(LCMOUSE) $@ $(EXEC900_OUT)/exec900.sys
 # make LCMODE=320x256: wbboot-lc.bin's Workbench in that LC mode, as its
 # saved ScreenMode setting; empty: the card's first mode, 640x200
-LCMODES	= 640x200=0x00110000 320x200=0x00110100 640x256=0x00110200 320x256=0x00110300
+LCMODES	= 640x200=0x00110000 320x200=0x00110100 640x256=0x00110200 320x256=0x00110300 \
+	  640x400=0x00110004 320x400=0x00110104 640x480=0x00110404 320x480=0x00110504
 $(OUT)/lcmode.prefs: $(TOP)/tools/screenmodeprefs.py FORCE
 	@mkdir -p $(OUT)
 	$(if $(LCMODE),python3 $< $@.new $(patsubst $(LCMODE)=%,%,$(filter $(LCMODE)=%,$(LCMODES))) $(subst x, ,$(LCMODE)) 1,: >$@.new)

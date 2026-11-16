@@ -163,6 +163,7 @@ BOOL lcm_init(UWORD seed, UBYTE fill)
 		ram[0][i] = ram[1][i] = fill;
 	for (i = 0; i < 38; i++)
 		lcm_reg[i] = rdones[i];
+	lcm_reg[37] = 0xFF;
 	sel = 0;
 	ua = ba = wc = 0;
 	wda = da = 0;
@@ -234,6 +235,15 @@ BOOL lcm_frame(struct LCMFrame *f)
 	    (lcm_reg[5] & 0x1F);
 	/* a column is pixels 0 to R22's upper nibble, or 1 to it doubled */
 	f->lf_LineNs = (lcm_reg[0] + 1L) * (dbl ? 2 * cth : cth + 1) * 125 / 2;
-	return (lcm_reg[8] & 3) == 0 && (lcm_reg[25] & 0xC0) == 0x80 &&
-	    (dbl ? cth : cth + 1) == 8;
+	f->lf_Lace = (lcm_reg[8] & 3) == 3;
+	f->lf_Even = lcm_reg[6] * ((lcm_reg[9] & 0x1F) + 1) / 2;
+	return ((lcm_reg[8] & 3) == 0 || f->lf_Lace) &&
+	    (lcm_reg[25] & 0xC0) == 0x80 && (dbl ? cth : cth + 1) == 8;
+}
+
+UWORD lcm_line(const struct LCMFrame *f, UWORD n)
+{
+	if (f->lf_Lace)
+		n = n & 1 ? f->lf_Even + n / 2 : n / 2;
+	return f->lf_Start + n * f->lf_Stride;
 }

@@ -4,9 +4,12 @@
  * 4 seconds, with its name in topaz 8 and a test pattern: the border,
  * ticks every 8 pixels (long every 64), a square by the mode's ticks
  * (square on a 4:3 screen if they are right), a 1-pixel checkerboard and
- * stripes.  Prints, per mode, the time to open the display, draw the
- * pattern and clear it, and the frame rate read from the chip's vertical
- * blank (status bit 5).  Without an LC card it only says so.
+ * stripes.  Then a second bitmap of the mode, black on white with a
+ * box, and the two take turns on the display, 1 second each.  Prints,
+ * per mode, the time to open the display, draw the pattern and clear it,
+ * the field rate read from the chip's vertical blank (status bit 5), and
+ * each turn's time: a register write once both bitmaps are in VRAM.
+ * Without an LC card it only says so.
  */
 #include <exec/exec.h>
 #include <devices/timer.h>
@@ -57,7 +60,7 @@ static ULONG us(void)
 	return (t1.ev_lo - t0.ev_lo) * 1000 / (rate / 1000);
 }
 
-/* Frames a second times 100: 30 starts of the vertical blank, timed */
+/* Fields a second times 100: 30 starts of the vertical blank, timed */
 static ULONG framerate(void)
 {
 	UWORD n, k;
@@ -83,6 +86,13 @@ static ULONG framerate(void)
 static ULONG palette[] = {
 	2L << 16 | 0,
 	0, 0x55555555, 0xAAAAAAAA,  0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,
+	0
+};
+
+/* Black on white */
+static ULONG paper[] = {
+	2L << 16 | 0,
+	0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF,  0, 0, 0,
 	0
 };
 
@@ -135,15 +145,84 @@ static void pattern(struct RastPort *rp, WORD w, WORD h, Point *res,
 	Text(rp, name, x);
 }
 
+static struct View v[2];
+static struct ViewPort vp[2];
+static struct RasInfo ri[2];
+
+/* View k showing bm in the colours of pal */
+static void view(UWORD k, struct BitMap *bm, struct ColorMap *cm, ULONG id,
+    ULONG *pal)
+{
+	InitView(&v[k]);
+	InitVPort(&vp[k]);
+	ri[k].Next = NULL;
+	ri[k].BitMap = bm;
+	ri[k].RxOffset = ri[k].RyOffset = 0;
+	vp[k].RasInfo = &ri[k];
+	vp[k].ColorMap = cm;
+	vp[k].DWidth = GetBitMapAttr(bm, BMA_WIDTH);
+	vp[k].DHeight = bm->Rows;
+	cm->VPModeID = id;
+	v[k].ViewPort = &vp[k];
+	LoadRGB32(&vp[k], pal);
+	MakeVPort(&v[k], &vp[k]);
+	MrgCop(&v[k]);
+}
+
+/* LoadView() of view k, timed, then held 1 second */
+static ULONG turn(UWORD k)
+{
+	ULONG t;
+
+	start();
+	LoadView(&v[k]);
+	t = us();
+	TimeDelay(UNIT_VBLANK, 1, 0);
+	return t;
+}
+
+/* A second bitmap of the mode, and turns with the first on the display */
+static void turns(ULONG id, struct BitMap *bm, char *name)
+{
+	struct TagItem t[2];
+	struct RastPort rp;
+	struct ColorMap *cm;
+	struct BitMap *b2;
+	WORD w = GetBitMapAttr(bm, BMA_WIDTH), h = bm->Rows;
+	ULONG t1, t2, t3;
+
+	t[0].ti_Tag = BMATags_DisplayID;
+	t[0].ti_Data = id;
+	t[1].ti_Tag = TAG_DONE;
+	cm = GetColorMap(32);
+	b2 = AllocBitMap(w, h, 1, BMF_CLEAR | BMF_DISPLAYABLE | EXTTAGS,
+	    (struct BitMap *)t);
+	check(b2 != NULL && cm != NULL, "a second bitmap");
+	if (b2 && cm) {
+		InitRastPort(&rp);
+		rp.BitMap = b2;
+		SetAPen(&rp, 1);
+		RectFill(&rp, w / 4, h / 4, w / 2, h / 2);
+		view(1, b2, cm, id, paper);
+		t1 = turn(1);
+		t2 = turn(0);
+		t3 = turn(1);
+		xKPrintf("lcmodes: %s: turns %ld us, %ld us, %ld us\n", name, t1,
+		    t2, t3);
+		turn(0);
+	}
+	if (b2)
+		FreeBitMap(b2);
+	if (cm)
+		FreeColorMap(cm);
+}
+
 static void mode(ULONG id, struct TextFont *tf)
 {
 	struct TagItem t[2];
 	struct DimensionInfo dims;
 	struct DisplayInfo di;
 	struct NameInfo ni;
-	struct View v;
-	struct ViewPort vp;
-	struct RasInfo ri;
 	struct RastPort rp;
 	struct BitMap *bm;
 	struct ColorMap *cm;
@@ -173,21 +252,8 @@ static void mode(ULONG id, struct TextFont *tf)
 			FreeColorMap(cm);
 		return;
 	}
-	InitView(&v);
-	InitVPort(&vp);
-	ri.Next = NULL;
-	ri.BitMap = bm;
-	ri.RxOffset = ri.RyOffset = 0;
-	vp.RasInfo = &ri;
-	vp.ColorMap = cm;
-	vp.DWidth = w;
-	vp.DHeight = h;
-	cm->VPModeID = id;
-	v.ViewPort = &vp;
-	LoadRGB32(&vp, palette);
-	MakeVPort(&v, &vp);
-	MrgCop(&v);
-	LoadView(&v);
+	view(0, bm, cm, id, palette);
+	LoadView(&v[0]);
 
 	InitRastPort(&rp);
 	rp.BitMap = bm;
@@ -202,6 +268,7 @@ static void mode(ULONG id, struct TextFont *tf)
 	    di.Resolution.y, topen, tdraw, hz / 100, hz % 100);
 	check(hz != 0, "the vertical blank");
 	TimeDelay(UNIT_VBLANK, 4, 0);
+	turns(id, bm, (char *)ni.Name);
 	start();
 	SetRast(&rp, 0);
 	tclear = us();
