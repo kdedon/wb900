@@ -9,7 +9,10 @@
  * and without a poll (lost bytes read back), R30 fills and R32/R33
  * copies of 16-256 bytes, each with the display on and with most columns
  * free (R1 8, R6 2), lc.gfxdriver's port loops, and graphics' drawing
- * into a RAM bitmap, the CPU part of lcdemo's cases.  Without an LC card
+ * into a RAM bitmap, the CPU part of lcdemo's cases.  The port loops'
+ * rows, and a scroll and window moves drawn through lc.gfxdriver, are
+ * read back through R31 and checked against the shadow.  The registers
+ * it found are put back before it gives up the card.  Without an LC card
  * (the C emulator has none) it only says so.
  */
 #include <exec/exec.h>
@@ -20,6 +23,7 @@
 #include <graphics/text.h>
 #include <graphics/view.h>
 #include <graphics/sprite.h>
+#include <graphics/hrmodeid.h>
 #include <proto/graphics.h>
 #include <proto/alib.h>
 #include <resources/framebuf.h>
@@ -62,6 +66,7 @@ static ULONG sum, busy;
 static UBYTE buf[256], back[256];
 static struct LCPort lp;
 static int fails;
+static UBYTE found[37];
 
 static void t0(void)
 {
@@ -95,6 +100,63 @@ static void seek(UWORD a)
 {
 	lcb_wr(18, a >> 8);
 	lcb_wr(19, a & 0xFF);
+}
+
+/* R0-R36 but the light pen, address, count and data registers */
+static BOOL dreg(UWORD i)
+{
+	return (i < 16 || i > 19) && (i < 30 || i > 33);
+}
+
+/* The display registers, R28 first */
+static void setregs(const UBYTE *r)
+{
+	UWORD i;
+
+	Disable();
+	lcb_wr(28, r[28]);
+	for (i = 0; i < 37; i++)
+		if (dreg(i) && i != 28)
+			lcb_wr(i, r[i]);
+	lcb_ready();
+	Enable();
+}
+
+/*
+ * VRAM from a is p's n bytes, read through R31 a block at a time; the
+ * update address is put back, as the port layer keeps it
+ */
+static BOOL same(UWORD a, const UBYTE *p, UWORD n, char *what)
+{
+	UWORD ua, i, k;
+
+	Disable();
+	lcb_ready();
+	ua = lcb_rd(18) << 8 | lcb_rd(19);
+	seek(a);
+	lcb_ready();
+	Enable();
+	for (; n > 0; n -= k, a += k, p += k) {
+		k = n < 256 ? n : 256;
+		Disable();
+		lcb_read(back, k);
+		lcb_ready();
+		Enable();
+		for (i = 0; i < k && back[i] == p[i]; i++)
+			;
+		if (i < k)
+			break;
+	}
+	Disable();
+	seek(ua);
+	lcb_ready();
+	Enable();
+	if (n == 0)
+		return TRUE;
+	xKPrintf("FAIL lcbench: %s: VRAM %x is %x, shadow %x\n", what, a + i,
+	    back[i], p[i]);
+	fails++;
+	return FALSE;
 }
 
 /* Lost bytes of n written unpolled from 0x4000 */
@@ -240,29 +302,26 @@ static void port(void)
 		t1();
 	}
 	show("", "lcv_push, a byte of 80", REPS * 80L, 47);
+	/* as lc.gfxdriver, the shadow drawn first: rows 1-20 filled, then
+	 * copied to rows 41-60 */
+	for (i = 80; i < 21 * 80; i++)
+		if (i % 80 != 0 && i % 80 != 79)
+			lp.lp_Shadow[i] = 0xAA;
 	for (i = 0; i < REPS; i++) {
 		t0();
 		lcv_fill(&lp, 81, 0xAA, 78, 20, 3);
 		t1();
 	}
 	show("", "lcv_fill, a row of 78 and 2 edges", REPS * 20L, 0);
+	same(80, lp.lp_Shadow + 80, 20 * 80, "lcv_fill's rows");
+	CopyMem(lp.lp_Shadow + 80, lp.lp_Shadow + 41 * 80, 20 * 80);
 	for (i = 0; i < REPS; i++) {
 		t0();
 		lcv_copy(&lp, 81 + 40 * 80, 81, 78, 20, 80, 3);
 		t1();
 	}
 	show("", "lcv_copy, a row of 78 and 2 edges", REPS * 20L, 0);
-	Disable();
-	seek(81 + 60 * 80);
-	lcb_read(back, 78);
-	lcb_ready();
-	Enable();
-	for (i = 0; i < 78 && back[i] == 0xAA; i++)
-		;
-	if (i < 78) {
-		KPutStr("FAIL lcbench: lcv_copy's rows are not the source\n");
-		fails++;
-	}
+	same(41 * 80, lp.lp_Shadow + 41 * 80, 20 * 80, "lcv_copy's rows");
 	for (i = 0; i < REPS; i++) {
 		t0();
 		lcv_mark(&lp, 0, 99, 10, 13, TRUE);
@@ -305,6 +364,70 @@ static void makearrow(void)
 
 static char line80[] =
     "wb900 on the LC card: 640x200 mono, a RAM shadow pushed through R31  0123456789";
+
+/* VRAM is the display bitmap after what */
+static void vram(struct BitMap *bm, char *what)
+{
+	if (same(0, bm->Planes[0], bm->BytesPerRow * bm->Rows, what))
+		xKPrintf("lcbench: %s: VRAM is the shadow\n", what);
+}
+
+/*
+ * lc.gfxdriver's block copies drawn by graphics: scrolls up and down,
+ * full width and in a window, and aligned window moves, one right within its
+ * rows (through scratch VRAM)
+ */
+static void display(void)
+{
+	struct TagItem t[2];
+	struct BitMap *bm;
+	struct RastPort rp;
+	struct TextAttr ta;
+	struct TextFont *tf;
+	WORD i;
+
+	t[0].ti_Tag = BMATags_DisplayID;
+	t[0].ti_Data = LCHIRES_ID;
+	t[1].ti_Tag = TAG_DONE;
+	bm = AllocBitMap(640, 200, 1, BMF_CLEAR | BMF_DISPLAYABLE |
+	    BMF_RTGTAGS | BMF_RTGCHECK | BMF_FRIENDISTAG, (struct BitMap *)t);
+	ta.ta_Name = "topaz.font";
+	ta.ta_YSize = 8;
+	ta.ta_Style = ta.ta_Flags = 0;
+	tf = OpenFont(&ta);
+	if (bm == NULL || tf == NULL) {
+		KPutStr("FAIL lcbench: the display bitmap\n");
+		fails++;
+		if (bm)
+			FreeBitMap(bm);
+		return;
+	}
+	InitRastPort(&rp);
+	rp.BitMap = bm;
+	SetFont(&rp, tf);
+	SetAPen(&rp, 1);
+	SetBPen(&rp, 0);
+	SetDrMd(&rp, JAM2);
+	for (i = 0; i < 25; i++) {
+		Move(&rp, i, 8 * i + rp.TxBaseline);
+		Text(&rp, line80 + i, 78 - i);
+	}
+	vram(bm, "text");
+	ScrollRaster(&rp, 0, 8, 0, 0, 639, 199);
+	vram(bm, "scroll up, full width");
+	ScrollRaster(&rp, 0, -24, 0, 0, 639, 199);
+	vram(bm, "scroll down, full width");
+	ScrollRaster(&rp, 0, 8, 160, 10, 479, 189);
+	vram(bm, "scroll up, 40-byte window");
+	ScrollRaster(&rp, 0, -8, 163, 10, 470, 189);
+	vram(bm, "scroll down, window with edges");
+	BltBitMap(bm, 203, 90, bm, 107, 50, 300, 100, 0xC0, 0xFF, NULL);
+	vram(bm, "window move up left");
+	BltBitMap(bm, 107, 50, bm, 131, 50, 300, 100, 0xC0, 0xFF, NULL);
+	vram(bm, "window move right");
+	CloseFont(tf);
+	FreeBitMap(bm);
+}
 
 static void ram(char *what)
 {
@@ -404,12 +527,15 @@ int main(void)
 	emhz = rate / 1000000;
 
 	Disable();
-	lcb_wr(28, regs[28]);
+	lcb_ready();
 	for (i = 0; i < 37; i++)
-		if (i != 16 && i != 17 && i != 18 && i != 19 && i != 28 &&
-		    i != 30 && i != 31)
-			lcb_wr(i, regs[i]);
+		if (dreg(i))
+			found[i] = lcb_rd(i);
+	Enable();
+	setregs(regs);
+	Disable();
 	lcb_wr(26, 0xF2);
+	lcb_ready();
 	Enable();
 	for (i = 0; i < 256; i++)
 		buf[i] = i * 7 + 3;
@@ -463,9 +589,11 @@ int main(void)
 	Enable();
 
 	port();
+	setregs(found);
+	FreeFB();
+	display();
 	drawing();
 
-	FreeFB();
 	CloseDevice((struct IORequest *)tr);
 	if (fails != 0)
 		return 1;
