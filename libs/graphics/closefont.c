@@ -51,7 +51,7 @@
 
     ObtainSemaphore(&PrivGBase(GfxBase)->fontsem);
     Forbid();
-    /* Only ROM fonts: AddFont() and RemFont() are not ported */
+    /* A disk font stays listed until diskfont.library frees it */
     textFont->tf_Accessors--;
     Permit();
     ReleaseSemaphore(&PrivGBase(GfxBase)->fontsem);

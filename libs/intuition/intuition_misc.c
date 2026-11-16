@@ -106,40 +106,68 @@ void CheckRectFill(struct RastPort *rp, WORD x1, WORD y1, WORD x2, WORD y2,
 
 /**********************************************************************************/
 
-Object* CreateStdSysImage(WORD which, WORD preferred_height, struct Screen *scr,
-                                      struct DrawInfo *dri, struct IntuitionBase *IntuitionBase)
+/*
+ * The image of a system gadget, shared by the windows of the screen: width
+ * 0 keeps the image's aspect at the height.  Images past the screen's
+ * table go to the window alone; sysimageshared() tells them apart.
+ */
+static Object *sysimage(struct Screen *scr, struct DrawInfo *dri, ULONG which,
+                        WORD width, WORD height, struct IntuitionBase *IntuitionBase)
 {
-    Object *im;
-
+    struct IntScreen *is = IS(scr);
+    struct Image *im;
+    Object *o;
+    UWORD i, slot = NUM_SYSIMAGES;
     struct TagItem image_tags[] =
     {
-        {SYSIA_Which    , which                                            },
+        {SYSIA_Which    , which                                     },
         {SYSIA_DrawInfo , (IPTR)dri                                 },
-        {SYSIA_Size         , scr->Flags & SCREENHIRES ?
-                          SYSISIZE_MEDRES : SYSISIZE_LOWRES },
-        {TAG_DONE                                                       }
+        {SYSIA_Size     , scr->Flags & SCREENHIRES ?
+                          SYSISIZE_MEDRES : SYSISIZE_LOWRES         },
+        {IA_Height      , height                                    },
+        {width ? IA_Width : TAG_DONE, width                         },
+        {TAG_DONE                                                   }
     };
 
-    im = NewObjectA(NULL, SYSICLASS, image_tags);
-    if (im)
+    for (i = 0; i < NUM_SYSIMAGES; i++)
     {
-            struct TagItem size_tags[] =
+        im = (struct Image *)is->SysImages[i];
+        if (!im)
         {
-            {IA_Width        , 0                         },
-            {IA_Height        , preferred_height  },
-            {TAG_DONE                                    }
-        };
-            IPTR width, height;
-
-        GetAttr(IA_Width, im, &width);
-        GetAttr(IA_Height, im, &height);
-
-        size_tags[0].ti_Data = preferred_height * width / height;
-
-        SetAttrsA(im, size_tags);
+            if (slot == NUM_SYSIMAGES)
+                slot = i;
+        }
+        else if (is->SysImageWhich[i] == which && im->Height == height &&
+                 (!width || im->Width == width))
+            return (Object *)im;
     }
 
-    return im;
+    o = NewObjectA(NULL, SYSICLASS, image_tags);
+    if (o && slot < NUM_SYSIMAGES)
+    {
+        is->SysImages[slot] = o;
+        is->SysImageWhich[slot] = which;
+    }
+
+    return o;
+}
+
+static BOOL sysimageshared(struct Screen *scr, Object *im)
+{
+    UWORD i;
+
+    for (i = 0; i < NUM_SYSIMAGES; i++)
+        if (IS(scr)->SysImages[i] == im)
+            return TRUE;
+    return FALSE;
+}
+
+void FreeSysImages(struct Screen *scr, struct IntuitionBase *IntuitionBase)
+{
+    UWORD i;
+
+    for (i = 0; i < NUM_SYSIMAGES; i++)
+        DisposeObject(IS(scr)->SysImages[i]);
 }
 
 /**********************************************************************************/
@@ -177,7 +205,7 @@ static BOOL addtitlegadget(struct Window *w, BOOL is_gzz, struct DrawInfo *dri,
     struct TagItem gadget_tags[] =
     {
         {GA_Image           , 0                 },
-        {relright ? TAG_IGNORE : GA_Left, 0     },
+        {relright ? GA_RelRight : GA_Left, 0    },
         {GA_Top             , 0                 },
         {GA_Width           , TitleHeight       },
         {GA_Height          , TitleHeight       },
@@ -190,35 +218,25 @@ static BOOL addtitlegadget(struct Window *w, BOOL is_gzz, struct DrawInfo *dri,
     };
     Object *im;
 
-    im = CreateStdSysImage(imagetype, TitleHeight, w->WScreen, dri, IntuitionBase);
+    im = sysimage(w->WScreen, dri, imagetype, 0, TitleHeight, IntuitionBase);
     if (!im)
         return FALSE;
 
     gadget_tags[0].ti_Data = (IPTR)im;
+    /* the gadget takes the image's width */
+    if (relright)
+    {
+        *relright -= ((struct Image *)im)->Width;
+        gadget_tags[1].ti_Data = *relright;
+    }
 
     SYSGAD(w, gadgettype) = NewObjectA(NULL, BUTTONGCLASS, gadget_tags);
 
     if (!SYSGAD(w, gadgettype))
     {
-        DisposeObject(im);
+        if (!sysimageshared(w->WScreen, im))
+            DisposeObject(im);
         return FALSE;
-    }
-
-    if (relright)
-    {
-        IPTR width;
-        struct TagItem gadtags[] =
-        {
-            {GA_RelRight, 0         },
-            {TAG_DONE               }
-        };
-
-        GetAttr(GA_Width, SYSGAD(w, gadgettype), &width);
-
-        *relright -= width;
-        gadtags[0].ti_Data = *relright;
-
-        SetAttrsA(SYSGAD(w, gadgettype), gadtags);
     }
 
     return TRUE;
@@ -272,18 +290,9 @@ BOOL CreateWinSysGadgets(struct Window *w, struct IntuitionBase *IntuitionBase)
                 {TAG_DONE                               }
             };
 
-            struct TagItem image_tags[] =
-            {
-                {IA_Width           , width                                                                                          },
-                {IA_Height          , height                                                                                         },
-                {SYSIA_Which    , SIZEIMAGE                                                                                      },
-                {SYSIA_DrawInfo , (IPTR)dri                                                                                      },
-                {SYSIA_Size         , w->WScreen->Flags & SCREENHIRES ? SYSISIZE_MEDRES : SYSISIZE_LOWRES},
-                {TAG_DONE                                                                                                            }
-            };
             Object *im;
 
-            im = NewObjectA(NULL, SYSICLASS, image_tags);
+            im = sysimage(w->WScreen, dri, SIZEIMAGE, width, height, IntuitionBase);
             if (!im)
             {
                 sysgads_ok = FALSE;
@@ -296,7 +305,8 @@ BOOL CreateWinSysGadgets(struct Window *w, struct IntuitionBase *IntuitionBase)
 
                 if (!SYSGAD(w, SIZEGAD))
                 {
-                    DisposeObject(im);
+                    if (!sysimageshared(w->WScreen, im))
+                        DisposeObject(im);
                     sysgads_ok = FALSE;
                 }
             }
@@ -408,8 +418,11 @@ VOID KillWinSysGadgets(struct Window *w, struct IntuitionBase *IntuitionBase)
     {
         if (SYSGAD(w, i))
         {
+            Object *im = (Object *)((struct Gadget *)SYSGAD(w, i))->GadgetRender;
+
             RemoveGadget( w, (struct Gadget *)SYSGAD(w, i));
-            DisposeObject((Object *)((struct Gadget *)SYSGAD(w, i))->GadgetRender);
+            if (!sysimageshared(w->WScreen, im))
+                DisposeObject(im);
             DisposeObject( SYSGAD(w, i) );
         }
     }
@@ -697,7 +710,7 @@ ULONG addextragadget(struct Window *w,BOOL is_gzz,struct DrawInfo *dri,LONG relr
     if (gadgettype == LOCKGAD)
         gadget_tags[1].ti_Data = TRUE;
 
-    im = CreateStdSysImage(imagetype, TitleHeight, w->WScreen, dri,IntuitionBase);
+    im = sysimage(w->WScreen, dri, imagetype, 0, TitleHeight, IntuitionBase);
     if (im)
     {
         gadget_tags[0].ti_Data = (IPTR)im;
@@ -706,7 +719,8 @@ ULONG addextragadget(struct Window *w,BOOL is_gzz,struct DrawInfo *dri,LONG relr
 
         if (!SYSGAD(w, gadgettype))
         {
-            DisposeObject(im);
+            if (!sysimageshared(w->WScreen, im))
+                DisposeObject(im);
         }
         else
         {

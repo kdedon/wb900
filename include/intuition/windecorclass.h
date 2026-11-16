@@ -159,6 +159,7 @@ struct wdpWindowShape
 
 /* WinDecor DrawWindowBorder Flags */
 #define  WDF_DWB_TOP_ONLY   	1   /* Draw top border only */
+#define  WDF_DWB_ACTIVATION 	2   /* Only the activation changed since the last draw */
 
 /* WinDecor DrawWinTitle Title Align */
 #define WD_DWTA_LEFT 	    	0

@@ -43,7 +43,10 @@ static struct Library *gfxinit(struct Library *lib, APTR seg, APTR sysbase)
     NewList(&GfxBase->TextFonts);
     InitSemaphore(&PrivGBase(GfxBase)->hashtab_sema);
     InitSemaphore(&PrivGBase(GfxBase)->view_sema);
+    /* Public, for diskfont.library and intuition to hold the font list */
     InitSemaphore(&PrivGBase(GfxBase)->fontsem);
+    PrivGBase(GfxBase)->fontsem.ss_Link.ln_Name = "graphics.library/TextFonts";
+    AddSemaphore(&PrivGBase(GfxBase)->fontsem);
     GfxBase->HashTableSemaphore = &PrivGBase(GfxBase)->hashtab_sema;
     GfxBase->ActiViewCprSemaphore = &PrivGBase(GfxBase)->view_sema;
 
@@ -97,6 +100,7 @@ APTR gfxexpunge(struct Library *lib)
     seg = PrivGBase(GfxBase)->seglist;
     Remove(&lib->lib_Node);
     RemIntServer(INTB_VERTB, &PrivGBase(GfxBase)->tofint);
+    RemSemaphore(&PrivGBase(GfxBase)->fontsem);
     if (PrivGBase(GfxBase)->drvlib)
         CloseLibrary(PrivGBase(GfxBase)->drvlib);
     FreeMem(GfxBase->DefaultFont, sizeof(struct TextFont));

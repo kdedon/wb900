@@ -38,9 +38,6 @@
 #include "inputhandler_actions.h"
 #include "requesters.h"
 
-#define NO_DOUBLEBUFFER         (0)
-#define DOUBLEBUFFER            (1)
-
 /* The C library functions intuition uses (crt.c) */
 #define offsetof(t, m)  ((ULONG)&((t *)0)->m)
 ULONG strlen(CONST_STRPTR s);
@@ -327,6 +324,8 @@ struct IntDrawInfo
 #define LOCKSHARED_MENUDECOR(IntuitionBase) ObtainSemaphoreShared(&((struct IntIntuitionBase *)(IntuitionBase))->MenuDecorSem);
 #define UNLOCK_MENUDECOR(IntuitionBase) 	 ReleaseSemaphore(&((struct IntIntuitionBase *)(IntuitionBase))->MenuDecorSem);
 
+#define NUM_SYSIMAGES 8
+
 struct IntScreen
 {
     struct Screen            Screen;
@@ -356,6 +355,9 @@ struct IntScreen
     Object                  *MenuDecorObj;
     Object                  *WinDecorObj;
     struct NewDecorator     *Decorator;
+    /* system gadget images shared by the screen's windows */
+    Object                  *SysImages[NUM_SYSIMAGES];
+    UBYTE                    SysImageWhich[NUM_SYSIMAGES];
 
     struct BitMap           *AllocatedBitMap;
     /* For FreeScreenBuffer(): the screen's own bitmap */
@@ -454,7 +456,7 @@ VOID int_refreshglist(struct Gadget *gadgets, struct Window *window,
                       struct IntuitionBase *IntuitionBase);
 
 VOID int_RefreshWindowFrame(struct Window *window, LONG mustbe, LONG mustnotbe,
-                            LONG mode,
+                            ULONG dwbflags,
                             struct IntuitionBase *IntuitionBase);
 
 #define int_refreshwindowframe(a,b,c,d) int_RefreshWindowFrame(a,b,c,0,d);
@@ -606,8 +608,7 @@ ULONG TellWBTaskToOpenWindows(struct IntuitionBase *IntuitionBase);
 extern void SetDisplayDefaults(struct IntuitionBase * IntuitionBase);
 extern void LoadDefaultPreferences(struct IntuitionBase * IntuitionBase);
 
-Object* CreateStdSysImage(WORD which, WORD preferred_height, struct Screen *scr,
-    	    	    	  struct DrawInfo *dri, struct IntuitionBase *IntuitionBase);
+void FreeSysImages(struct Screen *scr, struct IntuitionBase *IntuitionBase);
 extern void CheckRectFill(struct RastPort *rp, WORD x1, WORD y1, WORD x2, WORD y2, struct IntuitionBase * IntuitionBase);
 extern BOOL CreateWinSysGadgets(struct Window *w, struct IntuitionBase *IntuitionBase);
 extern VOID KillWinSysGadgets(struct Window *w, struct IntuitionBase *IntuitionBase);

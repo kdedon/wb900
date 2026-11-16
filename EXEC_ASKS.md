@@ -40,6 +40,20 @@ Opened 2026-11-14; status from exec816-0f and the c900/exec900 log. The user app
 | 31 | A 63 KB stack segment on 1 MB leaves no two free heap pages for a 640x400x4 bitmap (below) | **Landed** 8c2497f3: blocks of 128 B or less take the stack region's top first, so whole heap pages stay free; asl passes on 1 MB again | done |
 | 32 | Tell framebuf.resource the HR jumper at boot (below) | **Landed** 8a6c0d5d: `mkdisk --hrmode=auto|800|1024|rgbi`; framebuf and hr.display follow it. The ScreenMode prefs may still drive a corrected mode while Workbench owns the display | done |
 | 33 | A recoverable `Alert()` on the screen through intuition while it lends the display (below) | **Landed** 6ff12776: dos.library patches Alert; a recoverable Task alert outside Forbid/Disable calls DisplayAlert(0, text, 40) as exec 1.2 does; kernel and dead-end alerts stay on the console | done |
+| 36 | Cheaper kernel console output (below) | open | — |
+| 35 | The boot assign `FONTS:` → `SYS:Fonts` (below) | **Landed** 9f4f7561: dos.library assigns FONTS: to SYS:Fonts at boot (DH1: on --lnames disks) | done |
+
+### 35. FONTS: at boot
+
+AmigaOS's dos.library makes `FONTS:` → `SYS:Fonts` with the other boot assigns; Exec900 makes `SYS:`, `C:`, `S:`, `L:`, `LIBS:` and `DEVS:` only. diskfont.library finds fonts through `GetDeviceProc("FONTS:")`, so without it no disk font opens (repro: wb900 `tests/diskfont.c` without its `AssignLate("FONTS", "SYS:Fonts")`: AvailFonts(AFF_DISK) lists nothing). Meanwhile Workbench and the test make the assign.
+
+Asked for: `FONTS:` → `SYS:Fonts` as a late assign at boot, like `LIBS:`.
+
+### 36. Kernel console output cost
+
+While the boot console owns the HR display, each line `kputc` prints is drawn there: on the profiling emulator at 6 MHz, the 52-byte line intuition printed before `OpenScreen` made opening the Workbench 70 ms slower in mono and 315 ms in RGBI than printing it after, when a byte costs about 1,700 clocks. wb900 now prints it after (repro: wb900 9876d4b `tests/wbdemo.c`, phase screen-open, `C900_HRCONF=1`). Also, `con_putc` busy-waits for the SCC, so on the board each byte should cost a byte time, about 1 ms at 9600 baud; the emulator doesn't pace it.
+
+Asked for: a cheaper display console line (its scroll), and `kputc` output queued for the transmit interrupt when interrupts are on, waiting only when the queue is full or interrupts are off.
 
 ### 33. Recoverable alerts on the screen
 

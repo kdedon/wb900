@@ -243,6 +243,7 @@ static BOOL openall(struct AslBase_intern *AslBase)
 
 static void closeall(struct AslBase_intern *AslBase)
 {
+    if (AslBase->asl_DiskfontBase) CloseLibrary(AslBase->asl_DiskfontBase);
     if (AslBase->asl_WorkbenchBase) CloseLibrary(AslBase->asl_WorkbenchBase);
     CloseLibrary(AslBase->asl_GadToolsBase);
     CloseLibrary((struct Library *)AslBase->asl_IntuitionBase);

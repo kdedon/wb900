@@ -81,8 +81,8 @@ OwnBlitter()() void @Graphics_76
 DisownBlitter()() void @Graphics_77
 InitTmpRas(tmpras,buffer,size)(a0,a1,d0)
 AskFont(rp,textAttr)(struct RastPort *,struct TextAttr *) void @Graphics_79
-AddFont(textFont)(a1)
-RemFont(textFont)(a1)
+AddFont(textFont)(struct TextFont *) void @Graphics_80
+RemFont(textFont)(struct TextFont *) void @Graphics_81
 AllocRaster(width,height)(ULONG,ULONG) PLANEPTR @Graphics_82
 FreeRaster(p,width,height)(PLANEPTR,UWORD,UWORD) void @Graphics_83
 AndRectRegion(Reg,Rect)(struct Region *,struct Rectangle *) void @Graphics_84

@@ -56,11 +56,13 @@
     AROS_LIBFUNC_INIT
 
     /* Zero out everything, then set some valid defaults */
-    UBYTE *p = (UBYTE *)rp;
+    ULONG *p = (ULONG *)rp;
     UWORD i;
 
-    for(i = 0; i < sizeof(struct RastPort); i++)
-        p[i] = 0;
+    for(i = sizeof(struct RastPort) / 4; i > 0; i--)
+        *p++ = 0;
+    if(sizeof(struct RastPort) & 2)
+        *(UWORD *)p = 0;
 
     rp->Mask     = 0xFF;
     rp->FgPen    = -1;

@@ -51,9 +51,9 @@ static BOOL LoadScreenMode(struct ScreenModePrefs *smp, struct IntuitionBase *In
  * mode, when the display has it, else the display's first mode, the
  * card's own.  A mode may be one the display has no monitor for, the
  * other setting of a jumper.  Shift held ignores both, so a bad one can
- * be undone.
+ * be undone.  *why is why the card's mode was taken, else NULL.
  */
-static ULONG ChooseMode(struct IntuitionBase *IntuitionBase)
+static ULONG ChooseMode(struct IntuitionBase *IntuitionBase, char **why)
 {
     struct GfxBase *GfxBase = GetPrivIBase(IntuitionBase)->GfxBase;
     struct Library *InputBase = GetPrivIBase(IntuitionBase)->InputBase;
@@ -61,24 +61,24 @@ static ULONG ChooseMode(struct IntuitionBase *IntuitionBase)
     struct ScreenModePrefs saved;
     struct DimensionInfo dim;
     ULONG id = NextDisplayInfo(INVALID_ID);
-    char *why;
 
+    *why = NULL;
     if (id == INVALID_ID)
         return INVALID_ID;
     if (PeekQualifier() & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))
-        why = "Shift held";
+        *why = "Shift held";
     else if (GetPrivIBase(IntuitionBase)->IPrefsScreenMode)
     {
         if (FindDisplayInfo(smp->smp_DisplayID) &&
             !(ModeNotAvailable(smp->smp_DisplayID) & ~DI_AVAIL_NOMONITOR))
             return smp->smp_DisplayID;
-        why = "IPrefs mode not available";
+        *why = "IPrefs mode not available";
     }
     else if (!LoadScreenMode(&saved, IntuitionBase))
-        why = "no saved mode";
+        *why = "no saved mode";
     else if (!FindDisplayInfo(saved.smp_DisplayID) ||
              (ModeNotAvailable(saved.smp_DisplayID) & ~DI_AVAIL_NOMONITOR))
-        why = "saved mode not available";
+        *why = "saved mode not available";
     else
     {
         smp->smp_Width  = saved.smp_Width;
@@ -87,7 +87,6 @@ static ULONG ChooseMode(struct IntuitionBase *IntuitionBase)
         smp->smp_Control = saved.smp_Control;
         return saved.smp_DisplayID;
     }
-    xKPrintf("intuition: %s, Workbench in mode %lx\n", why, id);
     if (GetDisplayInfoData(NULL, (UBYTE *)&dim, sizeof(dim), DTAG_DIMS, id))
     {
         smp->smp_Width  = dim.Nominal.MaxX + 1;
@@ -177,6 +176,7 @@ static ULONG ChooseMode(struct IntuitionBase *IntuitionBase)
         /* Open the Workbench screen if we don't have one. */
         WORD  width, height, depth;
         ULONG modeid;
+        char *why;
         struct TagItem screenTags[] =
         {
             { SA_Width,                0                  }, /* 0 */
@@ -194,7 +194,7 @@ static ULONG ChooseMode(struct IntuitionBase *IntuitionBase)
         if (!GetPrivIBase(IntuitionBase)->ScreenModePrefs)
             SetDisplayDefaults(IntuitionBase);
 
-        modeid = ChooseMode(IntuitionBase);
+        modeid = ChooseMode(IntuitionBase, &why);
         width  = GetPrivIBase(IntuitionBase)->ScreenModePrefs->smp_Width;
         height = GetPrivIBase(IntuitionBase)->ScreenModePrefs->smp_Height;
         depth  = GetPrivIBase(IntuitionBase)->ScreenModePrefs->smp_Depth;
@@ -239,6 +239,10 @@ static ULONG ChooseMode(struct IntuitionBase *IntuitionBase)
 
 
             wbscreen = OpenScreenTagList(NULL, screenTags);
+            /* after the screen takes the display from the boot console,
+               which would draw the line */
+            if (why)
+                xKPrintf("intuition: %s, Workbench in mode %lx\n", why, modeid);
 
             if (wbscreen)
                 GetPrivIBase(IntuitionBase)->ActivePreferences.wb_Depth = GetBitMapAttr(wbscreen->RastPort.BitMap, BMA_DEPTH);

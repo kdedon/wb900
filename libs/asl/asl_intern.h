@@ -60,6 +60,7 @@
 #include <proto/intuition.h>
 #include <proto/gadtools.h>
 #include <proto/workbench.h>
+#include <proto/diskfont.h>
 #include <proto/alib.h>
 
 /*****************************************************************************************/
@@ -299,6 +300,7 @@ struct AslBase_intern
     struct Library              *asl_LayersBase;
     struct IntuitionBase        *asl_IntuitionBase;
     struct Library              *asl_GadToolsBase;
+    struct Library              *asl_DiskfontBase;    /* from the first font requester */
     struct Library              *asl_WorkbenchBase;   /* optional, for the AppWindow */
     struct AslReqInfo           ReqInfo[3];
     Class                       *aslpropclass;
@@ -437,6 +439,7 @@ AROS_UFP3(ULONG, SMGadgetryHook,
 #define LayersBase      (ASLB(AslBase)->asl_LayersBase)
 #define IntuitionBase   (ASLB(AslBase)->asl_IntuitionBase)
 #define GadToolsBase    (ASLB(AslBase)->asl_GadToolsBase)
+#define DiskfontBase    (ASLB(AslBase)->asl_DiskfontBase)
 #define WorkbenchBase   (ASLB(AslBase)->asl_WorkbenchBase)
 
 /*****************************************************************************************/

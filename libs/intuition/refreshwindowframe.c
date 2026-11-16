@@ -59,8 +59,9 @@
     AROS_LIBFUNC_EXIT
 } /* RefreshWindowFrame */
 
+/* dwbflags: more WDM_DRAW_WINBORDER flags */
 VOID int_RefreshWindowFrame(struct Window *window,
-                            LONG mustbe, LONG mustnotbe, LONG mode,
+                            LONG mustbe, LONG mustnotbe, ULONG dwbflags,
                             struct IntuitionBase *IntuitionBase)
 {
     /* Draw a frame around the window */
@@ -101,7 +102,7 @@ VOID int_RefreshWindowFrame(struct Window *window,
                 msg.wdp_TrueColor       = (((struct IntScreen *)window->WScreen)->DInfo.dri_Flags & DRIF_DIRECTCOLOR) ? TRUE : FALSE;
                 msg.wdp_Window          = window;
                 msg.wdp_RPort           = rp;
-                msg.wdp_Flags           = (mustbe == REFRESHGAD_TOPBORDER) ? WDF_DWB_TOP_ONLY : 0;
+                msg.wdp_Flags           = ((mustbe == REFRESHGAD_TOPBORDER) ? WDF_DWB_TOP_ONLY : 0) | dwbflags;
                 msg.wdp_Dri             = dri;
                 msg.wdp_UserBuffer      = ((struct IntWindow *)window)->DecorUserBuffer;
                 DoMethodA(((struct IntScreen *)(window->WScreen))->WinDecorObj, (Msg)&msg);

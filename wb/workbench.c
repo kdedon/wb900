@@ -1149,6 +1149,11 @@ static void envinit(void)
 	BPTR lock;
 	UBYTE *buf;
 
+	/* FONTS:, which AmigaOS's dos.library makes at boot */
+	if ((lock = Lock("FONTS:", ACCESS_READ)) != NULL)
+		UnLock(lock);
+	else
+		AssignLate("FONTS", "SYS:Fonts");
 	if ((lock = Lock("ENV:", ACCESS_READ)) != NULL) {
 		UnLock(lock);
 		return;

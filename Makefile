@@ -64,7 +64,7 @@ define CCRULE
 	$(CC2) 001200000010 $(OBJ)/$(2).z1 $(3) $(OBJ)/$(2).scr 0
 endef
 
-LIBS	= utility keymap graphics layers intuition gadtools icon workbench commodities asl
+LIBS	= utility keymap graphics layers intuition gadtools icon workbench commodities asl diskfont
 # graphics.library's display drivers (LIBS:NAME.gfxdriver)
 GFXDRIVERS = hr lc
 DEVS	= input console
@@ -211,7 +211,9 @@ $(commodities_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility keymap)
 asl_LINK = $(ALIB)
 asl_SRC = $(TOP)/lib
 $(eval $(call LIBRARY,asl,Asl,asl))
-$(asl_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility graphics layers intuition gadtools workbench)
+$(asl_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility graphics layers intuition gadtools workbench diskfont)
+$(eval $(call LIBRARY,diskfont,Diskfont,df))
+$(diskfont_OBJS): $(patsubst %,$(OUT)/include/lvo/%_lib.h,utility graphics)
 
 # CON: and RAW: (fs/con), a boot module: lib/startup.s (its process
 # entry), the handler and amiga.lib's calls.
@@ -235,7 +237,7 @@ $(OUT)/progs/%: $(OBJ)/startup.o $(OBJ)/t_%.o $(OBJ)/amiga.o $(OBJ)/portio.o $(O
 	$(LD) -r -o $(OBJ)/p_$*.r $^
 	$(MKHUNK) --entry=start $@ $(OBJ)/p_$*.r
 # The tests that link amiga.lib
-ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin asl expunge wbmulti screenmode
+ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin asl expunge wbmulti screenmode diskfont
 $(patsubst %,$(OUT)/progs/%,$(ALIBTESTS)): $(ALIB)
 # amiga.lib's commodities calls
 CXLIB	= $(patsubst $(TOP)/lib/%.c,$(OBJ)/lib/%.o,$(wildcard $(TOP)/lib/cx/*.c))
@@ -328,6 +330,18 @@ NoCapsLock_INFO = $(CX_INFO)
 Blanker_INFO = $(CX_INFO) --tooltype=SECONDS=120 "--tooltype=BLANKKEY=ctrl alt b"
 # tests/cxtools.c's, which blanks after a second
 BlankerTest_INFO = $(CX_INFO) --tooltype=SECONDS=1 "--tooltype=BLANKKEY=ctrl alt b"
+# The fonts, SYS:Fonts/NAME.font and NAME/SIZE for NAME_FONT's sizes, from
+# wb/fonts/NAMESIZE.txt
+MKFONT	= python3 $(TOP)/tools/mkfont.py
+FONTS	= fixed sans
+fixed_FONT = 8 11 16
+sans_FONT = 9
+$(OUT)/fonts/%.font: $(TOP)/tools/mkfont.py $(wildcard $(TOP)/wb/fonts/*.txt)
+	$(MKFONT) $(OUT)/fonts $(patsubst %,$(TOP)/wb/fonts/$*%.txt,$($*_FONT))
+FONTPUT	= $(foreach f,$(FONTS),--put=Fonts/$(f).font=$(OUT)/fonts/$(f).font \
+	  $(foreach z,$($(f)_FONT),--put=Fonts/$(f)/$(z)=$(OUT)/fonts/$(f)/$(z)))
+FONTDEPS = $(patsubst %,$(OUT)/fonts/%.font,$(FONTS))
+
 $(OUT)/wb/%.info: $(TOP)/tools/mkinfo.py $(TOP)/wb/hello.txt $(TOP)/libs/icon/support_builtin.c
 	@mkdir -p $(OUT)/wb
 	$(MKINFO) $@ $($*_INFO)
@@ -337,7 +351,7 @@ $(OUT)/wb/%.info: $(TOP)/tools/mkinfo.py $(TOP)/wb/hello.txt $(TOP)/libs/icon/su
 # libraries, display drivers and devices.
 # The exec partition holds 512 KB, so only the tests that open
 # intuition.library carry it.
-DISKLIBS = $(if $(filter $(ITESTS),$(1)),$(LIBS),$(filter-out intuition gadtools icon workbench asl,$(LIBS)))
+DISKLIBS = $(if $(filter $(ITESTS),$(1)),$(LIBS),$(filter-out intuition gadtools icon workbench asl diskfont,$(LIBS)))
 # make HRMODE=800|1024|rgbi: tell Exec900 the HR jumper on every disk
 DISK	= $(if $(filter $(LNAMES),$(1)),--lnames) $(if $(HRMODE),--hrmode=$(HRMODE)) \
 	  --module=$(EXEC900_OUT)/hunks/dos.library \
@@ -369,11 +383,11 @@ CXPUT	= $(foreach t,$(CXTOOLS),--put=Tools/Commodities/$(t)=$(OUT)/cx/$(t))
 # shellwin's opens CON: and needs over 2 KB
 WBSTACK	= --rootstack=2
 wbboot_PUT = $(workbench_PUT) --put=Demos/Notes=$(TOP)/wb/Notes \
-	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan $(CXPUT) $(UTILPUT) $(PREFSPUT) \
+	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan $(CXPUT) $(UTILPUT) $(PREFSPUT) $(FONTPUT) \
 	$(foreach i,$(filter-out Demos/Hello.info,$(WBDISK)),--put=$(i)=$(OUT)/wb/$(notdir $(i))) \
 	--module=$(EXEC900_OUT)/hunks/ram-handler $(WBSTACK)
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
-$(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin $(OUT)/shellwin.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS) $(PREFSDEPS)
+$(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin $(OUT)/shellwin.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS) $(PREFSDEPS) $(FONTDEPS)
 # More's test: the utilities and the Shell, with room for its files of
 # 100 and 300 KB
 more_PUT = $(UTILPUT) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg --sys=3072
@@ -404,7 +418,11 @@ $(OUT)/shellwin.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)
 # Workbench, a Shell and four tools at once
 wbmulti_PUT = $(shellwin_PUT)
 $(OUT)/wbmulti.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK))) \
-	$(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS) $(PREFSDEPS)
+	$(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS) $(PREFSDEPS) $(FONTDEPS)
+# diskfont's test: the fonts
+ITESTS	+= diskfont
+diskfont_PUT = $(FONTPUT)
+$(OUT)/diskfont.bin: $(FONTDEPS)
 
 BINDEPS	= $(patsubst %,$(OUT)/libs/%.library,$(LIBS)) $(patsubst %,$(OUT)/libs/%.gfxdriver,$(GFXDRIVERS)) $(patsubst %,$(OUT)/devs/%.device,$(DEVS)) $(OUT)/l/con-handler $(EXEC900_OUT)/exec900.sys
 $(OUT)/%.bin: $(OUT)/progs/% $(BINDEPS)

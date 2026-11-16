@@ -6,6 +6,7 @@
 #include <proto/graphics.h>
 #include <proto/timer.h>
 #include <intuition/gadgetclass.h>
+#include <intuition/windecorclass.h>
 #include "intuition_intern.h"
 #include "inputhandler.h"
 #include "inputhandler_actions.h"
@@ -206,7 +207,7 @@ static VOID int_activatewindow(struct ActivateWindowActionMsg *msg,
         {
             AROS_ATOMIC_AND(oldactive->Flags, ~WFLG_WINDOWACTIVE);
 
-            int_refreshwindowframe(oldactive, REFRESHGAD_BORDER, 0, IntuitionBase);
+            int_RefreshWindowFrame(oldactive, REFRESHGAD_BORDER, 0, WDF_DWB_ACTIVATION, IntuitionBase);
             if ((!window || oldactive->WScreen != window->WScreen) &&
                 oldactive->WScreen->Title != oldtitle)
                 RenderScreenTitle(oldactive->WScreen, IntuitionBase);

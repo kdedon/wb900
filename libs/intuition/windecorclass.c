@@ -487,6 +487,7 @@ IPTR INTERNAL_WDM_DRAW_WINTITLE(Class *cl, Object *obj, struct wdpDrawWinBorder 
     if (right - left > (window->BorderLeft + window->BorderRight))
     {
         ULONG                   textlen, titlelen;
+        LONG                    avail;
         struct TextFont         *tf;
         struct TextExtent       te;
         UWORD                   xunused, ypad;
@@ -497,14 +498,21 @@ IPTR INTERNAL_WDM_DRAW_WINTITLE(Class *cl, Object *obj, struct wdpDrawWinBorder 
         SetFont(rp, tf);
 
         titlelen = strlen(window->Title);
-        textlen = TextFit(rp
-                          , window->Title
-                          , titlelen
-                          , &te
-                          , NULL
-                          , 1
-                          , right - left - (window->BorderLeft + window->BorderRight)
-                          , window->BorderTop - (ypad << 1));
+        avail = right - left - (window->BorderLeft + window->BorderRight);
+        /* a title that fits whole is what TextFit() would fit, in one call */
+        TextExtent(rp, window->Title, titlelen, &te);
+        if (te.te_Extent.MaxX - te.te_Extent.MinX < avail &&
+            window->BorderTop - (ypad << 1) >= tf->tf_YSize)
+            textlen = titlelen;
+        else
+            textlen = TextFit(rp
+                              , window->Title
+                              , titlelen
+                              , &te
+                              , NULL
+                              , 1
+                              , avail
+                              , window->BorderTop - (ypad << 1));
 
         if (textlen)
         {
@@ -530,26 +538,39 @@ IPTR WinDecorClass__WDM_DRAW_WINBORDER(Class *cl, Object *obj, struct wdpDrawWin
     struct RastPort      *rp = msg->wdp_RPort;
     struct Window        *window = msg->wdp_Window;
     UWORD                 fillpens[NUMDRIPENS];
-    UWORD                *pens = (window->Flags & WFLG_WINDOWACTIVE) ?
-                                 getfillpens(DRI(msg->wdp_Dri), fillpens) :
-                                 DRI(msg->wdp_Dri)->dri_Pens;
+    BOOL                  active = (window->Flags & WFLG_WINDOWACTIVE) != 0;
+    UWORD                *pens = getfillpens(DRI(msg->wdp_Dri), fillpens);
+    UWORD                *opens = DRI(msg->wdp_Dri)->dri_Pens;
+    UWORD                 fillpen = active ? FILLPEN : BACKGROUNDPEN;
+    BOOL                  shine, shadow, fill;
     LONG                  left, right;
     /* The window's size and border sizes do not change while it is drawn */
     WORD                  width = window->Width, height = window->Height;
     BYTE                  borderleft = window->BorderLeft, bordertop = window->BorderTop;
     BYTE                  borderright = window->BorderRight, borderbottom = window->BorderBottom;
 
+    if (!active)
+    {
+        opens = pens;
+        pens = DRI(msg->wdp_Dri)->dri_Pens;
+    }
+    /* After an activation change, only what the other state draws otherwise */
+    shine = !(msg->wdp_Flags & WDF_DWB_ACTIVATION) || pens[SHINEPEN] != opens[SHINEPEN];
+    shadow = !(msg->wdp_Flags & WDF_DWB_ACTIVATION) || pens[SHADOWPEN] != opens[SHADOWPEN];
+    fill = !(msg->wdp_Flags & WDF_DWB_ACTIVATION) ||
+           pens[fillpen] != opens[active ? BACKGROUNDPEN : FILLPEN];
+
     SetDrMd(rp, JAM1);
     SetAPen(rp, pens[SHINEPEN]);
 
-    if (bordertop > 0)
+    if (shine && bordertop > 0)
     {
         /* Outer shine edge on top side */
 
         CheckRectFill(rp, 0, 0, width - 1, 0, IntuitionBase);
     }
 
-    if (!(msg->wdp_Flags & WDF_DWB_TOP_ONLY))
+    if (shine && !(msg->wdp_Flags & WDF_DWB_TOP_ONLY))
     {
         if (borderleft > 0)
         {
@@ -581,7 +602,7 @@ IPTR WinDecorClass__WDM_DRAW_WINBORDER(Class *cl, Object *obj, struct wdpDrawWin
 
     SetAPen(rp, pens[SHADOWPEN]);
 
-    if (!(msg->wdp_Flags & WDF_DWB_TOP_ONLY))
+    if (shadow && !(msg->wdp_Flags & WDF_DWB_TOP_ONLY))
     {
         if (borderright > 0)
         {
@@ -609,7 +630,7 @@ IPTR WinDecorClass__WDM_DRAW_WINBORDER(Class *cl, Object *obj, struct wdpDrawWin
         }
     }
 
-    if (bordertop > 1)
+    if (shadow && bordertop > 1)
     {
         /* Inner shadow edge on top side */
 
@@ -618,11 +639,11 @@ IPTR WinDecorClass__WDM_DRAW_WINBORDER(Class *cl, Object *obj, struct wdpDrawWin
                       IntuitionBase);
     }
 
-    SetAPen(rp, pens[(window->Flags & WFLG_WINDOWACTIVE) ? FILLPEN : BACKGROUNDPEN]);
+    SetAPen(rp, pens[fillpen]);
 
     findtitlearea(window, &left, &right);
 
-    if (bordertop > 2)
+    if (fill && bordertop > 2)
     {
         /* Fill on top side, but for the title area the title fills */
 
@@ -635,7 +656,7 @@ IPTR WinDecorClass__WDM_DRAW_WINBORDER(Class *cl, Object *obj, struct wdpDrawWin
             CheckRectFill(rp, 1, 1, width - 2, bordertop - 2, IntuitionBase);
     }
 
-    if (!(msg->wdp_Flags & WDF_DWB_TOP_ONLY))
+    if (fill && !(msg->wdp_Flags & WDF_DWB_TOP_ONLY))
     {
         if (borderleft > 2)
         {
@@ -661,7 +682,8 @@ IPTR WinDecorClass__WDM_DRAW_WINBORDER(Class *cl, Object *obj, struct wdpDrawWin
         }
     }
 
-    if (left != 0)
+    /* the fill takes in the title area's edges */
+    if ((shine || fill) && left != 0)
     {
         /* Left edge of title area */
 
@@ -670,7 +692,7 @@ IPTR WinDecorClass__WDM_DRAW_WINBORDER(Class *cl, Object *obj, struct wdpDrawWin
         Draw(rp, left, bordertop - 2);
     }
 
-    if (right != width - 1)
+    if ((shadow || fill) && right != width - 1)
     {
         /* Right edges of title area */
 
@@ -679,7 +701,9 @@ IPTR WinDecorClass__WDM_DRAW_WINBORDER(Class *cl, Object *obj, struct wdpDrawWin
         Draw(rp, right, bordertop - 2);
     }
 
-    if (window->Title) INTERNAL_WDM_DRAW_WINTITLE(cl, obj, msg);
+    if (window->Title && (fill || pens[active ? FILLTEXTPEN : TEXTPEN] !=
+                          opens[active ? TEXTPEN : FILLTEXTPEN]))
+        INTERNAL_WDM_DRAW_WINTITLE(cl, obj, msg);
 
     return TRUE;
 }

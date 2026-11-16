@@ -642,7 +642,8 @@ static void refline(WORD ox, WORD oy, WORD x0, WORD y0, WORD x1, WORD y1,
     UWORD ptrn, UBYTE mode, UBYTE a, UBYTE b, UBYTE all)
 {
 	WORD dx = x1 - x0, dy = y1 - y0, sx = dx > 0 ? 1 : -1;
-	WORD sy = dy > 0 ? 1 : -1, x = x0, y = y0, dM, dm, d, i, steep;
+	WORD sy = dy > 0 ? 1 : -1, x = x0, y = y0, dM, dm, i, steep;
+	LONG d;
 
 	if (dx < 0)
 		dx = -dx;
@@ -651,7 +652,7 @@ static void refline(WORD ox, WORD oy, WORD x0, WORD y0, WORD x1, WORD y1,
 	steep = dx < dy;
 	dM = steep ? dy : dx;
 	dm = steep ? dx : dy;
-	d = 2 * dm - dM;
+	d = 2 * (LONG)dm - dM;
 	for (i = 0; i <= dM; i++) {
 		if (x >= ox && x < ox + FW && y >= oy && y < oy + FH)
 			want[y - oy][x - ox] = pixel(want[y - oy][x - ox],
@@ -661,9 +662,9 @@ static void refline(WORD ox, WORD oy, WORD x0, WORD y0, WORD x1, WORD y1,
 				x += sx;
 			else
 				y += sy;
-			d += 2 * (dm - dM);
+			d += 2 * ((LONG)dm - dM);
 		} else
-			d += 2 * dm;
+			d += 2 * (LONG)dm;
 		if (steep)
 			y += sy;
 		else
@@ -671,17 +672,23 @@ static void refline(WORD ox, WORD oy, WORD x0, WORD y0, WORD x1, WORD y1,
 	}
 }
 
-/* Lines in all directions, some running out of the bitmap */
+static WORD ends[][4] = {
+	{ 0, 0, 71, 11 }, { 70, 1, 2, 10 }, { 5, 11, 40, 0 },
+	{ 64, 0, 66, 11 }, { 1, 5, 70, 6 }, { 66, 11, 60, 0 },
+	{ 71, 11, 0, 0 }, { 30, 0, 20, 11 }, { 2, 11, 5, 0 },
+	{ -40, -30, 100, 25 }, { 80, -5, -20, 30 }, { 10, 40, 30, -50 },
+	{ -10, 6, 200, 7 }, { 50, -9, 47, 20 }, { 0, 3, 71, 3 },
+	/* 16384 steps and more */
+	{ -19964, -44, 12036, 36 }, { 33, 8256, 29, -8244 },
+	{ -16364, -16384, 136, 106 }
+};
+#define NSHORT 15
+
+/* Lines in all directions, some running out of the bitmap, and with
+   big, the long ones */
 static void linecase(struct RastPort *rp, WORD ox, WORD oy, char *name,
-    UBYTE mode, UBYTE a, UBYTE b, UWORD ptrn, UBYTE all)
+    UBYTE mode, UBYTE a, UBYTE b, UWORD ptrn, UBYTE all, BOOL big)
 {
-	static WORD ends[][4] = {
-		{ 0, 0, 71, 11 }, { 70, 1, 2, 10 }, { 5, 11, 40, 0 },
-		{ 64, 0, 66, 11 }, { 1, 5, 70, 6 }, { 66, 11, 60, 0 },
-		{ 71, 11, 0, 0 }, { 30, 0, 20, 11 }, { 2, 11, 5, 0 },
-		{ -40, -30, 100, 25 }, { 80, -5, -20, 30 }, { 10, 40, 30, -50 },
-		{ -10, 6, 200, 7 }, { 50, -9, 47, 20 }, { 0, 3, 71, 3 }
-	};
 	WORD x, y, k;
 
 	snap(rp, ox, oy, was);
@@ -690,7 +697,8 @@ static void linecase(struct RastPort *rp, WORD ox, WORD oy, char *name,
 			want[y][x] = was[y][x];
 	SetABPenDrMd(rp, a, b, mode);
 	SetDrPt(rp, ptrn);
-	for (k = 0; k < sizeof(ends) / sizeof(ends[0]); k++) {
+	for (k = big ? NSHORT : 0;
+	    k < (big ? sizeof(ends) / sizeof(ends[0]) : NSHORT); k++) {
 		Move(rp, ox + ends[k][0], oy + ends[k][1]);
 		Draw(rp, ox + ends[k][2], oy + ends[k][3]);
 		refline(ox, oy, ox + ends[k][0], oy + ends[k][1],
@@ -745,10 +753,11 @@ static void rowcases(struct BitMap *bm, WORD ox, WORD oy, char *name)
 	blitcase(&rp, ox, oy, name, 1, 2, 6, 2, 50, 8, 0x30, all);
 	blitcase(&rp, ox, oy, name, 16, 1, 0, 1, 40, 8, 0x30, all);
 	blitcase(&rp, ox, oy, name, 3, 0, 14, 2, 40, 8, 0x30, all);
-	linecase(&rp, ox, oy, name, JAM1, 5 & all | 1, 0, 0xFFFF, all);
-	linecase(&rp, ox, oy, name, JAM1, 6 & all | 1, 0, 0xF0C3, all);
-	linecase(&rp, ox, oy, name, JAM2, 3 & all, 6 & all, 0xE4D1, all);
-	linecase(&rp, ox, oy, name, COMPLEMENT, 1, 0, 0xFF3C, all);
+	linecase(&rp, ox, oy, name, JAM1, 5 & all | 1, 0, 0xFFFF, all, FALSE);
+	linecase(&rp, ox, oy, name, JAM1, 6 & all | 1, 0, 0xF0C3, all, FALSE);
+	linecase(&rp, ox, oy, name, JAM2, 3 & all, 6 & all, 0xE4D1, all, FALSE);
+	linecase(&rp, ox, oy, name, COMPLEMENT, 1, 0, 0xFF3C, all, FALSE);
+	linecase(&rp, ox, oy, name, JAM2, 5 & all, 2 & all, 0xE4D1, all, TRUE);
 }
 
 /*

@@ -17,7 +17,6 @@
 #include <dos/dos.h>
 
 #include <clib/macros.h>
-#include <libraries/diskfont.h>
 
 #include "asl_intern.h"
 #include "fontreqsupport.h"
@@ -87,32 +86,27 @@ static void SortAvailFonts(struct AvailFontsHeader *afh, struct AslBase_intern *
 
 /*****************************************************************************************/
 
-/* diskfont.library's AvailFonts(AFF_MEMORY): the fonts in memory; the shortage in bytes */
-static ULONG FOAvailFonts(struct AvailFontsHeader *afh, ULONG size, struct AslBase_intern *AslBase)
+/*
+ * diskfont.library, opened by the first font requester rather than with
+ * the other libraries: a file requester's caller need not load it.
+ */
+static BOOL FOOpenDiskfont(struct AslBase_intern *AslBase)
 {
-    struct AvailFonts   *avf = (struct AvailFonts *)&afh[1];
-    struct TextFont     *tf;
-    ULONG               need = sizeof(*afh);
+    struct Library *lib;
 
-    afh->afh_NumEntries = 0;
-
+    if (DiskfontBase)
+        return TRUE;
+    lib = OpenLibrary("diskfont.library", 50L);
     Forbid();
-    ForeachNode(&GfxBase->TextFonts, tf)
+    if (!DiskfontBase)
     {
-        need += sizeof(*avf);
-        if (need > size) continue;
-
-        avf->af_Type          = AFF_MEMORY;
-        avf->af_Attr.ta_Name  = tf->tf_Message.mn_Node.ln_Name;
-        avf->af_Attr.ta_YSize = tf->tf_YSize;
-        avf->af_Attr.ta_Style = tf->tf_Style;
-        avf->af_Attr.ta_Flags = tf->tf_Flags;
-        avf++;
-        afh->afh_NumEntries++;
+        DiskfontBase = lib;
+        lib = NULL;
     }
     Permit();
-
-    return need > size ? need - size : 0;
+    if (lib)
+        CloseLibrary(lib);
+    return DiskfontBase != NULL;
 }
 
 /*****************************************************************************************/
@@ -125,6 +119,9 @@ LONG FOGetFonts(struct LayoutData *ld, struct AslBase_intern *AslBase)
     ULONG                afshortage = 0, afsize = 100;
     WORD                 i;
 
+    if (!FOOpenDiskfont(AslBase))
+        return ERROR_OBJECT_NOT_FOUND;
+
     SetBusyPointer(ld, AslBase);
 
     FOFreeFonts(ld, AslBase);
@@ -134,7 +131,7 @@ LONG FOGetFonts(struct LayoutData *ld, struct AslBase_intern *AslBase)
         udata->AFH = (struct AvailFontsHeader *)AllocVec(afsize, MEMF_ANY);
         if (udata->AFH)
         {
-            afshortage = FOAvailFonts(udata->AFH, afsize, AslBase);
+            afshortage = AvailFonts((STRPTR)udata->AFH, afsize, AFF_MEMORY | AFF_DISK);
 
             if (afshortage)
             {
@@ -342,7 +339,7 @@ VOID FOUpdatePreview(struct LayoutData *ld, struct AslBase_intern *AslBase)
             bpen = FOGetBGColor(ld, AslBase);
         }
 
-        font = OpenFont(&ta);
+        font = FOOpenDiskfont(AslBase) ? OpenDiskFont(&ta) : NULL;
         {
             struct TagItem settags[] =
             {

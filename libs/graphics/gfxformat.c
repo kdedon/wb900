@@ -717,13 +717,13 @@ struct linejob {
 
 /*
  * A line of dM steps on its major axis and dm on its minor one, dM under
- * 16384: the minor steps after i steps; the first step with at least k;
- * the last with at most k.  The blitter's line mode steps diagonally on
- * a tie.
+ * 32768: the minor steps after i steps, (dm i + dM / 2) / dM; the first
+ * step with at least k; the last with at most k.  The blitter's line
+ * mode steps diagonally on a tie.
  */
 static WORD fstep(WORD dM, WORD dm, WORD i)
 {
-    return gfx_MulDiv(2 * dm, i, dM, 2 * dM, NULL);
+    return gfx_MulDiv(dm, i, dM >> 1, dM, NULL);
 }
 
 static WORD firstf(WORD dM, WORD dm, WORD k)
@@ -732,7 +732,7 @@ static WORD firstf(WORD dM, WORD dm, WORD k)
         return 0;
     if (dm == 0 || k > dm)
         return dM + 1;
-    return gfx_MulDiv(2 * dM, k, 2 * dm - dM - 1, 2 * dm, NULL);
+    return gfx_MulDiv(dM, k, dm - 1 - (dM >> 1), dm, NULL);
 }
 
 static WORD lastf(WORD dM, WORD dm, WORD k)
@@ -741,7 +741,7 @@ static WORD lastf(WORD dM, WORD dm, WORD k)
         return -1;
     if (dm == 0 || k >= dm)
         return dM;
-    return gfx_MulDiv(2 * dM, k + 1, -dM - 1, 2 * dm, NULL);
+    return gfx_MulDiv(dM, k + 1, -1 - (dM >> 1), dm, NULL);
 }
 
 /* What stays the same for the pieces of a line */
@@ -767,13 +767,14 @@ static void linerun(const struct line *ln, const struct GfxPlane *pl,
 {
     UWORD r, rot = s & 15;
     ULONG o;
-    WORD f = gfx_MulDiv(2 * ln->dm, s, ln->dM, 2 * ln->dM, &r), x, y;
+    WORD f = gfx_MulDiv(ln->dm, s, ln->dM >> 1, ln->dM, &r), x, y;
     UBYTE pm = (UBYTE)pl->pl_M;
 
     x = ln->x0 + ln->sx * (ln->steep ? f : s);
     y = ln->y0 + ln->sy * (ln->steep ? s : f);
-    /* 2 dm (s + 1) - dM - 2 dM f, from the remainder of f */
-    lj->lj_Err = r + 2 * (ln->dm - ln->dM);
+    /* dm (s + 1) + dM / 2 - dM (f + 1), from the remainder of f: in
+       dm - dM to dm, so a word */
+    lj->lj_Err = r + ln->dm - ln->dM;
     o = (ULONG)y * ln->bpr + (ln->bpp == 1 ? x >> 3 : x >> 1);
     lj->lj_At = PL_AT(pl, o);
     lj->lj_Mask = (ln->bpp == 1 ? 0x80 >> (x & 7) :
@@ -792,7 +793,7 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
     struct line ln;
     WORD dx, dy, np, i, a, b, s, e, lo, hi, m0, sm, xs, yb, rb;
     UBYTE pm, skip0;
-    UWORD bpp;
+    UWORD bpp, udx, udy;
 
     np = gfx_Planes(bm, p, pl, &bpp);
     ln.bpp = bpp;
@@ -800,20 +801,18 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
     ln.ptrn = ptrn;
     ln.x0 = x0;
     ln.y0 = y0;
-    dx = x1 - x0;
-    dy = y1 - y0;
-    ln.sx = dx > 0 ? 1 : -1;
-    ln.sy = dy > 0 ? 1 : -1;
-    if (dx < 0)
-        dx = -dx;
-    if (dy < 0)
-        dy = -dy;
+    ln.sx = x1 > x0 ? 1 : -1;
+    ln.sy = y1 > y0 ? 1 : -1;
+    udx = x1 > x0 ? (UWORD)x1 - (UWORD)x0 : (UWORD)x0 - (UWORD)x1;
+    udy = y1 > y0 ? (UWORD)y1 - (UWORD)y0 : (UWORD)y0 - (UWORD)y1;
+    /* the step counts are words */
+    if (udx > 32767 || udy > 32767)
+        return;
+    dx = udx;
+    dy = udy;
     ln.steep = dx < dy;
     ln.dM = ln.steep ? dy : dx;
     ln.dm = ln.steep ? dx : dy;
-    /* the error terms are words */
-    if (ln.dM >= 16384)
-        return;
     /* the steps with their pixel in the clip: along the major axis */
     if (ln.steep) {
         a = ln.sy > 0 ? clip->MinY - y0 : y0 - clip->MaxY;
@@ -844,8 +843,8 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
     if (a > b)
         return;
 
-    lj.lj_IncrE = 2 * ln.dm;
-    lj.lj_IncrNE = 2 * (ln.dm - ln.dM);
+    lj.lj_IncrE = ln.dm;
+    lj.lj_IncrNE = ln.dm - ln.dM;
     lj.lj_YStep = ln.sy > 0 ? ln.bpr : -ln.bpr;
     lj.lj_Shift = ln.sx > 0 ? -bpp : bpp;
     lj.lj_Steep = ln.steep;

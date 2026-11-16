@@ -41,6 +41,8 @@ IPTR ScreenClass__OM_DISPOSE(Class *cl, Object *o, Msg msg)
     struct IntuitionBase *IntuitionBase = (struct IntuitionBase *)cl->cl_UserData;
     struct IntScreen *screen = INST_DATA(cl, o);
 
+    FreeSysImages(&screen->Screen, IntuitionBase);
+
     /* Free decoration objects */
     DisposeObject(screen->WinDecorObj);
     DisposeObject(screen->MenuDecorObj);

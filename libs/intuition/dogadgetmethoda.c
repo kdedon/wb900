@@ -7,7 +7,6 @@
 #include <intuition/classusr.h>
 #include <intuition/gadgetclass.h>
 #include <intuition/cghooks.h>
-#include <graphics/rpattr.h>
 #include <proto/alib.h>
 #include <proto/exec.h>
 #include <proto/graphics.h>
@@ -126,7 +125,7 @@
 
             case GM_RENDER:
                 {
-                    struct Layer *layer = rp->Layer;
+                    struct Layer *layer = gi->gi_RastPort ? rp->Layer : NULL;
 
                     /* DoGadgetMethodA is serialized by GadgetLock and already
                      * owns a reusable RastPort. Avoid allocating and freeing a
@@ -147,18 +146,8 @@
                                 InstallClipRegion(layer, NULL);
                         }
 
-                        SetWriteMask(rp, 0xFF);
-                        {
-                            static struct TagItem rptags[] =
-                            {
-                                { RPTAG_DrMd, JAM1 }, { RPTAG_PenMode, TRUE }, { TAG_DONE, 0 }
-                            };
-
-                            SetRPAttrsA(rp, rptags);
-                        }
-
-                        if (gi->gi_DrInfo)
-                            SetFont(rp, gi->gi_DrInfo->dri_Font);
+                        /* rp is new, with its write mask all ones and the font set */
+                        SetDrMd(rp, JAM1);
 
                         ((struct gpRender *)msg)->gpr_RPort = rp;
                         ((struct gpRender *)msg)->gpr_GInfo = gi;

@@ -105,7 +105,7 @@ static VOID int_setwindowtitles(struct SetWindowTitlesActionMsg *msg,
 
     if (change)
     {
-        int_RefreshWindowFrame(window, REFRESHGAD_TOPBORDER, 0, DOUBLEBUFFER, IntuitionBase);
+        int_RefreshWindowFrame(window, REFRESHGAD_TOPBORDER, 0, 0, IntuitionBase);
     }
 
     /* Change screen's title */

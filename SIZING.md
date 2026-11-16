@@ -16,7 +16,7 @@
 | | LC card: 8563/8568 VDC, 640x200 bitmap behind register port, block fill/copy (LC_PLAN.md). LR: text only | kernel3 |
 | Mouse | On HR card, quadrature counters at 0x400/0x402, buttons bits 15:13, polled | kernel3 |
 | Exec900 has | lists, tasks/signals, ports, libraries (V39), devices, pools, semaphores, interrupt servers, dos.library, timer.device (all units, EXEC_ASKS 3/7), console, keyboard, gameport, framebuf.resource | exec816-0f |
-| Exec900 lacks | graphics, layers, input.device, keymap, intuition, workbench/icon, diskfont (wb900 provides all but diskfont); Cause/soft ints (not needed) | exec816-0f |
+| Exec900 lacks | graphics, layers, input.device, keymap, intuition, workbench/icon, diskfont (wb900 provides them); Cause/soft ints (not needed) | exec816-0f |
 
 ## 2. Licensing
 
@@ -26,6 +26,7 @@
 - MIT (`c900/LICENSING.md`, branch `c900/exec900`, 2026-11-14): `include/`, `fd/`, `lib/` startup and amiga.lib helpers, `platform/progabs.s`/`portio.s`, the Exec900 libc DOS layer, and everything genlvo generates (EXEC_ASKS 2a). `tools/genlvo.py` itself stays GPL-3.
 - MWC libc is BSD-3: ship `libc/NOTICE` with anything linking it.
 - Rules: AROS-derived files stay in their own tree under APL, headers intact, source published; no Exec900 GPL code in them; graphics/layers glue is fresh MIT or AROS APL, never Exec900 internals. Exception: wb/edit is GPL 2 (aros/UPSTREAM.md).
+- Fonts (wb/fonts): `fixed` 8 is Daniel Hepper's font8x8_basic (github.com/dhepper/font8x8, public domain, after Marcel Sondaar's public-domain font8x8), as Exec900 ships it; `fixed` 11 and 16 are made from it; `sans` 9 is drawn for wb900, CC0 1.0. No Commodore fonts.
 - Reusable MIT code: kernel3 HR drivers and ZView (`commodore-900-coh-userland/hr`: gfx, gfx4, fonts, software cursor).
 
 ## 3. AROS code involved
@@ -50,6 +51,7 @@
 | gadtools.library | workbench/libs/gadtools | 10.5k | ported |
 | keymap / input.device | rom/keymap, rom/devs/input | 2.0k / 1.0k | ported |
 | workbench + icon libs | workbench/libs/{workbench,icon} | 4.4k + 8.0k | ported (icon: classic .info only) |
+| diskfont.library | workbench/libs/diskfont | 4.1k raw | ported, 1.8k raw: bitmap fonts, scaling; no outline, colour, tags or font cache file |
 
 Everything: ~135k lines; the subset ~55–65k.
 

@@ -1,0 +1,12 @@
+* diskfont.library in the C900 dialect of an Amiga fd file, from AROS's
+* diskfont.conf.  Each function takes DiskfontBase first; the C
+* functions are AROS_LH definitions named Diskfont_N after their vector.
+##base _DiskfontBase
+##bias 30
+##public
+OpenDiskFont(textAttr)(struct TextAttr *) struct TextFont * @Diskfont_5
+AvailFonts(buffer,bufBytes,flags)(STRPTR,LONG,LONG) LONG @Diskfont_6
+NewFontContents(fontsLock,fontName)(BPTR,STRPTR) struct FontContentsHeader * @Diskfont_7
+DisposeFontContents(fontContentsHeader)(struct FontContentsHeader *) void @Diskfont_8
+NewScaledDiskFont(sourceFont,destTextAttr)(struct TextFont *,struct TextAttr *) struct DiskFontHeader * @Diskfont_9
+##end

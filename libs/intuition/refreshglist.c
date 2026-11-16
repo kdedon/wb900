@@ -194,6 +194,10 @@ void rendergadget(struct Gadget *gadgets,struct Window *window, struct Requester
             break;
 
         case GTYP_CUSTOMGADGET:
+            /* a window's drag bar draws nothing */
+            if (!requester && window && !IS_SCREEN_GADGET(gadgets) &&
+                gadgets == (struct Gadget *)SYSGAD(window, DRAGBAR))
+                break;
             RefreshBoopsiGadget (gadgets, window, requester, IntuitionBase);
             break;
 
