@@ -6,7 +6,9 @@
  * double click opens a drawer or launches a program through
  * workbench.library.  Icons dropped on another volume are copied.
  * AppIcons and the Tools menu's AppMenuItems send their applications
- * AppMessages.  Without a display it drives itself (selftest()).
+ * AppMessages.  Leave Out puts icons on the backdrop and lists them in
+ * their volume's .backdrop, Put Away takes them back.  Without a display
+ * it drives itself (selftest()).
  */
 #include "workbench.h"
 #include <devices/inputevent.h>
@@ -78,7 +80,8 @@ char *strncpy(char *d, CONST_STRPTR s, ULONG n)
 
 enum { M_BACKDROP = 1, M_EXECUTE, M_REDRAW, M_ABOUT, M_QUIT, M_PARENT,
 	M_CLOSE, M_CLEANUP, M_ICONS, M_ALL, M_SNAPWIN, M_OPEN, M_INFO,
-	M_SNAPSHOT, M_UNSNAPSHOT, M_RENAME, M_DELETE, M_TOOL };
+	M_SNAPSHOT, M_UNSNAPSHOT, M_LEAVEOUT, M_PUTAWAY, M_RENAME, M_DELETE,
+	M_TOOL };
 
 static struct NewMenu newmenus[] = {
 	{ NM_TITLE, "Workbench", NULL, 0, 0, NULL },
@@ -101,6 +104,8 @@ static struct NewMenu newmenus[] = {
 	{ NM_ITEM, "Information...", "I", 0, 0, (APTR)M_INFO },
 	{ NM_ITEM, "Snapshot", "S", 0, 0, (APTR)M_SNAPSHOT },
 	{ NM_ITEM, "UnSnapshot", "U", 0, 0, (APTR)M_UNSNAPSHOT },
+	{ NM_ITEM, "Leave Out", "L", 0, 0, (APTR)M_LEAVEOUT },
+	{ NM_ITEM, "Put Away", "P", 0, 0, (APTR)M_PUTAWAY },
 	{ NM_ITEM, "Rename...", "R", 0, 0, (APTR)M_RENAME },
 	{ NM_ITEM, "Delete...", NULL, 0, 0, (APTR)M_DELETE },
 	{ NM_END, NULL, NULL, 0, 0, NULL }
@@ -297,9 +302,19 @@ static void execute(void)
 /* Open a drawer, or bring its window to the front */
 static void opendrawer(STRPTR path, struct DiskObject *dobj)
 {
-	struct WBWin *ww = findpath(path);
+	static char name[PATHLEN];
+	struct WBWin *ww;
+	BPTR lock;
 
-	if (ww != NULL) {
+	/* by its volume's name, as the disks and left-out icons have it */
+	if ((lock = Lock(path, ACCESS_READ)) == NULL) {
+		DisplayBeep(scr);
+		return;
+	}
+	if (NameFromLock(lock, name, PATHLEN))
+		path = name;
+	UnLock(lock);
+	if ((ww = findpath(path)) != NULL) {
 		WindowToFront(ww->ww_Win);
 		ActivateWindow(ww->ww_Win);
 	} else if (openwin(path, dobj) == NULL) {
@@ -309,7 +324,7 @@ static void opendrawer(STRPTR path, struct DiskObject *dobj)
 
 void openicon(struct WBWin *ww, struct WBIcon *in)
 {
-	char path[PATHLEN];
+	static char path[PATHLEN];
 	struct DiskObject *dobj;
 
 	if (in->in_App != NULL) {
@@ -616,6 +631,12 @@ static void menu(struct WBWin *ww, UWORD code)
 			break;
 		case M_UNSNAPSHOT:
 			selected(unsnapshot, FALSE);
+			break;
+		case M_LEAVEOUT:
+			leaveout();
+			break;
+		case M_PUTAWAY:
+			putaway();
 			break;
 		case M_RENAME:
 			selected(wbrename, TRUE);
@@ -980,11 +1001,20 @@ static void moved(void)
 /*** Events ***/
 
 BOOL busy;
+static struct Gadget *arrow;		/* held, and ticks until it repeats */
+static WORD ticks;
+
+static void stoparrow(struct WBWin *ww)
+{
+	arrow = NULL;
+	ModifyIDCMP(ww->ww_Win, IDCMPFLAGS);
+}
 
 static void idcmp(void)
 {
 	struct IntuiMessage *im;
 	struct WBWin *ww;
+	struct Gadget *g;
 	BOOL move = FALSE;
 
 	busy = TRUE;
@@ -1011,13 +1041,35 @@ static void idcmp(void)
 			setscroll(ww);
 			break;
 		case IDCMP_GADGETDOWN:
-			mww = ww;
-			state = SCROLL;
+			g = (struct Gadget *)im->IAddress;
+			if (g->GadgetID == 0) {
+				mww = ww;
+				state = SCROLL;
+				break;
+			}
+			/* one step, then more while it is held */
+			arrow = g;
+			ticks = 3;
+			ModifyIDCMP(ww->ww_Win, IDCMPFLAGS | IDCMP_INTUITICKS);
+			arrowstep(ww, g->GadgetID);
 			break;
 		case IDCMP_GADGETUP:
+			if (((struct Gadget *)im->IAddress)->GadgetID != 0) {
+				stoparrow(ww);
+				break;
+			}
 			scroll(ww);
 			setscroll(ww);
 			state = IDLE;
+			break;
+		case IDCMP_INTUITICKS:
+			if (arrow == NULL ||
+			    !(im->Qualifier & IEQUALIFIER_LEFTBUTTON))
+				stoparrow(ww);
+			else if (ticks > 0)
+				ticks--;
+			else if (arrow->Flags & GFLG_SELECTED)
+				arrowstep(ww, arrow->GadgetID);
 			break;
 		case IDCMP_ACTIVEWINDOW:
 			showchecks(ww);
@@ -1146,6 +1198,7 @@ LONG Workbench(char *args, LONG len)
 	RegisterWorkbench(wbport);
 	if ((vi = GetVisualInfoA(scr, NULL)) != NULL)
 		makemenus();
+	arrowimages();
 	openwin(NULL, NULL);
 	test = NextDisplayInfo(INVALID_ID) == INVALID_ID;
 	if (test && !selftest())
@@ -1169,6 +1222,7 @@ LONG Workbench(char *args, LONG len)
 	handler();
 	FreeMenus(wbmenus);
 	FreeVisualInfo(vi);
+	freearrowimages();
 	t[0].ti_Tag = ICONCTRLA_SetGlobalScreen;	t[0].ti_Data = (IPTR)NULL;
 	t[1].ti_Tag = TAG_DONE;
 	IconControlA(NULL, t);

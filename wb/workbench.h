@@ -40,11 +40,23 @@ struct WBIcon {
 	BOOL		 in_Selected;
 	UBYTE		 in_Mark;	/* appicons()'s */
 	struct DiskObject *in_App;	/* an AppIcon's, of which in_Obj is a copy */
+	STRPTR		 in_Path;	/* a left-out icon's object */
 	char		 in_Name[NAMELEN];	/* file, or volume with ':' */
 };
 
+#define IDCMPFLAGS (IDCMP_CLOSEWINDOW | IDCMP_MOUSEBUTTONS | \
+	IDCMP_MOUSEMOVE | IDCMP_MENUPICK | IDCMP_REFRESHWINDOW | \
+	IDCMP_NEWSIZE | IDCMP_ACTIVEWINDOW | IDCMP_GADGETDOWN | IDCMP_GADGETUP)
+
 #define HSCROLL		0
 #define VSCROLL		1
+
+/* The arrows' gadget IDs; the scrollers' are 0 */
+#define ARROWUP		1
+#define ARROWDOWN	2
+#define ARROWLEFT	3
+#define ARROWRIGHT	4
+#define ARROWSTEP	36	/* half a column of icons */
 
 /*
  * A drawer window, or the backdrop with the disks (ww_Path NULL).  Icon
@@ -62,6 +74,7 @@ struct WBWin {
 	struct Gadget	 ww_Scroll[2];	/* HSCROLL, VSCROLL; none on the backdrop */
 	struct PropInfo	 ww_Prop[2];
 	struct Image	 ww_Knob[2];
+	struct Gadget	*ww_Arrow[4];	/* by ID - 1 */
 	char		 ww_Title[NAMELEN];
 };
 
@@ -106,6 +119,11 @@ void removeicon(struct WBWin *ww, struct WBIcon *in);
 void addicon(struct WBWin *ww, STRPTR name, LONG x, LONG y);
 void setscroll(struct WBWin *ww);
 void scroll(struct WBWin *ww);
+void arrowstep(struct WBWin *ww, WORD id);
+void arrowimages(void);
+void freearrowimages(void);
+void leaveout(void);
+void putaway(void);
 
 /* workbench.c */
 extern struct MsgPort *idport;

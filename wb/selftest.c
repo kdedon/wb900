@@ -7,11 +7,14 @@
  * pixels and labels, selects
  * Hello with a click and a lasso, drags it, launches it, opens Notes,
  * shows all files and cleans up through the menus.  It uses an AppIcon
- * and an AppMenuItem, scrolls a narrowed drawer, snapshots it, copies
- * Hello to the Ram Disk, checks the backdrop's pattern, and quits.  Each
- * check prints a FAIL line when it fails.
+ * and an AppMenuItem, scrolls a narrowed drawer with its knobs and
+ * arrows, snapshots it, copies Hello to the Ram Disk, checks the
+ * backdrop's pattern, leaves Hello and Notes out, and quits.  Booted
+ * again, it finds them on the backdrop and puts them away.  Each check
+ * prints a FAIL line when it fails.
  */
 #include "workbench.h"
+#include <intuition/imageclass.h>
 #include <devices/input.h>
 #include <devices/inputevent.h>
 
@@ -86,6 +89,17 @@ static void drag(WORD x0, WORD y0, WORD x1, WORD y1)
 		settle();
 	}
 	event(IECLASS_RAWMOUSE, IECODE_LBUTTON | IECODE_UP_PREFIX, x1, y1);
+	settle();
+}
+
+/* The button held down at x, y for about n ticks */
+static void hold(WORD x, WORD y, WORD n)
+{
+	mouse(x, y);
+	event(IECLASS_RAWMOUSE, IECODE_LBUTTON, x, y);
+	settle();
+	Delay(5 * n);
+	event(IECLASS_RAWMOUSE, IECODE_LBUTTON | IECODE_UP_PREFIX, x, y);
 	settle();
 }
 
@@ -482,6 +496,76 @@ static void utilities(struct WBWin *sys)
 	check(findpath("System:Utilities") == NULL, "Utilities closed");
 }
 
+/* The centre of an arrow on the screen */
+static void arrowpos(struct WBWin *ww, WORD id, WORD *x, WORD *y)
+{
+	struct Window *w = ww->ww_Win;
+	struct Gadget *g = ww->ww_Arrow[id - 1];
+
+	*x = w->LeftEdge + w->Width - 1 + g->LeftEdge + g->Width / 2;
+	*y = w->TopEdge + w->Height - 1 + g->TopEdge + g->Height / 2;
+}
+
+/* Whether the arrow shows its image, as the active window's */
+static BOOL arrowdrawn(struct WBWin *ww, WORD id)
+{
+	struct Window *w = ww->ww_Win;
+	struct Gadget *g = ww->ww_Arrow[id - 1];
+	struct DrawInfo *dri = GetScreenDrawInfo(scr);
+	struct RastPort t;
+	struct BitMap *bm;
+	WORD x, y, x0, y0;
+	BOOL ok = TRUE;
+
+	bm = AllocBitMap(g->Width, g->Height,
+	    GetBitMapAttr(scr->RastPort.BitMap, BMA_DEPTH), BMF_CLEAR, NULL);
+	if (bm == NULL) {
+		FreeScreenDrawInfo(scr, dri);
+		return FALSE;
+	}
+	InitRastPort(&t);
+	t.BitMap = bm;
+	DrawImageState(&t, (struct Image *)g->GadgetRender, 0, 0, IDS_NORMAL,
+	    dri);
+	x0 = w->LeftEdge + w->Width - 1 + g->LeftEdge;
+	y0 = w->TopEdge + w->Height - 1 + g->TopEdge;
+	for (y = 0; y < g->Height && ok; y++)
+		for (x = 0; x < g->Width && ok; x++)
+			ok = ReadPixel(&scr->RastPort, x0 + x, y0 + y) ==
+			    ReadPixel(&t, x, y);
+	FreeBitMap(bm);
+	FreeScreenDrawInfo(scr, dri);
+	return ok;
+}
+
+/*
+ * The arrows: a click scrolls a step, held they repeat, and they stop at
+ * the drawer's ends
+ */
+static void arrows(struct WBWin *demos)
+{
+	WORD id, x, y, x0 = demos->ww_OffX;
+
+	for (id = ARROWUP; id <= ARROWRIGHT; id++)
+		check(demos->ww_Arrow[id - 1] != NULL && arrowdrawn(demos, id),
+		    "arrow drawn");
+	if (demos->ww_Arrow[ARROWRIGHT - 1] == NULL)
+		return;
+	arrowpos(demos, ARROWRIGHT, &x, &y);
+	click(x, y);
+	check(demos->ww_OffX == x0 + ARROWSTEP && shown(demos),
+	    "right arrow");
+	/* past a second step only by repeating, and no further than the end */
+	hold(x, y, 10);
+	check(demos->ww_OffX > x0 + 2 * ARROWSTEP && shown(demos) &&
+	    demos->ww_OffX + demos->ww_Win->GZZWidth - 1 == demos->ww_Virt.MaxX,
+	    "right arrow held");
+	arrowpos(demos, ARROWLEFT, &x, &y);
+	hold(x, y, 20);
+	check(demos->ww_OffX == demos->ww_Virt.MinX && shown(demos) &&
+	    arrowdrawn(demos, ARROWLEFT), "left arrow held");
+}
+
 /* Narrowed, Demos scrolls; cleaned up it fits its width again */
 static void scrolling(struct WBWin *demos)
 {
@@ -504,6 +588,7 @@ static void scrolling(struct WBWin *demos)
 	drag(x, y, x - 200, y);
 	check(demos->ww_OffX == demos->ww_Virt.MinX && shown(demos),
 	    "scrolled back");
+	arrows(demos);
 	pick(1, 2);
 	check(demos->ww_OffX == 0 &&
 	    demos->ww_Prop[HSCROLL].HorizBody == MAXBODY, "Clean Up fits");
@@ -674,6 +759,141 @@ static void ramlabel(void)
 	    "Ram Disk moved");
 }
 
+/* Whether System:.backdrop holds text, or for NULL is not there */
+static BOOL backdropfile(char *text)
+{
+	static char buf[64];
+	BPTR fh = Open("System:.backdrop", MODE_OLDFILE);
+	LONG n;
+
+	if (fh == NULL)
+		return text == NULL;
+	n = Read(fh, buf, sizeof(buf) - 1);
+	Close(fh);
+	if (text == NULL || n < 0)
+		return FALSE;
+	buf[n] = 0;
+	return streq(buf, text);
+}
+
+/* A double click on the icon launches Hello, which is told to end */
+static void launch(struct WBWin *ww, struct WBIcon *in)
+{
+	struct Task *t;
+	WORD x, y;
+
+	iconpos(ww, in, &x, &y);
+	click(x, y);
+	click(x, y);
+	t = waittask("Hello", FALSE);
+	check(t != NULL, "Hello launched");
+	if (t != NULL) {
+		Delay(10);
+		Signal(t, SIGBREAKF_CTRL_C);
+		check(waittask("Hello", TRUE) == NULL, "Hello ended");
+	}
+}
+
+static LONG snapx;
+
+/* Hello and Notes left out, Hello moved there, snapshot and opened */
+static void leaving(struct WBWin *demos)
+{
+	static char *names[] = { "Hello", "Notes" };
+	struct DiskObject *d;
+	struct WBIcon *in;
+	struct WBWin *ram = findpath("Ram Disk:");
+	WORD i, x, y;
+	LONG x0;
+
+	/* the Ram Disk's window off the backdrop's column, Demos in rows */
+	if (ram != NULL)
+		click(ram->ww_Win->LeftEdge + 4, ram->ww_Win->TopEdge + 4);
+	click(demos->ww_Win->LeftEdge + 40, demos->ww_Win->TopEdge + 4);
+	pick(1, 2);
+	for (i = 0; i < 2; i++) {
+		in = findicon(demos, names[i]);
+		check(in != NULL, names[i]);
+		if (in == NULL)
+			return;
+		iconpos(demos, in, &x, &y);
+		click(x, y);
+		pick(2, 4);
+		in = findicon(root, names[i]);
+		check(findicon(demos, names[i]) == NULL && in != NULL &&
+		    in->in_Path != NULL && pixels(root, in, 3) &&
+		    labelled(root, in), "left out");
+		if (in == NULL)
+			return;
+	}
+	check(backdropfile(":Demos/Hello\n:Demos/Notes\n"), ".backdrop");
+	in = findicon(root, "Hello");
+	iconpos(root, in, &x, &y);
+	x0 = in->in_X;
+	drag(x, y, x - 100, y);
+	pick(2, 2);
+	d = GetDiskObject("System:Demos/Hello");
+	snapx = in->in_X;
+	check(snapx == x0 - 100 && d != NULL && d->do_CurrentX == snapx,
+	    "left-out Snapshot");
+	FreeDiskObject(d);
+	launch(root, in);
+}
+
+/*
+ * Booted again, Hello and Notes are on the backdrop and not in Demos;
+ * Put Away takes them back, and out of .backdrop
+ */
+static void puttingaway(void)
+{
+	struct WBIcon *hello = findicon(root, "Hello"),
+	    *notes = findicon(root, "Notes"), *in;
+	struct DiskObject *d = GetDiskObject("System:Demos/Hello");
+	struct WBWin *sys, *demos = NULL;
+	struct Rectangle r;
+	WORD x, y;
+
+	check(hello != NULL && notes != NULL && d != NULL &&
+	    streq(hello->in_Path, "System:Demos/Hello") &&
+	    hello->in_X == d->do_CurrentX && pixels(root, hello, 0) &&
+	    labelled(root, hello), "left out after a restart");
+	FreeDiskObject(d);
+	if (hello == NULL || notes == NULL)
+		return;
+	in = findicon(root, "System:");
+	iconpos(root, in, &x, &y);
+	click(x, y);
+	click(x, y);
+	if ((sys = waitwin("System:")) != NULL &&
+	    (in = findicon(sys, "Demos")) != NULL) {
+		iconpos(sys, in, &x, &y);
+		click(x, y);
+		click(x, y);
+		demos = waitwin("System:Demos");
+	}
+	check(demos != NULL && findicon(demos, "Hello") == NULL &&
+	    findicon(demos, "Notes") == NULL &&
+	    findicon(demos, "ReadMe") != NULL, "Demos without them");
+	if (demos == NULL)
+		return;
+	launch(root, hello);
+
+	/* Notes put away: the backdrop shows where it was */
+	screenbox(root, notes, &r);
+	iconpos(root, notes, &x, &y);
+	click(x, y);
+	pick(2, 5);
+	check(findicon(root, "Notes") == NULL && backdrop(&r) &&
+	    findicon(demos, "Notes") != NULL && shown(demos) &&
+	    backdropfile(":Demos/Hello\n"), "Notes put away");
+	iconpos(root, hello, &x, &y);
+	click(x, y);
+	pick(2, 5);
+	check(findicon(root, "Hello") == NULL &&
+	    findicon(demos, "Hello") != NULL && backdropfile(NULL),
+	    "Hello put away");
+}
+
 static void script(void)
 {
 	struct WBWin *sys, *demos;
@@ -683,6 +903,11 @@ static void script(void)
 	struct Task *t;
 	WORD x, y, x0, n;
 
+	if (exists("System:.backdrop")) {
+		puttingaway();
+		stackuse("Workbench");
+		return;
+	}
 	check(findicon(root, "Boot:") != NULL &&
 	    findicon(root, "Ram Disk:") != NULL, "Boot and Ram Disk icons");
 	in = findicon(root, "System:");
@@ -735,17 +960,7 @@ static void script(void)
 	drag(x, y, x + 40, y + 10);
 	check(hello->in_X == x0 + 40 && pixels(demos, hello, 3), "drag");
 
-	/* a double click launches it */
-	iconpos(demos, hello, &x, &y);
-	click(x, y);
-	click(x, y);
-	t = waittask("Hello", FALSE);
-	check(t != NULL, "Hello launched");
-	if (t != NULL) {
-		Delay(10);
-		Signal(t, SIGBREAKF_CTRL_C);
-		check(waittask("Hello", TRUE) == NULL, "Hello ended");
-	}
+	launch(demos, hello);
 
 	/* Notes is a project: its default tool More opens it */
 	in = findicon(demos, "Notes");
@@ -791,13 +1006,17 @@ static void script(void)
 	r.MinY = scr->Height - 40;
 	r.MaxY = r.MinY + 20;
 	check(backdrop(&r), "backdrop pattern");
+	if (demos != NULL)
+		leaving(demos);
 
-	/* Workbench: Backdrop off and on again */
+	/* Workbench: Backdrop off and on again, with the left-out icons */
 	pick(0, 0);
 	check(root != NULL && !(root->ww_Win->Flags & WFLG_BACKDROP) &&
 	    findicon(root, "System:") != NULL, "Backdrop off");
 	pick(0, 0);
-	check(root != NULL && (root->ww_Win->Flags & WFLG_BACKDROP),
+	in = findicon(root, "Hello");
+	check(root != NULL && (root->ww_Win->Flags & WFLG_BACKDROP) &&
+	    in != NULL && in->in_X == snapx && findicon(root, "Notes") != NULL,
 	    "Backdrop on");
 	stackuse("Workbench");
 }

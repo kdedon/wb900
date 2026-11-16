@@ -39,6 +39,13 @@ Opened 2026-11-14; status from exec816-0f and the c900/exec900 log. The user app
 | 30 | DH1:'s handler: share DH0:'s code instead of a second copy (below) | **Landed** 49f8df91: one shared v7fs-handler seglist; first use of DH1: costs 11,240 B (7,096 with `--sysbuffers=8`) instead of 37,760 | done |
 | 31 | A 63 KB stack segment on 1 MB leaves no two free heap pages for a 640x400x4 bitmap (below) | **Landed** 8c2497f3: blocks of 128 B or less take the stack region's top first, so whole heap pages stay free; asl passes on 1 MB again | done |
 | 32 | Tell framebuf.resource the HR jumper at boot (below) | **Landed** 8a6c0d5d: `mkdisk --hrmode=auto|800|1024|rgbi`; framebuf and hr.display follow it. The ScreenMode prefs may still drive a corrected mode while Workbench owns the display | done |
+| 33 | A recoverable `Alert()` on the screen through intuition while it lends the display (below) | **Landed** 6ff12776: dos.library patches Alert; a recoverable Task alert outside Forbid/Disable calls DisplayAlert(0, text, 40) as exec 1.2 does; kernel and dead-end alerts stay on the console | done |
+
+### 33. Recoverable alerts on the screen
+
+While framebuf.resource lends the display, a recoverable `Alert()` is serial only, and hr-display-sharing.md plans a hook so that `Alert()` calls intuition's `DisplayAlert`. intuition.library now has `DisplayAlert` (LVO -90) and `TimedDisplayAlert` (-822): the alert covers the top of the frontmost screen until a mouse button, Return or Escape, then the screen is restored; it also prints the number and text on the console. It waits on input.device, so it can't be called from the input.device Task, in `Forbid`/`Disable` or from an interrupt.
+
+Asked for: in `Alert()` without `AT_DeadEnd`, after the console line and `LastAlert`, when intuition.library is in `SysBase->LibList` and the caller is a Task outside `Forbid` and `Disable`, open it and call `TimedDisplayAlert(num, text, 40, 0)`, with text as AmigaOS's (`"Recoverable Alert #NNNNNNNN.TTTTTTTT"` and `"Press left mouse button to continue."`, each a 3-byte position, the string, a continuation byte). Dead-end alerts keep the reclaim path.
 
 ### 32. The HR jumper at boot
 

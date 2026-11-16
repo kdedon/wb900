@@ -4,9 +4,10 @@
  * waits for it to quit.  With a display that is the user's session;
  * without one Workbench drives itself through its disk and quits, and
  * the run passes when its checks did and the Workbench screen is closed.
- * The self test writes icons, so it runs on a copy of the disk.
+ * The self test writes icons, so it runs on a copy of the disk, which
+ * boots twice: the second run finds what the first left out.
  */
-/* BOOTS: 1 */
+/* BOOTS: 2 */
 #include <exec/exec.h>
 #include <dos/dos.h>
 #include <dos/dostags.h>
