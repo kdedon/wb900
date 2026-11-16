@@ -508,7 +508,7 @@ static void modereq(void)
 	struct List list;
 	WORD i;
 
-	/* no display in the emulator: the database is empty */
+	/* without a display the database is empty */
 	sm = AllocAslRequest(ASL_ScreenModeRequest, NULL);
 	check(sm != NULL, "mode AllocAslRequest");
 	if (sm == NULL)

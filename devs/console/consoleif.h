@@ -73,7 +73,7 @@ struct P_Console_GetColorPen
 };
 
 /*
- * Method stubs (consoleclass.c). Each builds the message for one method of
+ * Method stubs. Each builds the message for one method of
  * the console classes and sends it to the object; the result is that of
  * the method.
  */

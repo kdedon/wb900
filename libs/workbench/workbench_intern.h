@@ -31,7 +31,7 @@
 #include <proto/icon.h>
 #include <proto/utility.h>
 
-/* The C library functions workbench.library uses (crt.c) */
+/* The C library functions workbench.library uses */
 ULONG strlen(CONST_STRPTR s);
 char *strcpy(char *d, CONST_STRPTR s);
 char *strcat(char *d, CONST_STRPTR s);

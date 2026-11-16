@@ -113,7 +113,7 @@ struct ConsoleBase;
 #define INITTMPRAS(t, b, s) \
     ((t)->RasPtr = (UBYTE *)(b), (t)->Size = (s), (t))
 
-/* The C library functions console.device uses (crt.c) */
+/* The C library functions console.device uses */
 ULONG strlen(CONST_STRPTR s);
 int strncmp(CONST_STRPTR a, CONST_STRPTR b, ULONG n);
 APTR memcpy(APTR d, CONST_APTR s, ULONG n);

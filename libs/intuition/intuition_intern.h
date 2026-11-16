@@ -38,7 +38,7 @@
 #include "inputhandler_actions.h"
 #include "requesters.h"
 
-/* The C library functions intuition uses (crt.c) */
+/* The C library functions intuition uses */
 #define offsetof(t, m)  ((ULONG)&((t *)0)->m)
 ULONG strlen(CONST_STRPTR s);
 char *strcpy(char *d, CONST_STRPTR s);
@@ -264,7 +264,7 @@ struct IntIntuitionBase
     int                          FrameSize;
 
     struct SignalSemaphore      *GfxFontSem;
-    APTR                         SegList;    /* graphics.library/TextFonts, found on first use (misc.c, all builds) */
+    APTR                         SegList;    /* graphics.library/TextFonts, found on first use */
 };
 
 struct SharedPointer

@@ -1,6 +1,6 @@
 /*
  * intuition's Workbench screen on lc.gfxdriver and a model of the LC
- * card's 8568 (the emulator has none), in the 1.x style of
+ * card's 8568, in the 1.x style of
  * DEVS:system-configuration: 640x200 mono, white on blue; then a screen
  * in each of the other modes.  After opening the screen and a window,
  * moving and closing it and moving the pointer, the model's bitmap must

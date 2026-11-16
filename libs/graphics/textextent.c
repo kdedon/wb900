@@ -104,7 +104,7 @@
                     if ((x) > textExtent->te_Extent.MaxX) \
                         textExtent->te_Extent.MaxX = (x);
 
-                /* either table may be missing (AROS read both) */
+                /* either table may be missing */
                 if(tf->tf_CharKern)
                     x += ((WORD *)tf->tf_CharKern)[idx];
                 CHECK_MINMAX(x);

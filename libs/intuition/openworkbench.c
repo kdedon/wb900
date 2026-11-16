@@ -199,7 +199,7 @@ static ULONG ChooseMode(struct IntuitionBase *IntuitionBase, char **why)
         height = GetPrivIBase(IntuitionBase)->ScreenModePrefs->smp_Height;
         depth  = GetPrivIBase(IntuitionBase)->ScreenModePrefs->smp_Depth;
 
-        /* wb900: without a display (the C emulator) the screen is in RAM */
+        /* Without a display the screen is in RAM */
         {
             struct DimensionInfo dim;
 
@@ -239,8 +239,8 @@ static ULONG ChooseMode(struct IntuitionBase *IntuitionBase, char **why)
 
 
             wbscreen = OpenScreenTagList(NULL, screenTags);
-            /* after the screen takes the display from the boot console,
-               which would draw the line */
+            /* once the screen owns the display, so the boot console
+               doesn't draw the line */
             if (why)
                 xKPrintf("intuition: %s, Workbench in mode %lx\n", why, modeid);
 

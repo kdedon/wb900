@@ -13,7 +13,7 @@
  * rows, and a scroll and window moves drawn through lc.gfxdriver, are
  * read back through R31 and checked against the shadow.  The registers
  * it found are put back before it gives up the card.  Without an LC card
- * (the C emulator has none) it only says so.
+ * it only says so.
  */
 #include <exec/exec.h>
 #include <devices/timer.h>

@@ -4,10 +4,9 @@
  * what it covers saved in RAM.  The task that moves it (input.device's)
  * and every drawing into that bitmap, or one of a display mode, which
  * may trade planes with the display, take gfx_SpriteLock, and drawing
- * hides the sprite while it covers the area drawn.
- *
- * Sprite pixels are 2 bits (Amiga sprite pens 1-3, 0 transparent) and go
- * to the bitmap as pens 17-19, through its pixel table.
+ * hides the sprite while it covers the area drawn.  Sprite pixels are
+ * 2 bits (Amiga sprite pens 1-3, 0 transparent), drawn as pens 17-19
+ * through the bitmap's pixel table.
  */
 #include <exec/memory.h>
 #include <graphics/modeid.h>

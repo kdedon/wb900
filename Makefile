@@ -1,15 +1,12 @@
 # wb900: AROS libraries for Exec900 on the Commodore 900 (Z8001).
 #
-# A library is libs/NAME/*.c plus libs/NAME/NAME_lib.fd, built as
-# Exec900's docs/platform.md "Building a disk library" says: genlvo
-# writes the callers' header and the vector table, the objects are linked
-# with `ld -r' and progabs.o, and mkhunk makes the hunk file that goes in
-# LIBS:.  tests/NAME.c is a root program that boots from a disk holding
-# the libraries and passes with a "PASS NAME" line.
+# A library is libs/NAME/*.c plus libs/NAME/NAME_lib.fd: genlvo writes
+# the callers' header and the vector table, the objects are linked with
+# `ld -r' and progabs.o, and mkhunk makes the hunk for LIBS:.
+# tests/NAME.c is a root program that passes with a "PASS NAME" line.
 #
-# Exec900 is used through its MIT interface files (include/, fd/,
-# genlvo's output, lib/, platform/progabs.s and portio.s) and its build,
-# which provides exec900.sys and the dos.library and handler hunks:
+# Exec900 provides its MIT interface files, exec900.sys and the
+# dos.library and handler hunks:
 #   make -C $(EXEC900) OUT=$(EXEC900_OUT) ... all
 
 SHELL = /bin/sh
@@ -41,7 +38,7 @@ MKDISK	= python3 $(EXEC900)/tools/mkdisk.py
 SYMCHECK = python3 $(EXEC900)/tools/symcheck.py --lname
 RUNTEST	= sh $(EXEC900)/tools/runtest.sh $(C900_EMU) $(BUDGET)
 
-# Emulator budget per test, in instructions.
+# Instructions per test.
 BUDGET	?= 400000000
 
 # Exec900's cc0 variants plus -VSVARG: an int in a `...' slot warns.
@@ -145,7 +142,7 @@ hr_LINK = $(OBJ)/portio.o
 $(eval $(call MODULE,hr,HR,hr,libs,gfxdriver))
 $(eval $(call MODULE,lc,LC,lc,libs,gfxdriver))
 # The LC driver's port layer with each port access a call into the 8568
-# model (tests/lc), for the tests that run the driver without the card
+# model, for the tests that run the driver without the card
 LCMODEL	= $(OBJ)/lcm/lcport.o $(OBJ)/lcm/vdcio.o $(OBJ)/lcm/vdcmodel.o
 $(OBJ)/lcm/lcport.s: $(TOP)/libs/lc/lcport.s
 	@mkdir -p $(OBJ)/lcm
@@ -287,11 +284,11 @@ $(eval $(call UTIL,ScreenMode,prefs))
 PREFSPUT = --put=Prefs/ScreenMode=$(OUT)/util/ScreenMode \
 	--put=Prefs/ScreenMode.info=$(OUT)/wb/ScreenMode.info --mkdir=Prefs/Env-Archive/Sys
 PREFSDEPS = $(OUT)/util/ScreenMode $(OUT)/wb/ScreenMode.info
-# Workbench, which tests/wbboot.c starts
+# Workbench, which wbboot starts
 WBSRC	= $(patsubst %,$(TOP)/wb/%.c,workbench drawer selftest)
 $(OUT)/progs/wbboot $(OUT)/progs/shellwin: $(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC))
 $(patsubst $(TOP)/wb/%.c,$(OBJ)/w_%.o,$(WBSRC)): $(TOP)/wb/workbench.h
-# tests/wbmulti.c drives Workbench with its own selftest()
+# wbmulti drives Workbench with its own selftest()
 $(OUT)/progs/wbmulti: $(OBJ)/w_workbench.o $(OBJ)/w_drawer.o
 
 # The icons of Workbench's disk: $(OUT)/wb/NAME.info, from mkinfo.py
@@ -328,7 +325,7 @@ AutoPoint_INFO = $(CX_INFO)
 DepthMenu_INFO = $(CX_INFO)
 NoCapsLock_INFO = $(CX_INFO)
 Blanker_INFO = $(CX_INFO) --tooltype=SECONDS=120 "--tooltype=BLANKKEY=ctrl alt b"
-# tests/cxtools.c's, which blanks after a second
+# cxtools' Blanker, which blanks after a second
 BlankerTest_INFO = $(CX_INFO) --tooltype=SECONDS=1 "--tooltype=BLANKKEY=ctrl alt b"
 # The fonts, SYS:Fonts/NAME.font and NAME/SIZE for NAME_FONT's sizes, from
 # wb/fonts/NAMESIZE.txt
@@ -437,7 +434,7 @@ $(OUT)/%-1x.bin: $(OUT)/progs/% $(BINDEPS) $(OUT)/devs/system-configuration
 	$(MKDISK) --kboot=$(KBOOT) --root=$(OUT)/progs/$* $(call DISK,$*) \
 	  --put=Devs/system-configuration=$(OUT)/devs/system-configuration $@ $(EXEC900_OUT)/exec900.sys
 
-# make test [T=name]: boot each test (or one) in the emulator.
+# make test [T=name]: run each test, or one.
 test: $(patsubst %,$(OUT)/%.bin,$(or $(T),$(TESTS)))
 	@fail=0; for t in $(or $(T),$(TESTS)); do \
 		$(RUNTEST) $$t $(OUT)/$$t.bin $(OUT)/$$t.log $(TOP)/tests/$$t.c || fail=1; \

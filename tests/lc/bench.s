@@ -1,5 +1,5 @@
 / SPDX-License-Identifier: MIT
-/ The 8568 loops tests/lcbench.c times, each with the cycles of one pass
+/ The 8568 loops lcbench times, each with the cycles of one pass
 / when the chip is ready at the first poll.  Polls that find it busy
 / are counted in r5 and returned.  r2 is the status and index port, r3
 / the data port.

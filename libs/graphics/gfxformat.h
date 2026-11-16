@@ -1,12 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * The bitmap formats graphics.library draws in RAM, and the row code
- * they share.
- *
- * Both formats are rows of bits: a planar plane has 1 bit a pixel, a
- * chunky bitmap one plane of 4.  Pixel x of a row is at bit x * bpp,
- * bit 15 of a word leftmost.  The row code works on whole words with
- * masks at the ends, so BytesPerRow and the plane pointers are even.
+ * The RAM bitmap formats and their shared row code.  A planar plane has
+ * 1 bit a pixel, a chunky bitmap one plane of 4; pixel x of a row is at
+ * bit x * bpp, bit 15 of a word leftmost.  The row code works on whole
+ * words, so BytesPerRow and the plane pointers must be even.
  */
 #ifndef GFXFORMAT_H
 #define GFXFORMAT_H
@@ -50,20 +47,20 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
     const struct GfxPens *p);
 
 /*
- * The word loops (gfxasm.s).  A run never crosses a 64 KB segment.
+ * The word loops.  A run never crosses a 64 KB segment.
  * gfx_FillRows: n words of rows rows bpr bytes apart, d = (d & a) ^ x,
  * row r with a[0-3], x[0-3] (words in turn) from 8-word entry
  * (pidx + r) & pmask of tab; with a all 0 nothing is read.
  * gfx_FillRect: n words of rows rows bpr bytes apart, d = (d & a) ^ x,
  * the first word under lm and the last under rm (n 1: lm only).
- * gfx_TmplRows: the rows of a template by job (gfxformat.c), 4 bits a
+ * gfx_TmplRows: the rows of a template by job, 4 bits a
  * pixel; gfx_TmplRows1 the same at 1 bit a pixel.
  * gfx_CopyRows: n words of rows rows, the first under lm and the last
  * under rm, rows dstep and sstep bytes apart, upwards or (dir < 0)
  * downwards along a row.  gfx_ShiftRows: the same with each word from
  * the bits sh (1-15) on of two source words, reading n + 1 a row.
  * gfx_LineRun: count pixels of a line in one half of a plane, from
- * job (gfxformat.c), x bytes stepping by xstep.  gfx_WCopy: n
+ * job, x bytes stepping by xstep.  gfx_WCopy: n
  * words, upwards.  gfx_WSwap: n words of a and b exchanged.
  * gfx_Bits: n words of the bits of byte string s from bit sh (0-7),
  * reading s[0] to s[2n] (s[2n - 1] when sh is 0).
@@ -87,7 +84,7 @@ void gfx_Bits(UWORD *out, const UBYTE *s, UWORD sh, UWORD n);
    the quotient under 32768, its remainder to rem unless NULL */
 UWORD gfx_MulDiv(UWORD a, UWORD b, LONG c, UWORD d, UWORD *rem);
 
-/* The template of a fixed 8-pixel font by job (text.c); whether its
+/* The template of a fixed 8-pixel font by job; whether its
    glyphs are all of that font's kind */
 void gfx_Glyphs(APTR job);
 BOOL gfx_FastChars(APTR job);

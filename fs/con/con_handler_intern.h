@@ -76,7 +76,7 @@ struct filehandle
 
 extern struct DosLibrary *DOSBase;
 
-/* The C library functions the handler uses (crt.c) */
+/* The C library functions the handler uses */
 ULONG strlen(CONST_STRPTR s);
 int strcmp(CONST_STRPTR a, CONST_STRPTR b);
 int strncmp(CONST_STRPTR a, CONST_STRPTR b, ULONG n);

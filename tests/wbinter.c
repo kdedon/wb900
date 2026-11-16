@@ -8,8 +8,7 @@
  * maps to a character and one that does not, and a window moved or
  * sized; it fails after TIMEOUT minutes without the click.
  *
- * With a display the input is the user's.  Without one (the C emulator)
- * it writes the events itself to input.device, as a user would make
+ * With a display the input is the user's.  Without one it writes the events itself to input.device, as a user would make
  * them, and checks the same lines.
  */
 #include <exec/exec.h>

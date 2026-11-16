@@ -52,7 +52,7 @@ AROS_UFH3S(IPTR, dispatch_snipmapconclass,
     switch (msg->MethodID)
     {
     /* OM_NEW, OM_DISPOSE, M_Console_DoCommand and M_Console_Copy need
-       nothing done here (the selection code still lives in charmapcon) and
+       nothing done here (the selection code is in charmapcon) and
        go to the superclass with all other methods */
 
     case M_Console_Paste:

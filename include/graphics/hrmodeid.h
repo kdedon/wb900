@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * ModeIDs of the C900 displays, in AROS's RTG scheme: monitor (card)
- * number from 0x0010 in bits 31-16, then a sync index (bits 15-8) and a
- * pixel format index (bits 7-0).  The Amiga chipset monitors are below
- * 0x0010, so these clash with none of <graphics/modeid.h>.
+ * ModeIDs of the C900 displays, in AROS's RTG scheme: card number in bits
+ * 31-16 (from 0x0010, above the Amiga chipset monitors), sync index in
+ * bits 15-8, pixel format index in bits 7-0.
  */
 #ifndef GRAPHICS_HRMODEID_H
 #define GRAPHICS_HRMODEID_H

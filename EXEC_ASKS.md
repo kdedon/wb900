@@ -42,6 +42,13 @@ Opened 2026-11-14; status from exec816-0f and the c900/exec900 log. The user app
 | 33 | A recoverable `Alert()` on the screen through intuition while it lends the display (below) | **Landed** 6ff12776: dos.library patches Alert; a recoverable Task alert outside Forbid/Disable calls DisplayAlert(0, text, 40) as exec 1.2 does; kernel and dead-end alerts stay on the console | done |
 | 36 | Cheaper kernel console output (below) | open | — |
 | 35 | The boot assign `FONTS:` → `SYS:Fonts` (below) | **Landed** 9f4f7561: dos.library assigns FONTS: to SYS:Fonts at boot (DH1: on --lnames disks) | done |
+| 37 | gameport.device on the C emulator, so `GetGPButtons` can be tested (below) | **Fixed in the emulator** (dcfe4c0): ports 0x0400-0x0407 decode like the core under plain `--hr` | done |
+
+### 37. gameport.device on the C emulator
+
+intuition's `DisplayAlert` on input.device's Task polls `KBD_READMATRIX` and `GetGPButtons`. `make test` drives the keyboard with `--key`, but the buttons can't be: the emulator's `--mouse` answers at 0x0400-0x0403, yet gameport.dev loads only with an HR console, which the emulator never gives, even with `--hr`. Repro: in wb900 `tests/intuition.c`, print `FindName(&SysBase->DeviceList, "gameport.device")` and run with `--hr --mouse=1000:0:0:4`: it is 0.
+
+Asked for: a way to load gameport.dev's HR backend on the emulator (for example when the 0x0400 ports answer, or a mkdisk option), so a test can press a button with `--mouse`.
 
 ### 35. FONTS: at boot
 

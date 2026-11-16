@@ -87,8 +87,8 @@ static ULONG WBBackFillFunc(struct Hook *hook, struct RastPort *rp,
 }
 
 /*
- * wb900: what the display database would say of a screen in RAM when
- * there is no display: the nominal size, square pixels in the ticks of a
+ * What the display database would say of a screen in RAM when there is
+ * no display: the nominal size, square pixels in the ticks of a
  * high resolution interlaced mode.
  */
 static void NoDisplayInfo(struct DimensionInfo *dims, struct DisplayInfo *disp,
@@ -627,7 +627,7 @@ static void NoDisplayInfo(struct DimensionInfo *dims, struct DisplayInfo *disp,
 
         if (INVALID_ID == modeid && NextDisplayInfo(INVALID_ID) == INVALID_ID)
         {
-            /* wb900: no display at all (the C emulator): a screen in RAM */
+            /* No display at all: a screen in RAM */
             nodisplay = TRUE;
         }
         else if (INVALID_ID == modeid)
@@ -702,7 +702,7 @@ static void NoDisplayInfo(struct DimensionInfo *dims, struct DisplayInfo *disp,
         if(ok && (screen->Screen.RastPort.BitMap == NULL))
         {
             /*
-             * AROS: BitMap needs ModeID. The display's own bitmap when it
+             * BitMap needs ModeID. The display's own bitmap when it
              * is free, else one in RAM of its mode. Not cleared: the
              * screen's background is painted over all of it below.
              */

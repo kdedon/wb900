@@ -6,8 +6,7 @@
  * (square on a 4:3 screen if they are right), a 1-pixel checkerboard and
  * stripes.  Prints, per mode, the time to open the display, draw the
  * pattern and clear it, and the frame rate read from the chip's vertical
- * blank (status bit 5).  Without an LC card (the C emulator has none) it
- * only says so.
+ * blank (status bit 5).  Without an LC card it only says so.
  */
 #include <exec/exec.h>
 #include <devices/timer.h>

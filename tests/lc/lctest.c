@@ -7,7 +7,7 @@
 #include "vdcmodel.h"
 #include "lctest.h"
 
-/* The plan's rates at 6 MHz, in microseconds a byte or an action */
+/* Expected rates at 6 MHz, in microseconds a byte or an action */
 #define US_PUSH		15
 #define US_SEEK		15
 #define US_REG		8

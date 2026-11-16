@@ -71,7 +71,7 @@ APTR lanull(void)
     return NULL;
 }
 
-/* The vectors of the functions not ported */
+/* Vector of every unimplemented function */
 ULONG launimpl(void)
 {
     Alert(AN_LayersLib);

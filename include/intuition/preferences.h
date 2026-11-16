@@ -131,8 +131,7 @@ struct Preferences
 #define LW_RESERVED	1	/* internal use only */
 
 /* EnableCLI flags */
-#define OLD_LOOK	(1<<13)	/* wb900: screens opened without SA_Pens
-				   have the 1.x look, as on AmigaOS */
+#define OLD_LOOK	(1<<13)	/* screens without SA_Pens get the 1.x look */
 #define SCREEN_DRAG	(1<<14)
 #define MOUSE_ACCEL	(1L<<15)
 

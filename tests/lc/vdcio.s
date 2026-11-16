@@ -1,6 +1,6 @@
 / SPDX-License-Identifier: MIT
 / The port accesses of lc.gfxdriver's port layer as calls into the 8568
-/ model (vdcmodel.c).  Each keeps every register but the one its
+/ model.  Each keeps every register but the one its
 / instruction writes, and the flags but those outib sets, and passes
 / the FCW at the access as the last argument:
 /	inb rl0, @r2		lcm_inb		rl0 = lcm_status(fcw)

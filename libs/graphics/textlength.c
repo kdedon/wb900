@@ -67,7 +67,7 @@
                 idx = c - tf->tf_LoChar;
             }
 
-            /* either table may be missing (AROS read both) */
+            /* either table may be missing */
             if(tf->tf_CharKern)
                 strlen += ((WORD *)tf->tf_CharKern)[idx];
             strlen += tf->tf_CharSpace ? ((WORD *)tf->tf_CharSpace)[idx] : tf->tf_XSize;

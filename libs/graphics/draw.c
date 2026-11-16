@@ -151,8 +151,7 @@ static void draw_render(APTR draw_rd, WORD srcx, WORD srcy,
     rp->Flags &= ~FRST_DOT;
 
     /* The pattern moves on by the steps of the major axis, whichever way
-       the line goes (AROS took the end point's offset from the corner,
-       which is 0 for a line drawn left or up). */
+       the line goes. */
     dx = x > x1 ? x - x1 : x1 - x;
     if(dx < (y > y1 ? y - y1 : y1 - y))
         dx = y > y1 ? y - y1 : y1 - y;

@@ -1,5 +1,5 @@
 / SPDX-License-Identifier: MIT
-/ The word loops of graphics.library's row code (gfxformat.c).  A run
+/ The word loops of graphics.library's row code.  A run
 / never crosses a 64 KB segment: the callers split rows there, so only
 / the offset words step.  r6-r13 are the caller's and are saved.
 
@@ -298,8 +298,7 @@ wrmw:
 	ld	(rr2), r0
 9:	ret
 
-/ gfx_TmplRows(job): rows of a template at 4 bits a pixel, job
-/ (gfxformat.c) the words
+/ gfx_TmplRows(job): rows of a template at 4 bits a pixel, job the words
 /  0 d (long)	4 dstep	6 rows	8 src (long)	12 srcmod
 /  14 tb	16 n	18 f	20 b	22 m	24 lm	26 rm
 /  28 mode	30 nib (long)
@@ -1372,7 +1371,7 @@ gfx_FastChars_:
 	ret
 
 / gfx_Glyphs(job): the template of a fixed 8-pixel font, a glyph a byte
-/ column (text.c).  The job's words: 0 the template, 4 the text, 8 the
+/ column.  The job's words: 0 the template, 4 the text, 8 the
 / font data, 12 its locations, 16 the count, 18 bpr, 20 rows, 22 modulo,
 / 24 lo << 8 | hi, 26 the glyph of a character outside them.
 gfx_Glyphs_:

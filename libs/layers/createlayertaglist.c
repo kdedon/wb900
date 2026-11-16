@@ -27,8 +27,7 @@ enum
 
 /*
  * LA_Composited, LA_Opacity and LA_AlphaSurface are ignored: the displays
- * cannot present surfaces, so such a layer is an ordinary one (see
- * <graphics/layersext.h>).
+ * cannot present surfaces, so such a layer is an ordinary one.
  */
 static const Tag latags[LATAG_COUNT] =
 {

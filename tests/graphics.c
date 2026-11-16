@@ -5,7 +5,7 @@
  * scrolling, regions, pens, ViewPorts and Views, and the display
  * database, empty without a display.  Bitmaps over 64 KB check the rows
  * that cross into their second segment.  Fills, templates and blits in
- * both formats are checked pixel by pixel against what they should do.  It reports the stack the
+ * both formats are checked pixel by pixel.  It reports the stack the
  * deepest calls take.
  */
 #include <exec/exec.h>
@@ -1288,10 +1288,7 @@ static void views(void)
 	FreeBitMap(bm);
 }
 
-/*
- * The display database without a display: the C emulator has no HR card,
- * so it is empty and graphics draws in RAM only.
- */
+/* Without a display the database is empty and graphics draws in RAM only */
 static void modes(void)
 {
 	struct DisplayInfo di;

@@ -1,5 +1,5 @@
 / SPDX-License-Identifier: MIT
-/ The LC card's 8568 ports for lc.gfxdriver (lcport.h).  Each data write
+/ The LC card's 8568 ports for lc.gfxdriver.  Each data write
 / first waits for Update Ready (status bit 7).  Every action takes its
 / estimated time from the piece's budget; when that runs out, brk waits
 / for the chip, which releases its INTR, then calls Enable and Disable.

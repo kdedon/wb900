@@ -7,7 +7,6 @@
  * planar operations.  Each operation marks the bytes it changed, and
  * gd_Flush pushes them through R31.  Fills of whole bytes and copies
  * that keep the bit alignment run as the chip's block fill and copy.
- * The port layer (lcport.s) does the row loops.
  *
  *   shadow (<= 20 KB) --dirty spans--> push R18/R19, R31 ---> VRAM 0x0000
  *        \__ fill / aligned copy ---> R30 blocks -----------/  (scratch 0x8000)

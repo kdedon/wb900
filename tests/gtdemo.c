@@ -6,8 +6,7 @@
  * of every gadget that reports and a menu pick; it fails after TIMEOUT
  * minutes without the click.
  *
- * With a display the input is the user's.  Without one (the C emulator)
- * it writes the events itself to input.device and checks the same lines.
+ * With a display the input is the user's.  Without one it writes the events itself to input.device and checks the same lines.
  */
 #include <exec/exec.h>
 #include <devices/input.h>

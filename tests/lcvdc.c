@@ -1,6 +1,6 @@
 /*
- * lc.gfxdriver's port layer against a model of the 8568's ports (the
- * emulator has no LC card): register writes, pushes from the shadow,
+ * lc.gfxdriver's port layer against a model of the 8568's ports:
+ * register writes, pushes from the shadow,
  * row fills and copies with their edge bytes and scratch, block fill and
  * copy with R30 = 0 as 256, dirty bits and their flush, pieces that end
  * with the chip idle, time-outs, and that the model catches a write while

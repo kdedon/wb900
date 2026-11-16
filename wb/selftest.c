@@ -1,17 +1,10 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * Workbench without a display: a process writes a user's events to
- * input.device while Workbench runs.  It finds the Boot, System and Ram
- * Disk volumes, moves the Ram Disk, opens the System disk and the
- * Utilities and Demos drawers with double clicks, checks the icons'
- * pixels and labels, selects
- * Hello with a click and a lasso, drags it, launches it, opens Notes,
- * shows all files and cleans up through the menus.  It uses an AppIcon
- * and an AppMenuItem, scrolls a narrowed drawer with its knobs and
- * arrows, snapshots it, copies Hello to the Ram Disk, checks the
- * backdrop's pattern, leaves Hello and Notes out, and quits.  Booted
- * again, it finds them on the backdrop and puts them away.  Each check
- * prints a FAIL line when it fails.
+ * Workbench without a display: a process feeds user events to
+ * input.device.  It opens drawers, checks icon pixels and labels,
+ * selects, drags and launches Hello, uses the menus, an AppIcon and an
+ * AppMenuItem, scrolls, snapshots, copies, leaves icons out and quits;
+ * booted again, it puts them away.  Each failed check prints FAIL.
  */
 #include "workbench.h"
 #include <intuition/imageclass.h>

@@ -1,16 +1,11 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * hr.gfxdriver: the HR card's bitmap in VRAM as graphics.library's
- * display, in the mode of its jumper.  The strap read can't tell
- * 1024x800 from 1024x1024 and may be wrong about mono or RGBI, so the
- * three jumper modes are listed, the one framebuf.resource reports
- * first and available; opening another takes the jumper to be that.  It
- * draws with graphics' planar or chunky 4-bit operations; the palette is
- * fixed, and pens take its nearest colour.  The card holds one display
- * bitmap.
- * The driver takes the display from the console with the bitmap
- * (blanked until shown) and gives it back when the bitmap is freed and
- * not shown.
+ * hr.gfxdriver: the HR card's VRAM bitmap as graphics.library's display,
+ * in the mode of its jumper.  The strap read can't tell 1024x800 from
+ * 1024x1024 and may be wrong about mono or RGBI, so all three modes are
+ * listed, the reported one first; opening another takes the jumper to be
+ * that.  The palette is fixed: pens take its nearest colour.  The card
+ * holds one display bitmap.
  */
 #include <exec/types.h>
 #include <exec/resident.h>

@@ -1,7 +1,7 @@
 /*
     Copyright (C) 1995-2026, The AROS Development Team. All rights reserved.
 
-    Desc: The numbers of asl's strings (locale.c)
+    Desc: The numbers of asl's strings
 */
 
 #ifndef ASL_STRINGS_H

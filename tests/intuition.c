@@ -1,12 +1,14 @@
 /*
- * intuition.library from LIBS:, on screens in RAM bitmaps (the C
- * emulator has no display).  The root program opens screens and
+ * intuition.library from LIBS:, on screens in RAM bitmaps.  The root
+ * program opens screens and
  * windows, checks the pixels of the title bars, borders and gadgets,
  * and drives the input handler with events written to input.device:
  * activation, IDCMP messages, dragging, sizing and depth arrangement,
  * gadgets, menus and an EasyRequest answered by a click.  It reports
  * the stack the input task and the menu task used.
  */
+/* EMUKEYS: 3000000:1c,6000000:9c */
+/* HWMARK: intuition: press Return */
 #include <exec/exec.h>
 #include <devices/input.h>
 #include <devices/inputevent.h>
@@ -649,7 +651,8 @@ static void requesters(void)
 
 /*
  * DisplayAlert: a helper waits for the alert's text on the frontmost
- * screen, checks its frame and background, then answers with alertcode.
+ * screen, checks its frame and background, then answers with alertcode,
+ * if any.
  * The alert is 40 rows: the frame is rows and columns 4-7 in, the first
  * line's baseline at (40, 20).
  */
@@ -690,7 +693,7 @@ static void alerttask(void)
 		    n < 400;
 		break;
 	}
-	for (k = 0; k < 2; k++) {
+	for (k = 0; alertcode && k < 2; k++) {
 		e.ie_NextEvent = NULL;
 		e.ie_Class = alertcode == IECODE_LBUTTON ||
 		    alertcode == IECODE_RBUTTON ? IECLASS_RAWMOUSE : IECLASS_RAWKEY;
@@ -747,6 +750,68 @@ static void alerts(void)
 	alert(RECOVERY_ALERT, RAWKEY_ESCAPE, FALSE, "alert Escape");
 	check(!TimedDisplayAlert(RECOVERY_ALERT, alerttext, 40, 10) &&
 	    alertrows() == before, "TimedDisplayAlert");
+}
+
+/*
+ * An alert raised by an input handler, on input.device's task, where it
+ * polls the keyboard and buttons: a NULL event with code ALERTEVENT raises
+ * it, waiting inputtime frames.
+ */
+#define ALERTEVENT	0xA1E
+static ULONG inputtime;
+static volatile BOOL inputret, inputdone;
+
+static struct InputEvent *raiser(struct InputEvent *ie, APTR data)
+{
+	struct InputEvent *e;
+
+	for (e = ie; e; e = e->ie_NextEvent)
+		if (e->ie_Class == IECLASS_NULL && e->ie_Code == ALERTEVENT) {
+			inputret = TimedDisplayAlert(RECOVERY_ALERT, alerttext, 40,
+			    inputtime);
+			inputdone = TRUE;
+		}
+	return ie;
+}
+
+static void inputalert(ULONG time, char *mark, BOOL want, char *what)
+{
+	struct Task *t;
+	ULONG before = alertrows();
+
+	alertcode = 0;
+	alertdrawn = inputdone = FALSE;
+	inputret = !want;
+	inputtime = time;
+	t = CreateTask("alert helper", 1, (TASKPROC)alerttask, 1536);
+	check(t != NULL, "alert helper task");
+	if (t == NULL)
+		return;
+	xKPrintf("intuition: %s\n", mark);
+	event(IECLASS_NULL, ALERTEVENT, 0, 0, 0);
+	check(inputdone && alertdrawn && inputret == want, what);
+	check(alertrows() == before, "input task alert restores the screen");
+	RemTask(t);
+}
+
+/* The second alert is answered by Return from the keyboard */
+static void inputalerts(void)
+{
+	struct Interrupt h;
+
+	h.is_Node.ln_Type = NT_INTERRUPT;
+	h.is_Node.ln_Pri = 60;
+	h.is_Node.ln_Name = "alert raiser";
+	h.is_Code = (int (*)())raiser;
+	h.is_Data = NULL;
+	io->io_Command = IND_ADDHANDLER;
+	io->io_Data = &h;
+	DoIO((struct IORequest *)io);
+	inputalert(25, "input task alert", FALSE, "input task alert timeout");
+	inputalert(1000, "press Return", TRUE, "input task alert Return");
+	io->io_Command = IND_REMHANDLER;
+	io->io_Data = &h;
+	DoIO((struct IORequest *)io);
 }
 
 /*
@@ -1251,6 +1316,7 @@ int main(void)
 	screens();
 	if (scr) {
 		alerts();
+		inputalerts();
 		dbuf(scr);
 		windows();
 		gadgets();

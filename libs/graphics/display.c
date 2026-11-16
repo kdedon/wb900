@@ -115,7 +115,7 @@ static void gfx_Trade(struct BitMap *bm, struct GfxBase *GfxBase)
     ReleaseSemaphore(&gb->sprite.ss_Lock);
 }
 
-/* vp's colours to a programmable palette, now showing its bitmap */
+/* vp's colours to a programmable palette showing its bitmap */
 static void gfx_LoadColours(struct ViewPort *vp, struct GfxBase *GfxBase)
 {
     struct ColorMap *cm = vp->ColorMap;
@@ -151,11 +151,9 @@ static struct BitMap *gfx_Spare(struct BitMap *vram, ULONG id, ULONG flags,
 
 /*
  * Under ActiViewCprSemaphore: the display bitmap that shows vp, or NULL.
- * There is no display start to move, so the display's planes go to the
- * bitmap shown: vp's bitmap when it is a display's or one in RAM of its
- * mode and size, which trades planes with the one that has them.
- * Another bitmap in RAM of the display's format and depth is copied in
- * from vp's offsets, the planes' bitmap moved to RAM first.
+ * With no display start to move, a bitmap of the display's mode and size
+ * trades planes with the display; another of its format and depth is
+ * copied in from vp's offsets.
  */
 struct BitMap *gfx_ViewPortDisplay(struct ViewPort *vp, struct GfxBase *GfxBase)
 {
@@ -186,7 +184,7 @@ struct BitMap *gfx_ViewPortDisplay(struct ViewPort *vp, struct GfxBase *GfxBase)
         bm->BytesPerRow == dbm->BytesPerRow && bm->Rows == dbm->Rows &&
         bm->Depth == dbm->Depth) {
         gfx_Trade(bm, GfxBase);
-        /* graphics' own now has bm's old planes */
+        /* graphics' own has bm's old planes */
         if (dbm == gb->spare) {
             FreeBitMap(dbm);
             gb->spare = NULL;

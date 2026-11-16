@@ -66,7 +66,7 @@ typedef WORD PalExtra_AllocList_Type;
 /* Hashtable sizes. Must be powers of two */
 #define GFXASSOCIATE_HASHSIZE   8
 
-/* The pointer (softsprite.c) */
+/* The pointer */
 struct SoftSprite {
     struct SignalSemaphore  ss_Lock;
     struct BitMap          *ss_BitMap;     /* drawn into, or NULL */
@@ -102,10 +102,10 @@ struct GfxBase_intern {
     struct BitMap              *shown;
     /* The bitmap with the display's planes, or NULL */
     struct BitMap              *vram;
-    /* graphics' own bitmap for the display's planes (display.c), or NULL */
+    /* graphics' own bitmap for the display's planes, or NULL */
     struct BitMap              *spare;
 
-    /* The display's driver and its library, once looked for (display.c) */
+    /* The display's driver and its library, once looked for */
     struct Library             *drvlib;
     struct GfxDriver           *display;
     BOOL                        probed;
@@ -138,14 +138,14 @@ struct GfxBase_intern {
 /* Hash index calculation */
 extern ULONG CalcHashIndex(IPTR n, UWORD size);
 
-/* display.c */
+/* The display */
 struct GfxDriver *gfx_Display(struct GfxBase *GfxBase);
 const struct GfxMode *gfx_FindMode(ULONG id, struct GfxBase *GfxBase);
 int gfx_TOFServer(struct GfxBase *GfxBase, UWORD intnum);
 struct BitMap *gfx_ViewPortDisplay(struct ViewPort *vp, struct GfxBase *GfxBase);
 BOOL gfx_ViewPortShown(struct ViewPort *vp, struct GfxBase *GfxBase);
 
-/* color_support.c */
+/* Colour matching */
 ULONG color_distance(struct ColorMap *cm, ULONG r, ULONG g, ULONG b, ULONG index);
 BOOL color_equal(struct ColorMap *cm, ULONG r, ULONG g, ULONG b, ULONG index);
 VOID color_get(struct ColorMap *cm, ULONG *r, ULONG *g, ULONG *b, ULONG index);

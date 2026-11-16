@@ -115,8 +115,6 @@ static LONG count_planar_planes(const struct BitMap *bitmap, ULONG depth, UBYTE 
     INTERNALS
 
     HISTORY
-        14-Nov-26 Through the bitmaps' driver tables; a chunky destination
-                  counts as one plane per bit of its pixels.
 
 *****************************************************************************/
 {

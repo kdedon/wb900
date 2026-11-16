@@ -1,11 +1,9 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * Workbench's windows: the backdrop with the disks and the drawer
- * windows, their icons, and drawing them.  Icons are kept in their
- * window's list in drawing order; a window's inner area starts at 0, 0
- * (drawer windows are GimmeZeroZero, the backdrop has no border).  The
- * backdrop has the disks, the AppIcons and the icons left out, and
- * drawer windows scroll with scrollers and arrows.
+ * Workbench's windows and their icons.  Icons are listed in drawing
+ * order; inner coordinates start at 0, 0 (drawers are GimmeZeroZero, the
+ * backdrop is borderless).  The backdrop holds disks, AppIcons and
+ * left-out icons.
  */
 #include "workbench.h"
 #include <intuition/classusr.h>

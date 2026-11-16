@@ -5,6 +5,8 @@
 
 #include <devices/input.h>
 #include <devices/inputevent.h>
+#include <devices/keyboard.h>
+#include <devices/gameport.h>
 #include <devices/rawkeycodes.h>
 #include <devices/timer.h>
 #include <proto/graphics.h>
@@ -45,6 +47,78 @@ static struct InputEvent *alerthandler(struct InputEvent *ie, struct AlertInput 
         }
     }
     return NULL;
+}
+
+/* Return, Escape, left and right button: bit n held answers with answers[n] */
+static UWORD answers[] = { RAWKEY_RETURN, RAWKEY_ESCAPE, IECODE_LBUTTON, IECODE_RBUTTON };
+
+static UWORD heldnow(struct IOStdReq *kbd, struct Device *GamePortBase)
+{
+    UBYTE m[KBD_MATRIXSIZE];
+    ULONG b = GamePortBase ? GetGPButtons() : 0;
+    UWORD held = 0;
+
+    m[RAWKEY_RETURN >> 3] = 0;
+    if (kbd)
+    {
+        kbd->io_Command = KBD_READMATRIX;
+        kbd->io_Data = m;
+        kbd->io_Length = sizeof(m);
+        DoIO((struct IORequest *)kbd);
+    }
+    if (m[RAWKEY_RETURN >> 3] & (1 << (RAWKEY_RETURN & 7)))
+        held |= 1;
+    if (m[RAWKEY_ESCAPE >> 3] & (1 << (RAWKEY_ESCAPE & 7)))
+        held |= 2;
+    if (b & IEQUALIFIER_LEFTBUTTON)
+        held |= 4;
+    if (b & IEQUALIFIER_RBUTTON)
+        held |= 8;
+    return held;
+}
+
+/*
+ * Without the input handler: sample keys and buttons each frame until one
+ * pressed during the alert is released, or time frames pass.
+ */
+static void alertpoll(struct AlertInput *ai, struct timerequest *tr, ULONG time)
+{
+    struct IOStdReq *kbd;
+    struct Device *GamePortBase;
+    UWORD prev, held, n;
+    ULONG f;
+
+    kbd = (struct IOStdReq *)CreateIORequest(tr->tr_node.io_Message.mn_ReplyPort,
+                                             sizeof(struct IOStdReq));
+    if (kbd && OpenDevice(KEYBOARDNAME, 0, (struct IORequest *)kbd, 0))
+    {
+        DeleteIORequest((struct IORequest *)kbd);
+        kbd = NULL;
+    }
+    Forbid();
+    GamePortBase = (struct Device *)FindName(&SysBase->DeviceList, GAMEPORTNAME);
+    Permit();
+
+    prev = heldnow(kbd, GamePortBase);
+    for (f = 0; !ai->ai_Code && (!time || f < time); f++)
+    {
+        tr->tr_node.io_Command = TR_ADDREQUEST;
+        tr->tr_time.tv_secs = 0;
+        tr->tr_time.tv_micro = 20000;
+        DoIO((struct IORequest *)tr);
+        held = heldnow(kbd, GamePortBase);
+        for (n = 0; n < 4; n++)
+            if (held & ~prev & (1 << n))
+                ai->ai_Down = answers[n];
+            else if (prev & ~held & (1 << n) && ai->ai_Down == answers[n])
+                ai->ai_Code = answers[n];
+        prev = held;
+    }
+    if (kbd)
+    {
+        CloseDevice((struct IORequest *)kbd);
+        DeleteIORequest((struct IORequest *)kbd);
+    }
 }
 
 /* The next line of an alert's text and its position, or NULL */
@@ -130,15 +204,11 @@ static UBYTE *alertline(UBYTE **p, WORD *x, WORD *y)
     UBYTE *p, *t;
     WORD x, y, x0, y0, w, h;
     ULONG fg, bg, maxpen;
-    BOOL ret = FALSE;
+    BOOL poll, ret = FALSE;
 
     xKPrintf("intuition: alert %08lx\n", alertnumber);
     for (p = string; (t = alertline(&p, &x, &y)) != NULL; )
         xKPrintf("  %s\n", t);
-
-    /* The input task can't wait for its own events */
-    if (FindTask(NULL) == FindTask("input.device"))
-        return FALSE;
 
     if ((ai.ai_Sig = AllocSignal(-1)) < 0)
         return FALSE;
@@ -146,17 +216,23 @@ static UBYTE *alertline(UBYTE **p, WORD *x, WORD *y)
     ai.ai_Down = ai.ai_Code = 0;
     port = CreateMsgPort();
     io = (struct IOStdReq *)CreateIORequest(port, sizeof(struct IOStdReq));
-    if (io == NULL || OpenDevice("input.device", 0, (struct IORequest *)io, 0))
+    if (io == NULL)
         goto noinput;
 
-    handler.is_Node.ln_Type = NT_INTERRUPT;
-    handler.is_Node.ln_Pri = 100;
-    handler.is_Node.ln_Name = "intuition alert";
-    handler.is_Code = (int (*)())alerthandler;
-    handler.is_Data = &ai;
-    io->io_Command = IND_ADDHANDLER;
-    io->io_Data = &handler;
-    DoIO((struct IORequest *)io);
+    /* Poll without input.device, or on its task, which can't wait for its own events */
+    poll = ai.ai_Task == FindTask("input.device") ||
+           OpenDevice("input.device", 0, (struct IORequest *)io, 0);
+    if (!poll)
+    {
+        handler.is_Node.ln_Type = NT_INTERRUPT;
+        handler.is_Node.ln_Pri = 100;
+        handler.is_Node.ln_Name = "intuition alert";
+        handler.is_Code = (int (*)())alerthandler;
+        handler.is_Data = &ai;
+        io->io_Command = IND_ADDHANDLER;
+        io->io_Data = &handler;
+        DoIO((struct IORequest *)io);
+    }
 
     scr = IntuitionBase->FirstScreen;
     if (scr == NULL)
@@ -209,7 +285,7 @@ static UBYTE *alertline(UBYTE **p, WORD *x, WORD *y)
     /* A screen on a bitmap of another size shows by a copy */
     ScrollVPort(&scr->ViewPort);
 
-    if (time)
+    if (time || poll)
     {
         tr = (struct timerequest *)CreateIORequest(port, sizeof(struct timerequest));
         if (tr && OpenDevice(TIMERNAME, UNIT_VBLANK, (struct IORequest *)tr, 0))
@@ -217,6 +293,14 @@ static UBYTE *alertline(UBYTE **p, WORD *x, WORD *y)
             DeleteIORequest((struct IORequest *)tr);
             tr = NULL;
         }
+    }
+    if (poll)
+    {
+        if (tr)
+            alertpoll(&ai, tr, time);
+    }
+    else
+    {
         if (tr)
         {
             tr->tr_node.io_Command = TR_ADDREQUEST;
@@ -224,13 +308,16 @@ static UBYTE *alertline(UBYTE **p, WORD *x, WORD *y)
             tr->tr_time.tv_micro = (time % 50) * 20000;
             SendIO((struct IORequest *)tr);
         }
+        while (!ai.ai_Code && !(tr && CheckIO((struct IORequest *)tr)))
+            Wait((1L << ai.ai_Sig) | (1L << port->mp_SigBit));
+        if (tr)
+        {
+            AbortIO((struct IORequest *)tr);
+            WaitIO((struct IORequest *)tr);
+        }
     }
-    while (!ai.ai_Code && !(tr && CheckIO((struct IORequest *)tr)))
-        Wait((1L << ai.ai_Sig) | (1L << port->mp_SigBit));
     if (tr)
     {
-        AbortIO((struct IORequest *)tr);
-        WaitIO((struct IORequest *)tr);
         CloseDevice((struct IORequest *)tr);
         DeleteIORequest((struct IORequest *)tr);
     }
@@ -248,12 +335,16 @@ static UBYTE *alertline(UBYTE **p, WORD *x, WORD *y)
     }
 
 noscreen:
-    io->io_Command = IND_REMHANDLER;
-    io->io_Data = &handler;
-    DoIO((struct IORequest *)io);
+    if (!poll)
+    {
+        io->io_Command = IND_REMHANDLER;
+        io->io_Data = &handler;
+        DoIO((struct IORequest *)io);
+    }
     if (own)
         CloseScreen(own);
-    CloseDevice((struct IORequest *)io);
+    if (!poll)
+        CloseDevice((struct IORequest *)io);
 noinput:
     DeleteIORequest((struct IORequest *)io);
     if (port)

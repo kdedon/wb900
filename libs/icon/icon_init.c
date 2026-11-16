@@ -126,7 +126,7 @@ APTR icnull(void)
     return NULL;
 }
 
-/* The vectors of the functions not ported */
+/* Vector of every unimplemented function */
 ULONG icunimpl(void)
 {
     Alert(AN_IconLib);

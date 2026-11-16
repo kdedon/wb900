@@ -1,11 +1,11 @@
 /* SPDX-License-Identifier: MIT */
 /*
  * The LC card on the board: a picture drawn by graphics.library through
- * lc.gfxdriver, the time of the plan's cases by the E-clock (clear, a
+ * lc.gfxdriver, the time of the costed cases by the E-clock (clear, a
  * text line, scrolls, window moves, pointer moves, opening a window on
  * the Workbench screen), no stray NVI, and the console back once the
  * display is given up.  Each picture stays up for 3 seconds.  Without an
- * LC card (the C emulator has none) it only says so.
+ * LC card it only says so.
  */
 #include <exec/exec.h>
 #include <exec/interrupts.h>
@@ -50,7 +50,7 @@ static void start(void)
 	rate = ReadEClock(&t0);
 }
 
-/* Microseconds since start(), and the plan's figure */
+/* Microseconds since start(), beside the expected figure */
 static void took(char *what, ULONG plan)
 {
 	struct EClockVal t1;

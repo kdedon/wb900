@@ -1,18 +1,12 @@
 /* SPDX-License-Identifier: MIT */
 /*
  * graphics.library's driver table: the operations of one bitmap format,
- * and for a display card also its modes, palette and display hook.
- *
- * graphics.library clips every operation to the bitmap and to the layer's
- * ClipRects before it calls a driver, so a driver never clips: every
- * rectangle is inclusive and inside the bitmap.  Pens are pixel values
- * (graphics.library maps them through gb_PixTab first).
- *
- * The pixel data of plane 0 is a byte array of up to 128 KB in two
- * halves: offsets 0-0xFFFF from Planes[0] and 0x10000-0x1FFFF from
- * gb_Half1, as framebuf.resource's fbm_Half.  A row may cross between
- * the halves, even in the middle (GD_ADDR).  Planes 1-7 of a
- * planar bitmap fit 64 KB each.
+ * and for a display card its modes, palette and display hooks.  Drivers
+ * get operations already clipped: rectangles are inclusive and inside
+ * the bitmap, pens are pixel values (through gb_PixTab).  Plane 0 is up
+ * to 128 KB in two halves, offsets 0-0xFFFF from Planes[0] and the rest
+ * from gb_Half1 (as framebuf.resource's fbm_Half); a row may cross them
+ * (GD_ADDR).  Planes 1-7 fit 64 KB each.
  */
 #ifndef GRAPHICS_GFXDRIVER_H
 #define GRAPHICS_GFXDRIVER_H

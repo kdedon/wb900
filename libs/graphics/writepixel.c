@@ -67,8 +67,7 @@ static LONG pix_write(APTR pr_data, struct BitMap *bm, WORD x, WORD y,
 
 
 /*
- * The foreground pen in the RastPort's draw mode, as AmigaOS does (AROS
- * wrote the pen whatever the mode).
+ * The foreground pen in the RastPort's draw mode, as AmigaOS does.
  */
 static LONG pix_write(APTR pr_data, struct BitMap *bm, WORD x, WORD y,
                       struct GfxPens *pens, struct GfxBase *GfxBase)

@@ -1,8 +1,8 @@
 /* SPDX-License-Identifier: MIT */
 /*
  * The row code of both RAM bitmap formats: fills, templates, copies and
- * lines on rows of 1 or 4 bits a pixel, a word at a time, with the long
- * runs in gfxasm.s.  A row that crosses from the first 64 KB of a plane
+ * lines on rows of 1 or 4 bits a pixel, a word at a time, the long runs in
+ * assembler.  A row that crosses from the first 64 KB of a plane
  * into the second is split there.
  */
 #include <exec/types.h>
@@ -84,9 +84,8 @@ WORD gfx_Planes(struct BitMap *bm, const struct GfxPens *p,
 }
 
 /*
- * Rows from offset o that stay in one half of the plane and do not
- * cross into the other, stepping step bytes: the first row's [o, o + len)
- * crosses (0), or the count.
+ * Rows from offset o, step bytes apart, that stay in one half of the
+ * plane; 0 when the first row's [o, o + len) crosses.
  */
 static UWORD runrows(ULONG o, UWORD len, LONG step, UWORD rows)
 {
@@ -110,8 +109,7 @@ static UWORD runrows(ULONG o, UWORD len, LONG step, UWORD rows)
 
 /*
  * The FillRows entries of the words from word w under cm: for each
- * pattern row, a[0-3] then x[0-3].  FALSE when
- * they change nothing.
+ * pattern row, a[0-3] then x[0-3].  FALSE when they change nothing.
  */
 static BOOL filltab(UWORD *tab, const struct GfxPens *p,
     const struct GfxPlane *pl, UWORD bpp, UWORD w, UWORD cm, UWORD ne,

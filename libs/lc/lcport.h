@@ -1,13 +1,12 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * lc.gfxdriver's port layer (lcport.s): the 8568's update address,
- * pushes from the shadow, block fills and copies over rows, and the
- * dirty bytes that a flush pushes: a span a row, or one bit a byte for
- * a row with more.  The caller holds
- * interrupts off with lp_Budget set to LCP_PIECE; when a piece's
- * estimated time runs out the layer waits for the chip, lets interrupts
- * in and starts the next.  Every call returns FALSE once a poll has
- * timed out, and the chip is left alone from then on.
+ * lc.gfxdriver's port layer: the 8568's update address, pushes from the
+ * shadow, block fills and copies over rows, and the dirty bytes a flush
+ * pushes: a span a row, or one bit a byte for a row with more.  The
+ * caller holds interrupts off with lp_Budget set to LCP_PIECE; when a
+ * piece's estimated time runs out the layer waits for the chip, lets
+ * interrupts in and starts the next.  Once a poll times out every call
+ * returns FALSE and the chip is left alone.
  */
 #ifndef LC_LCPORT_H
 #define LC_LCPORT_H
@@ -18,7 +17,7 @@
 #define LCP_PIECE	1000	/* microseconds of a piece */
 #define LCP_NOADDR	0xFFFF	/* an update address never used */
 
-/* The offsets are lcport.s's. */
+/* The assembler's offsets must match. */
 struct LCPort {
 	UBYTE	*lp_Shadow;	/* VRAM 0x0000, rows of lp_BPR bytes */
 	UWORD	lp_UA;		/* update address, or LCP_NOADDR */

@@ -566,9 +566,11 @@ static LONG test(char *args, LONG len)
 	struct TagItem t[4];
 	ULONG mem, big;
 	APTR p;
+	BPTR lk;
 	WORD i;
 
-	check(AssignLate("FONTS", "SYS:Fonts"), "FONTS: assign");
+	check((lk = Lock("FONTS:", ACCESS_READ)) != NULL, "FONTS: at boot");
+	UnLock(lk);
 	port = CreateMsgPort();
 	io = (struct IOStdReq *)CreateIORequest(port, sizeof(struct IOStdReq));
 	check(io != NULL && OpenDevice("input.device", 0,

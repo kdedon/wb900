@@ -1,11 +1,11 @@
 /*
- * lc.gfxdriver under graphics.library, on a model of the LC card's 8568
- * (the emulator has none): the display database, the display bitmap, and
- * after every drawing step (fills, patterns, text, lines, aligned and
- * unaligned blits and scrolls, the pointer) the model's bitmap must be
- * the shadow, the chip idle and every port write waited for.  Each
- * step's port actions and their time on the plan's rates are printed
- * as a cost regression, and the main cases checked against the plan.
+ * lc.gfxdriver under graphics.library, on a model of the LC card's 8568:
+ * the display database, the display bitmap, and after every drawing step
+ * (fills, patterns, text, lines, aligned and unaligned blits and scrolls,
+ * the pointer) the model's bitmap must be the shadow, the chip idle and
+ * every port write waited for.  Each step's port actions and their time
+ * at the expected rates are printed as a cost regression, and the main
+ * cases checked against their limits.
  */
 #include <exec/exec.h>
 #include <graphics/gfx.h>

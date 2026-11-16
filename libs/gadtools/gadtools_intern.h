@@ -54,7 +54,7 @@
 
 struct VisualInfo;
 
-/* The C library functions gadtools uses (crt.c) */
+/* The C library functions gadtools uses */
 ULONG strlen(CONST_STRPTR s);
 STRPTR strchr(CONST_STRPTR s, int c);
 int strcmp(CONST_STRPTR a, CONST_STRPTR b);

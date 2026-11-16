@@ -5,8 +5,7 @@
  * copy, and Update Ready, which stays low for a random number of port
  * accesses after each action.  An action runs when it completes, so a
  * write that replaces a pending one loses it, as on the chip.
- * lc.gfxdriver's port layer reaches it through vdcio.s.  lcm_frame()
- * reads the display's geometry from the registers.
+ * lcm_frame() reads the display's geometry from the registers.
  */
 #ifndef VDCMODEL_H
 #define VDCMODEL_H

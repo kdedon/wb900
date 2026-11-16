@@ -26,7 +26,7 @@
 
 /****************************************************************************************/
 
-/* The C library functions icon.library uses (crt.c) */
+/* The C library functions icon.library uses */
 #define offsetof(t, m)  ((ULONG)&((t *)0)->m)
 ULONG strlen(CONST_STRPTR s);
 char *strcpy(char *d, CONST_STRPTR s);

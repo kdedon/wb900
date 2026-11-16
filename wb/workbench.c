@@ -1,14 +1,10 @@
 /* SPDX-License-Identifier: MIT */
 /*
- * Workbench: the Workbench screen with the disks on its backdrop and a
- * window for each open drawer.  Icons are selected with a click (shift
- * adds), a lasso, or dragged as outlines within or between windows; a
- * double click opens a drawer or launches a program through
- * workbench.library.  Icons dropped on another volume are copied.
- * AppIcons and the Tools menu's AppMenuItems send their applications
- * AppMessages.  Leave Out puts icons on the backdrop and lists them in
- * their volume's .backdrop, Put Away takes them back.  Without a display
- * it drives itself (selftest()).
+ * Workbench: disks on the backdrop, a window per open drawer.  Click
+ * (shift adds) or lasso selects, outlines drag between windows, double
+ * click opens or launches.  Drops on another volume copy.  Leave Out
+ * lists icons in the volume's .backdrop.  Without a display it runs
+ * selftest().
  */
 #include "workbench.h"
 #include <devices/inputevent.h>
@@ -278,7 +274,7 @@ static BOOL askstring(CONST_STRPTR title, STRPTR buf, WORD len)
 
 /*** Commands ***/
 
-/* The commands keep their paths static, off the stack their requesters use */
+/* Paths are static: the requesters need the stack */
 
 static void execute(void)
 {
@@ -306,7 +302,7 @@ static void opendrawer(STRPTR path, struct DiskObject *dobj)
 	struct WBWin *ww;
 	BPTR lock;
 
-	/* by its volume's name, as the disks and left-out icons have it */
+	/* by volume name, as disks and left-out icons have it */
 	if ((lock = Lock(path, ACCESS_READ)) == NULL) {
 		DisplayBeep(scr);
 		return;
@@ -738,9 +734,8 @@ static BOOL copytree(STRPTR src, STRPTR dst, UBYTE *buf)
 }
 
 /*
- * Move the selected icons of from into the drawer dir, or copy them
- * with their icons when dir is on another volume.  In dir's window they
- * go dx, dy from where they were, or to free places for NO_ICON_POSITION.
+ * Move the selected icons of from into dir, or copy them when dir is on
+ * another volume.  They land dx, dy off, or free for NO_ICON_POSITION.
  */
 static void dropinto(struct WBWin *from, STRPTR dir, LONG dx, LONG dy)
 {
@@ -1140,20 +1135,14 @@ static void closelibs(void)
 }
 
 /*
- * Without ENV:, the assigns a Startup-Sequence makes: ENVARC: for
- * SYS:Prefs/Env-Archive and ENV: for a copy of it in RAM:, or for the
- * archive itself without a RAM disk.
+ * Without ENV:, make a Startup-Sequence's assigns: ENVARC: to
+ * SYS:Prefs/Env-Archive, ENV: to its copy in RAM: (or to it, with no RAM:).
  */
 static void envinit(void)
 {
 	BPTR lock;
 	UBYTE *buf;
 
-	/* FONTS:, which AmigaOS's dos.library makes at boot */
-	if ((lock = Lock("FONTS:", ACCESS_READ)) != NULL)
-		UnLock(lock);
-	else
-		AssignLate("FONTS", "SYS:Fonts");
 	if ((lock = Lock("ENV:", ACCESS_READ)) != NULL) {
 		UnLock(lock);
 		return;

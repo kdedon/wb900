@@ -5,8 +5,7 @@
  * a double border, two diagonals, four filled rectangles,
  * "wb900 graphics.library" in topaz 8, and the pointer with its tip at
  * (120, 64).  The picture stays on the display when the test ends.
- * Without a display (the C emulator has no HR card) it checks that the
- * database is empty.
+ * Without a display it checks that the database is empty.
  */
 #include <exec/exec.h>
 #include <graphics/gfx.h>
