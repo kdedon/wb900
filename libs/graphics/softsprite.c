@@ -2,13 +2,15 @@
 /*
  * The pointer: a software sprite drawn into the ViewPort's bitmap, with
  * what it covers saved in RAM.  The task that moves it (input.device's)
- * and every drawing into that bitmap take gfx_SpriteLock, and drawing
+ * and every drawing into that bitmap, or one of a display mode, which
+ * may trade planes with the display, take gfx_SpriteLock, and drawing
  * hides the sprite while it covers the area drawn.
  *
  * Sprite pixels are 2 bits (Amiga sprite pens 1-3, 0 transparent) and go
  * to the bitmap as pens 17-19, through its pixel table.
  */
 #include <exec/memory.h>
+#include <graphics/modeid.h>
 #include <graphics/sprite.h>
 #include <graphics/view.h>
 #include <proto/exec.h>
@@ -147,9 +149,10 @@ BOOL gfx_SpriteBefore(struct BitMap *bm, struct Rectangle *r, struct GfxBase *Gf
 {
     struct SoftSprite *ss = &PrivGBase(GfxBase)->sprite;
     struct Rectangle sr;
-    BOOL flush = IS_GFXBM(bm) && GFXBM(bm)->gb_Driver->gd_Flush != NULL;
+    BOOL gfx = IS_GFXBM(bm);
+    BOOL flush = gfx && GFXBM(bm)->gb_Driver->gd_Flush != NULL;
 
-    if (bm != ss->ss_BitMap && !flush)
+    if (bm != ss->ss_BitMap && !(gfx && GFXBM(bm)->gb_ModeID != INVALID_ID))
         return FALSE;
     ObtainSemaphore(&ss->ss_Lock);
     if (flush)

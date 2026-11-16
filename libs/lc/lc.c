@@ -57,14 +57,10 @@ static const struct GfxMode lc_modes[] = {
 	{ LCLORESPAL_ID, 320, 256, 1, GDF_PLANAR, 44, 41, "LC:320x256" }
 };
 #define LC_NMODES	4
-static struct GfxBitMap lc_bm;
 static struct GfxDriver *lc_fmt;	/* graphics' planar operations */
-static UBYTE lc_pixtab[256];
 static BOOL lc_alloc, lc_shown;
 static struct SignalSemaphore lc_lock;	/* the chip's port sequences */
 static UBYTE lc_fg = 0xF, lc_bg = 0x2;	/* RGBI of pixels 1 and 0 */
-
-#define LCBM	(&lc_bm.gb_BitMap)
 
 /*
  * The registers for bitmap mode, R0-R36: 80x25 cells of 8 lines, as the
@@ -129,8 +125,8 @@ static void lc_leave(void)
 	ReleaseSemaphore(&lc_lock);
 }
 
-/* Mode i, and its bitmap cleared */
-static void lc_init(UWORD m)
+/* Mode i, and its bitmap of size bytes cleared */
+static void lc_init(UWORD m, ULONG size)
 {
 	UBYTE r[37];
 	UWORD i;
@@ -158,7 +154,7 @@ static void lc_init(UWORD m)
 		if (i != 16 && i != 17 && i != 18 && i != 19 && i != 28 &&
 		    i != 30 && i != 31)
 			lcv_wr(LP, i, r[i]);
-	lcv_fill(LP, 0, 0, lc_bm.gb_PlaneSize, 1, 0);
+	lcv_fill(LP, 0, 0, size, 1, 0);
 	lc_leave();
 }
 
@@ -295,7 +291,7 @@ static void lc_Copy(struct BitMap *src, WORD sx, WORD sy, struct BitMap *dst,
 {
 	UWORD fb0 = (r->MinX + 7) >> 3, fb1 = ((r->MaxX + 1) >> 3) - 1;
 
-	if (dst != LCBM || !(mask & 1)) {
+	if (!(GFXBM(dst)->gb_Flags & GBF_DISPLAY) || !(mask & 1)) {
 		lc_fmt->gd_Copy(src, sx, sy, dst, r, minterm, mask);
 		return;
 	}
@@ -422,49 +418,54 @@ static void lc_SetColor(struct GfxDriver *gd, UWORD n, UBYTE r, UBYTE g,
 		lc_colours();
 }
 
-static struct BitMap *lc_AllocDisplay(struct GfxDriver *gd,
-    const struct GfxMode *m)
+static BOOL lc_AllocDisplay(struct GfxDriver *gd, const struct GfxMode *m,
+    struct BitMap *bm)
 {
-	struct BitMap *bm = LCBM;
-	UWORD i, bpr = m->gm_Width >> 3;
+	struct GfxBitMap *gbm = (struct GfxBitMap *)bm;
+	UWORD bpr = m->gm_Width >> 3;
 	ULONG size = (ULONG)bpr * m->gm_Height;
 
 	if (lc_alloc || m < lc_modes || m >= lc_modes + LC_NMODES)
-		return NULL;
+		return FALSE;
 	bm->Planes[0] = AllocMem(size, MEMF_ANY | MEMF_CLEAR);
 	if (bm->Planes[0] == NULL)
-		return NULL;
+		return FALSE;
 	if (!lc_shown && AllocFB(lcowner) != NULL) {
 		FreeMem(bm->Planes[0], size);
-		return NULL;
+		return FALSE;
 	}
 	lc_alloc = TRUE;
 	lc_lp.lp_Shadow = bm->Planes[0];
 	lc_lp.lp_BPR = bpr;
-	lc_bm.gb_PlaneSize = size;
-	lc_init(m - lc_modes);
+	gbm->gb_PlaneSize = size;
+	lc_init(m - lc_modes, size);
 	bm->BytesPerRow = bpr;
 	bm->Rows = m->gm_Height;
 	bm->Depth = 1;
 	bm->pad = GFXBM_MAGIC;
 	bm->Flags = BMF_DISPLAYABLE | BMF_STANDARD;
-	lc_bm.gb_Driver = gd;
-	lc_bm.gb_Flags = GBF_DISPLAY;
-	lc_bm.gb_ModeID = m->gm_ModeID;
-	for (i = 0; i < 256; i++)
-		lc_pixtab[i] = i & 1;
-	lc_bm.gb_PixTab = lc_pixtab;
+	gbm->gb_Driver = gd;
+	gbm->gb_Flags = GBF_DISPLAY;
+	gbm->gb_ModeID = m->gm_ModeID;
 	lc_colours();
-	return bm;
+	return TRUE;
 }
 
 static void lc_FreeDisplay(struct GfxDriver *gd, struct BitMap *bm)
 {
 	lc_alloc = FALSE;
-	FreeMem(bm->Planes[0], lc_bm.gb_PlaneSize);
+	FreeMem(bm->Planes[0], GFXBM(bm)->gb_PlaneSize);
 	bm->Planes[0] = NULL;
 	if (!lc_shown)
 		FreeFB();
+}
+
+/* The shadow moves to bm's planes, all of which go out */
+static void lc_Adopt(struct GfxDriver *gd, struct BitMap *bm)
+{
+	lc_lp.lp_Shadow = bm->Planes[0];
+	lc_mark(0, bm->Rows - 1, 0, (bm->BytesPerRow << 3) - 1);
+	lc_Flush(gd, bm);
 }
 
 static BOOL lc_Show(struct GfxDriver *gd, struct BitMap *bm)
@@ -493,7 +494,9 @@ static struct GfxDriver lc_driver = {
 	lc_AllocDisplay,
 	lc_FreeDisplay,
 	lc_Show,
-	lc_Flush
+	lc_Flush,
+	NULL,
+	lc_Adopt
 };
 
 struct GfxDriver *LC_5(struct LCBase *base, struct GfxDriver **fmts)

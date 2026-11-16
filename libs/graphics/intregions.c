@@ -15,92 +15,6 @@
 
 
 
-struct RegionRectangleExtChunk *__NewRegionRectangleExtChunk
-(
-    struct GfxBase *GfxBase
-)
-{
-    struct ChunkPool *Pool;
-    struct ChunkExt  *ChunkE;
-
-    ObtainSemaphore(&PrivGBase(GfxBase)->regionsem);
-
-    Pool = IsMinListEmpty(&PrivGBase(GfxBase)->ChunkPoolList) ? NULL :
-        (struct ChunkPool *)PrivGBase(GfxBase)->ChunkPoolList.mlh_Head;
-
-    if(!Pool || !Pool->NumChunkFree) {
-        int i;
-        ULONG numchunks = SIZECHUNKBUF;
-
-        /* Reserving a whole pool is optional. Do not expunge unrelated
-         * caches merely because that large block does not fit fragmented
-         * free memory. Only the minimum, one-chunk allocation may reclaim. */
-        do {
-            Pool = AllocMem(sizeof(*Pool) + numchunks * sizeof(struct ChunkExt),
-                MEMF_ANY | (numchunks > 1 ? MEMF_NO_EXPUNGE : 0));
-            if (Pool)
-                break;
-            numchunks /= 2;
-        } while (numchunks);
-
-        if(!Pool) {
-            ReleaseSemaphore(&PrivGBase(GfxBase)->regionsem);
-
-            return NULL;
-        }
-
-        NewMinList(&Pool->ChunkList);
-
-        Pool->NumChunks = numchunks;
-        Pool->NumChunkFree = numchunks;
-
-        for(i = 0; i < numchunks; i++) {
-            AddTail((struct List *)&Pool->ChunkList, (struct Node *)&Pool->Chunks[i]);
-        }
-
-        AddHead((struct List *)&PrivGBase(GfxBase)->ChunkPoolList, (struct Node *)Pool);
-    }
-
-    ChunkE = (struct ChunkExt *)Pool->ChunkList.mlh_Head;
-
-    Remove((struct Node *)ChunkE);
-
-    if(!--Pool->NumChunkFree) {
-        Remove((struct Node *)Pool);
-        AddTail((struct List *)&PrivGBase(GfxBase)->ChunkPoolList, (struct Node *)Pool);
-    }
-
-    ChunkE->Owner = Pool;
-
-    ReleaseSemaphore(&PrivGBase(GfxBase)->regionsem);
-
-    return &ChunkE->Chunk;
-}
-
-
-void __DisposeRegionRectangleExtChunk
-(
-    struct RegionRectangleExtChunk *Chunk,
-    struct GfxBase *GfxBase
-)
-{
-    struct ChunkPool *Pool = ((struct ChunkExt *)Chunk)->Owner;
-
-    ObtainSemaphore(&PrivGBase(GfxBase)->regionsem);
-
-    Remove((struct Node *)Pool);
-
-    if(++Pool->NumChunkFree == Pool->NumChunks) {
-        FreeMem(Pool, sizeof(*Pool) + Pool->NumChunks * sizeof(struct ChunkExt));
-    } else {
-        AddHead((struct List *)&PrivGBase(GfxBase)->ChunkPoolList, (struct Node *)Pool);
-        AddTail((struct List *)&Pool->ChunkList, (struct Node *)Chunk);
-    }
-
-    ReleaseSemaphore(&PrivGBase(GfxBase)->regionsem);
-}
-
-
 BOOL _CopyRegionRectangles(struct Region *R1, struct Region *R2, struct GfxBase *GfxBase)
 {
     if(_LinkRegionRectangleList(R1->RegionRectangle, &R2->RegionRectangle, GfxBase)) {
@@ -193,8 +107,7 @@ void _DisposeRegionRectangleList
      * chain runs through Rects[SIZERECTBUF-1].RR.Next, which is not
      * RR->Prev when AndRectRegion unlinked the previous chunk's last
      * slot(s): cut it there as well, or it keeps naming freed chunks and
-     * the next ClearRegion frees them again, disposing chunks whose pool
-     * is long gone.
+     * the next ClearRegion frees them again.
      */
     if(!Counter(RR) || !RR->Prev) {
         if(RR->Prev)

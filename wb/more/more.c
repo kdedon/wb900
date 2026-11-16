@@ -46,8 +46,13 @@ static LONG abs(LONG x)
 
 #define MAX_TEXTLINELEN 4096
 
-/* The file and its line array each fit one 64 KB segment */
-#define MAX_FILELEN     0xFFF0
+/* The file is read through a window of up to WINLEN bytes */
+#define WINLEN          0x4000
+
+/* The file offset of each line and of the end, in blocks of LINEBLOCK */
+#define LINESHIFT       8
+#define LINEBLOCK       (1L << LINESHIFT)
+#define LINEOFF(n)      (lineindex.blocks[(n) >> LINESHIFT][(n) & (LINEBLOCK - 1)])
 
 #define ARG_TEMPLATE "FILE"
 
@@ -82,12 +87,10 @@ enum
 
 /****************************************************************************************/
 
-struct LineNode
+struct LineIndex
 {
-    char *text;
-    UWORD stringlen;
-    UWORD textlen;
-    BOOL invert;
+    LONG **blocks;
+    LONG cap, count;    /* block pointers, offsets */
 };
 
 /****************************************************************************************/
@@ -117,9 +120,12 @@ static struct RDArgs    *MyArgs;
 static struct Gadget    *gad[NUM_GADGETS], *firstgadget, *activearrowgad;
 static struct Image     *img[NUM_IMAGES];
 
-static struct LineNode  *linearray;
+static struct LineIndex lineindex;
 
-static UBYTE            *filebuffer;
+/* winlen bytes of the file from winstart, in a buffer of winsize */
+static UBYTE            *window;
+static LONG             winsize, winstart, winlen;
+static UBYTE            textname[300];
 
 static char             *filename, s[256], *searchtext;
 static CONST_STRPTR     errmsg;
@@ -161,6 +167,18 @@ WORD ShowMessage(CONST_STRPTR title, CONST_STRPTR text, CONST_STRPTR gadtext)
     es.es_GadgetFormat = gadtext;
 
     return EasyRequestArgs(win, &es, NULL, NULL);
+}
+
+/****************************************************************************************/
+
+static void FreeIndex(struct LineIndex *li)
+{
+    LONG n = (li->count + LINEBLOCK - 1) >> LINESHIFT;
+
+    if (!li->blocks) return;
+
+    while (n--) FreeVec(li->blocks[n]);
+    FreeVec(li->blocks);
 }
 
 /****************************************************************************************/
@@ -229,8 +247,8 @@ static LONG Cleanup(CONST_STRPTR msg)
     if (dri) FreeScreenDrawInfo(scr, dri);
     if (scr) UnlockPubScreen(NULL, scr);
 
-    if (linearray) FreeVec(linearray);
-    if (filebuffer) FreeVec(filebuffer);
+    FreeIndex(&lineindex);
+    if (window) FreeVec(window);
 
     if (fh) Close(fh);
 
@@ -323,74 +341,120 @@ static BOOL OpenLibs(void)
 /* The column after a tab at col */
 #define TABSTOP(col)    ((col) + tabsize - (col) % tabsize)
 
-static UWORD CalcTextLen(char *text)
+static BOOL AddOffset(struct LineIndex *li, LONG off)
 {
-    char c;
-    UWORD rc = 0;
+    LONG **nb, b = li->count >> LINESHIFT;
 
-    while((c = *text++))
+    if ((li->count & (LINEBLOCK - 1)) == 0)
     {
-        if (c == '\t')
+        if (b == li->cap)
         {
-            rc = TABSTOP(rc);
-        } else {
-            rc++;
+            if (!(nb = AllocVec((b + 16) * sizeof(*nb), MEMF_PUBLIC))) return FALSE;
+            if (li->blocks)
+            {
+                CopyMem(li->blocks, nb, b * sizeof(*nb));
+                FreeVec(li->blocks);
+            }
+            li->blocks = nb;
+            li->cap = b + 16;
         }
-        if (rc >= MAX_TEXTLINELEN) return MAX_TEXTLINELEN;
+        if (!(li->blocks[b] = AllocVec(LINEBLOCK * sizeof(LONG), MEMF_PUBLIC))) return FALSE;
+    }
+    li->blocks[b][li->count++ & (LINEBLOCK - 1)] = off;
+    return TRUE;
+}
+
+/****************************************************************************************/
+
+/* len bytes from off, at most winsize; zeros past the end of the file */
+static UBYTE *GetText(LONG off, LONG len)
+{
+    BPTR f;
+    LONG n = 0;
+
+    if (off < winstart || off + len > winstart + winlen)
+    {
+        /* Lines before off stay in the window for scrolling back */
+        winstart = off - winsize / 4;
+        if (winstart < 0 || off + len > winstart + winsize) winstart = off;
+
+        if ((f = Open(textname, MODE_OLDFILE)))
+        {
+            if (Seek(f, winstart, OFFSET_BEGINNING) >= 0) n = Read(f, window, winsize);
+            Close(f);
+        }
+        if (n < 0) n = 0;
+        while (n < winsize) window[n++] = 0;
+        winlen = winsize;
     }
 
-    return rc;
+    return window + (off - winstart);
 }
 
 /****************************************************************************************/
 
 static BOOL OpenFile(void)
 {
-    struct LineNode     *new_linearray;
-    UBYTE               *new_filebuffer;
-    LONG                new_filelen;
-    LONG                new_num_lines;
-
-    struct LineNode     *linepos;
-    UBYTE               *filepos;
-    LONG                flen, act_line;
-
-    BOOL                seekable;
+    struct LineIndex    new_index;
+    UBYTE               *new_window = NULL;
+    LONG                pos = 0, col = 0, new_max = 0, size, n, i;
+    UBYTE               c = '\n';
+    BOOL                ok;
 
     if (!(fh = Open(filename, MODE_OLDFILE)))
     {
         return DosError();
     }
 
-    if (Seek(fh, 0, OFFSET_END) >= 0) {
-        new_filelen = Seek(fh, 0, OFFSET_BEGINNING);
-        seekable = TRUE;
-    }
-    else {
-        new_filelen = MAX_FILELEN;
-        seekable = FALSE;
-    }
-
-    if (new_filelen < 0)
+    if (Seek(fh, 0, OFFSET_END) < 0 || (size = Seek(fh, 0, OFFSET_BEGINNING)) < 0)
     {
         Close(fh); fh = 0;
         return DosError();
     }
+    size = size < WINLEN ? size + 1 : WINLEN;
 
-    if (new_filelen > MAX_FILELEN)
+    /* Index the lines, reading through the new window */
+    new_index.blocks = NULL;
+    new_index.cap = new_index.count = 0;
+    ok = (new_window = AllocVec(size, MEMF_PUBLIC)) && AddOffset(&new_index, 0);
+    while (ok && (n = Read(fh, new_window, size)) > 0)
     {
-        Close(fh); fh = 0;
-        if (in_main_loop)
+        for (i = 0; i < n && ok; i++)
         {
-            ShowMessage("More", MSG(MSG_TOO_BIG), MSG(MSG_OK));
-            return FALSE;
+            c = new_window[i];
+            pos++;
+            if (c == '\n')
+            {
+                if (col > new_max) new_max = col;
+                col = 0;
+                ok = AddOffset(&new_index, pos);
+            } else if (col < MAX_TEXTLINELEN) {
+                col = c == '\t' ? TABSTOP(col) : col + 1;
+                if (col > MAX_TEXTLINELEN) col = MAX_TEXTLINELEN;
+            }
         }
-        return Fail(MSG(MSG_TOO_BIG));
     }
 
-    if (!(new_filebuffer = AllocVec(new_filelen + 1, MEMF_PUBLIC)))
+    Close(fh); fh = 0;
+
+    if (ok && n < 0)
     {
-        Close(fh); fh = 0;
+        FreeIndex(&new_index);
+        FreeVec(new_window);
+        return DosError();
+    }
+
+    /* A last line without a newline ends one past the file */
+    if (ok && (pos == 0 || c != '\n'))
+    {
+        if (col > new_max) new_max = col;
+        ok = AddOffset(&new_index, pos + 1);
+    }
+
+    if (!ok)
+    {
+        FreeIndex(&new_index);
+        if (new_window) FreeVec(new_window);
         if (in_main_loop)
         {
             ShowMessage("More", MSG(MSG_NO_MEM), MSG(MSG_OK));
@@ -399,77 +463,22 @@ static BOOL OpenFile(void)
         return Fail(MSG(MSG_NO_MEM));
     }
 
-    if ((flen=Read(fh, new_filebuffer, new_filelen)) != new_filelen && seekable)
-    {
-        FreeVec(new_filebuffer);
-        Close(fh); fh = 0;
-        return DosError();
-    }
+    FreeIndex(&lineindex);
+    if (window) FreeVec(window);
 
-    if (flen < 0) flen = 0;
-    new_filelen = flen;
-    new_filebuffer[new_filelen] = '\0';
-
-    Close(fh);fh = 0;
-
-    filepos = new_filebuffer;
-
-    new_num_lines = 1;
-
-    while(flen--)
-    {
-        if (*filepos++ == '\n') new_num_lines++;
-    }
-
-    /* A final newline ends the last line rather than starting one */
-    if (new_filelen && new_filebuffer[new_filelen - 1] == '\n') new_num_lines--;
-
-    if (new_num_lines * sizeof(struct LineNode) > MAX_FILELEN ||
-        !(new_linearray = AllocVec(new_num_lines * sizeof(struct LineNode), MEMF_PUBLIC | MEMF_CLEAR)))
-    {
-        FreeVec(new_filebuffer);
-        if (in_main_loop)
-        {
-            ShowMessage("More", MSG(MSG_NO_MEM), MSG(MSG_OK));
-            return FALSE;
-        }
-        return Fail(MSG(MSG_NO_MEM));
-    }
-
-    linepos = new_linearray;
-    filepos = new_filebuffer;
-
-    act_line = 1;
-    max_textlen = 0;
-    while(act_line <= new_num_lines)
-    {
-        linepos->text = (char *)filepos;
-
-        while ((*filepos != '\n') && (*filepos != '\0'))
-        {
-            linepos->stringlen++; filepos++;
-        }
-
-        *filepos++ = '\0';
-
-        linepos->textlen = CalcTextLen(linepos->text);
-        if (linepos->textlen > max_textlen) max_textlen = linepos->textlen;
-
-        linepos++; act_line++;
-    }
-
-    if (filebuffer) FreeVec(filebuffer);
-    if (linearray) FreeVec(linearray);
-
-    filebuffer = new_filebuffer;
-    filelen    = new_filelen;
-    linearray  = new_linearray;
-    num_lines  = new_num_lines;
-    found_line = -1;
+    lineindex   = new_index;
+    window      = new_window;
+    winsize     = size;
+    winlen      = 0;
+    filelen     = pos;
+    num_lines   = new_index.count - 1;
+    max_textlen = new_max;
+    found_line  = -1;
     search_startline = 0;
 
     if (filename != (char *)filenamebuffer) strncpy(filenamebuffer, filename, 299);
     filename = filenamebuffer;
+    strncpy(textname, filename, 299);
 
     return TRUE;
 }
@@ -680,6 +689,7 @@ static void DrawTextLine(WORD viewline, WORD columns, BOOL clearright)
     static char tempstring[MAX_TEXTLINELEN + 1];
     static char c, *stringpos, *text;
     LONG realline = viewline + viewstarty;
+    LONG len, k = 0;
     WORD textlen, i = 0, x;
     BOOL inverted;
 
@@ -698,17 +708,19 @@ static void DrawTextLine(WORD viewline, WORD columns, BOOL clearright)
     if ((viewline >= 0) && (viewline < visibley) &&
         (realline >= 0) && (realline < num_lines))
     {
-        inverted = linearray[realline].invert;
-
-        text = linearray[realline].text;
-        textlen = linearray[realline].textlen;
+        inverted = realline == found_line;
 
         /* Columns right of the view are not expanded */
-        if (textlen > viewstartx + visiblex) textlen = viewstartx + visiblex;
+        textlen = viewstartx + visiblex;
+        if (textlen > MAX_TEXTLINELEN) textlen = MAX_TEXTLINELEN;
+
+        len = LINEOFF(realline + 1) - LINEOFF(realline) - 1;
+        if (len > textlen) len = textlen;
+        text = (char *)GetText(LINEOFF(realline), len);
 
         stringpos = tempstring;
 
-        while((c = *text++) && (i < textlen))
+        while((k++ < len) && (c = *text++) && (i < textlen))
         {
             if (c == '\t')
             {
@@ -1123,38 +1135,41 @@ static void HandleScrollGadget(WORD gadid)
 
 /****************************************************************************************/
 
-static BOOL FindString(struct LineNode *ln, char *search, LONG searchlen)
+static BOOL FindString(LONG line, char *search, LONG searchlen)
 {
-    char *text = ln->text;
-    LONG textlen = ln->stringlen;
-    LONG i;
-    BOOL rc = FALSE;
+    LONG off = LINEOFF(line);
+    LONG textlen = LINEOFF(line + 1) - off - 1;
+    LONG i, j, n;
+    UBYTE *text;
 
-    textlen -= searchlen;
-
-    while(textlen >= 0)
+    /* A line longer than the window, in pieces that overlap by searchlen - 1 */
+    while(textlen >= searchlen)
     {
-        for(i = 0;i < searchlen;i++)
+        n = textlen < winsize ? textlen : winsize;
+        text = GetText(off, n);
+
+        for(i = 0;i + searchlen <= n;i++)
         {
-            if (ToUpper(text[i]) != ToUpper(search[i])) break;
+            for(j = 0;j < searchlen;j++)
+            {
+                if (ToUpper(text[i + j]) != ToUpper(search[j])) break;
+            }
+            if (j == searchlen) return TRUE;
         }
 
-        if (i == searchlen)
-        {
-            rc = TRUE;
-            break;
-        }
-        text++;textlen--;
+        if (n == textlen) break;
+        off += n - searchlen + 1;
+        textlen -= n - searchlen + 1;
     }
 
-    return rc;
+    return FALSE;
 }
 
 /****************************************************************************************/
 
 static void DoSearch(WORD kind)
 {
-    LONG line, searchlen;
+    LONG line, searchlen, n;
     BOOL done = FALSE;
 
     if (!searchtext) return;
@@ -1182,20 +1197,20 @@ static void DoSearch(WORD kind)
 
     while(!done)
     {
-        if (FindString(&linearray[line], searchtext, searchlen))
+        if (FindString(line, searchtext, searchlen))
         {
             done = TRUE;
             if (found_line >= 0)
             {
-                linearray[found_line].invert = FALSE;
-                DrawTextLine(found_line - viewstarty, 0, TRUE);
+                n = found_line;
+                found_line = -1;
+                DrawTextLine(n - viewstarty, 0, TRUE);
             }
 
             ScrollTo(GAD_VERTSCROLL, line - visibley / 2, TRUE);
 
             found_line = line;
             search_startline = line;
-            linearray[found_line].invert = TRUE;
             DrawTextLine(found_line - viewstarty, 0, TRUE);
             break;
         }

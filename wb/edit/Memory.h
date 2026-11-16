@@ -19,6 +19,15 @@ typedef	struct _Line
 	UBYTE flags;					/* See below */
 }	LINE;
 
+/*** Part of a file read in: len bytes of whole lines follow ***/
+typedef struct _TextBuf
+{
+	struct _TextBuf *next;
+	ULONG len;
+}	TEXTBUF;
+
+#define	TEXTBUF_TEXT(tb)	((STRPTR)((tb) + 1))
+
 #include "UndoRedo.h"
 
 /*** Valid flags for the previous field ***/
@@ -36,6 +45,7 @@ LINE *create_line (STRPTR,ULONG size);						/* Create a new line of size bytes *
 LINE *new_line    (LINE *);									/* Simplified line creation */
 void free_line    (LINE *);
 void trash_file   (LINE *);									/* Trash all lines of a file */
+void trash_text   (TEXTBUF *);								/* Free a file read in */
 BOOL add_char     (JBuf,LINE *,ULONG,UBYTE);				/* Add a char to a line at pos */
 BOOL insert_str	(JBuf,LINE *,ULONG,STRPTR,ULONG);	/* Like add_string, but doesn't care of \n */
 BOOL rem_chars    (JBuf,LINE *,ULONG s, ULONG e);		/* Remove chars between and incl. s, e (s<=e) */

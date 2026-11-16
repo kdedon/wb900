@@ -15,7 +15,7 @@
 typedef	struct
 {
 	STRPTR filename;			/* Just fill this field */
-	STRPTR buffer;
+	TEXTBUF *buffer;
 	LINE  *lines;
 	ULONG  nblines;
 	char   eol;
@@ -23,7 +23,7 @@ typedef	struct
 }	LoadFileArgs;
 
 WORD load_file     ( LoadFileArgs * );
-WORD read_file     ( LoadFileArgs *, ULONG * );
+WORD read_file     ( LoadFileArgs * );
 BYTE save_file     ( STRPTR, LINE *, unsigned char eol, LONG protection );
 BYTE get_full_path ( STRPTR, STRPTR * );
 

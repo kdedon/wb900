@@ -64,7 +64,7 @@ void gfx_Line(struct BitMap *bm, const struct Rectangle *clip,
  * the bits sh (1-15) on of two source words, reading n + 1 a row.
  * gfx_LineRun: count pixels of a line in one half of a plane, from
  * job (gfxformat.c), x bytes stepping by xstep.  gfx_WCopy: n
- * words, upwards.
+ * words, upwards.  gfx_WSwap: n words of a and b exchanged.
  * gfx_Bits: n words of the bits of byte string s from bit sh (0-7),
  * reading s[0] to s[2n] (s[2n - 1] when sh is 0).
  */
@@ -80,6 +80,7 @@ void gfx_ShiftRows(UWORD *d, const UWORD *s, UWORD n, UWORD rows,
     WORD dstep, WORD sstep, UWORD sh, UWORD lm, UWORD rm, WORD dir);
 void gfx_LineRun(APTR job, WORD xstep, UWORD count);
 void gfx_WCopy(UWORD *d, const UWORD *s, UWORD n);
+void gfx_WSwap(UWORD *a, UWORD *b, UWORD n);
 void gfx_Bits(UWORD *out, const UBYTE *s, UWORD sh, UWORD n);
 
 /* (a * b + c) / d with a, b and d 0-32767, the sum not negative and

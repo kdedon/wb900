@@ -29,7 +29,7 @@ typedef	struct _project				/* MAIN PROJECT STRUCTURE */
 {
 	struct _project *next,*prev;		/* Linked list of opened project */
 	struct  cutcopypast ccp;			/* The lines selected */
-	STRPTR  buffer;						/* Main file buffer */
+	TEXTBUF *buffer;						/* Main file buffers */
 	ULONG   date[3];						/* Last modification time */
 	char    tabsize;						/* Local tabulation size */
 	char    cursmode;						/* Cursor movement mode */

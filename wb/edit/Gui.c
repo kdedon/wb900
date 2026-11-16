@@ -406,11 +406,7 @@ long setup( void )
 		/* Build the menu-strip and compute menu items size */
 		if(Menu || (Menu = (void *) CreateMenusA(newmenu, MenuTags)))
 		{
-			struct TagItem tags[2];
-
-			tags[0].ti_Tag = GTMN_TextAttr; tags[0].ti_Data = (IPTR)&prefs.attrscr;
-			tags[1].ti_Tag = TAG_DONE;
-			if( LayoutMenusA(Menu, Vi, tags) )
+			if( LayoutMenus(Menu, Vi, GTMN_TextAttr, &prefs.attrscr, TAG_DONE) )
 			{
 				Template.Screen = Scr;
 				fit_in_screen(&Template, Scr);

@@ -141,6 +141,11 @@ void int_RethinkDisplay(struct RethinkDisplayActionMsg *msg,struct IntuitionBase
 
                 ReleaseSemaphore(&GetPrivIBase(IntuitionBase)->ViewLordLock);
 
+                /* The screen in front took the display's planes: renew the old headers */
+                for (screen = IntuitionBase->FirstScreen; screen; screen = screen->NextScreen)
+                    if (screen->RastPort.BitMap != &screen->BitMap_OBSOLETE)
+                        UpdateScreenBitMap(screen, IntuitionBase);
+
             }
         }
     }

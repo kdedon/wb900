@@ -79,12 +79,6 @@ void init_searchtable( void )
 BYTE setup_winsearch(Project p, UBYTE replace)
 {
 	static struct NewGadget NG;
-	static IPTR SGadTags[] = {
-		GTCB_Checked,  0,
-		GTST_MaxChars, sizeof(SearchStr)-1,
-		GT_Underscore, '_',
-		TAG_DONE
-	};
 	struct TagItem tags[5];
 	WORD Wid[6];
 	WORD innerWidth, innerHeight;
@@ -170,8 +164,8 @@ BYTE setup_winsearch(Project p, UBYTE replace)
 		NG.ng_VisualInfo = Vi;
 		NG.ng_GadgetText = SWinTxt[2];
 		NG.ng_GadgetID   = 0;
-		search = sg = (void *)
-			CreateGadgetA(STRING_KIND, sg, &NG, (struct TagItem *)(SGadTags+2));
+		search = sg = (void *) CreateGadget(STRING_KIND, sg, &NG,
+			GTST_MaxChars, (ULONG)(sizeof(SearchStr)-1), GT_Underscore, (ULONG)'_', TAG_DONE);
 		/** If user has selected part of text, copy it in the `Search' string gadget **/
 		if(p->ccp.select)
 			GetSI(sg)->BufferPos = copy_mark_to_buf(p,GetSI(sg)->Buffer,GetSI(sg)->MaxChars-1),
@@ -186,8 +180,8 @@ BYTE setup_winsearch(Project p, UBYTE replace)
 			NG.ng_TopEdge += NG.ng_Height+2;
 			NG.ng_GadgetText = SWinTxt[3];
 			NG.ng_GadgetID = 1;
-			rep = sg = (void *)
-				CreateGadgetA(STRING_KIND, sg, &NG, (struct TagItem *)(SGadTags+2));
+			rep = sg = (void *) CreateGadget(STRING_KIND, sg, &NG,
+				GTST_MaxChars, (ULONG)(sizeof(SearchStr)-1), GT_Underscore, (ULONG)'_', TAG_DONE);
 			/* Copy last replace string */
 			CopyMem(ReplaceStr, GetSI(rep)->Buffer, (GetSI(rep)->BufferPos = RLen) + 1);
 		}
@@ -199,8 +193,8 @@ BYTE setup_winsearch(Project p, UBYTE replace)
 			NG.ng_Flags      = (I&1 ? PLACETEXT_LEFT : PLACETEXT_RIGHT);
 			NG.ng_GadgetText = SWinTxt[I];
 			NG.ng_GadgetID   = I;
-			SGadTags[1]      = (&prefs.matchcase)[I-4];
-			sg = (void *) CreateGadgetA(CHECKBOX_KIND, sg, &NG, (struct TagItem *)SGadTags);
+			sg = (void *) CreateGadget(CHECKBOX_KIND, sg, &NG,
+				GTCB_Checked, (ULONG)(&prefs.matchcase)[I-4], GT_Underscore, (ULONG)'_', TAG_DONE);
 			sg->LeftEdge     = (I&1 ? swin->Width-swin->BorderRight-10-sg->Width : swin->BorderLeft + 10);
 			if(I&1) NG.ng_TopEdge += NG.ng_Height;
 		}
@@ -215,7 +209,7 @@ BYTE setup_winsearch(Project p, UBYTE replace)
 			NG.ng_Width = (replace ? Wid[I-6] : Wid[0]);
 			NG.ng_GadgetText = SWinTxt[I];
 			NG.ng_GadgetID   = I;
-			sg = (void *) CreateGadgetA(BUTTON_KIND, sg, &NG, (struct TagItem *)(SGadTags+4));
+			sg = (void *) CreateGadget(BUTTON_KIND, sg, &NG, GT_Underscore, (ULONG)'_', TAG_DONE);
 			NG.ng_LeftEdge  += NG.ng_Width+10;
 		}
 

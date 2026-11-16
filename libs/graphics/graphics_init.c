@@ -52,7 +52,6 @@ static struct Library *gfxinit(struct Library *lib, APTR seg, APTR sysbase)
     InitSemaphore(&PrivGBase(GfxBase)->sprite.ss_Lock);
     gfx_InitFormats();
     InitSemaphore(&PrivGBase(GfxBase)->regionsem);
-    NewMinList(&PrivGBase(GfxBase)->ChunkPoolList);
 
     GfxBase->UtilBase = OpenLibrary(UTILITYNAME, 39L);
     if (!GfxBase->hash_table || !GfxBase->UtilBase || !InitROMFont(GfxBase))

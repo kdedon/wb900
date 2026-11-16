@@ -6,6 +6,8 @@
  * moving and closing it and moving the pointer, the model's bitmap must
  * be the shadow, the registers must show it, and the chip be idle, with
  * each step's port actions and their time printed as a cost regression.
+ * A second 640x200 screen takes turns in front with the Workbench, each
+ * drawn into while behind and shown in its own colours.
  */
 #include <exec/exec.h>
 #include <devices/input.h>
@@ -13,6 +15,7 @@
 #include <devices/timer.h>
 #include <graphics/gfx.h>
 #include <graphics/gfxbase.h>
+#include <graphics/gfxdriver.h>
 #include <graphics/hrmodeid.h>
 #include <intuition/intuition.h>
 #include <intuition/intuitionbase.h>
@@ -114,6 +117,80 @@ static void windows(struct Screen *s)
 	step("window close", 0);
 }
 
+static BOOL isdisplay(struct Screen *s)
+{
+	return (GFXBM(s->RastPort.BitMap)->gb_Flags & GBF_DISPLAY) != 0;
+}
+
+/* Pen 1 in a box of s's bitmap, and whether its pixels read back */
+static void drawbox(struct Screen *s, WORD x, WORD y)
+{
+	SetAPen(&s->RastPort, 1);
+	RectFill(&s->RastPort, x, y, x + 29, y + 19);
+}
+
+static BOOL hasbox(struct Screen *s, WORD x, WORD y)
+{
+	return ReadPixel(&s->RastPort, x, y) == 1 &&
+	    ReadPixel(&s->RastPort, x + 29, y + 19) == 1;
+}
+
+/* s to the front: the model shows its bitmap in its colours */
+static void tofront(struct Screen *s, struct Screen *back, UBYTE colours)
+{
+	ScreenToFront(s);
+	bm = s->RastPort.BitMap;
+	step("screen to the front", 0);
+	check(IntuitionBase->FirstScreen == s && isdisplay(s) && !isdisplay(back),
+	    "the front screen has the display");
+	check(lcm_reg[26] == colours, "the front screen's colours");
+}
+
+/* A second screen on the Workbench's display, in turn in front */
+static void flips(struct Screen *wb)
+{
+	struct TagItem t[5];
+	struct Screen *s;
+	UBYTE wbcolours = lcm_reg[26];
+	UWORD allocs = lct_allocs;
+	WORD k;
+
+	t[0].ti_Tag = SA_DisplayID;	t[0].ti_Data = LCHIRES_ID;
+	t[1].ti_Tag = SA_Depth;		t[1].ti_Data = 1;
+	t[2].ti_Tag = SA_Title;		t[2].ti_Data = (ULONG)"Black on white";
+	t[3].ti_Tag = SA_SharePens;	t[3].ti_Data = TRUE;
+	t[4].ti_Tag = TAG_DONE;
+	s = OpenScreenTagList(NULL, t);
+	check(s != NULL, "a second screen");
+	if (s == NULL)
+		return;
+	SetRGB4(&s->ViewPort, 0, 15, 15, 15);
+	SetRGB4(&s->ViewPort, 1, 0, 0, 0);
+	bm = s->RastPort.BitMap;
+	step("a second screen", 0);
+	check(lct_allocs == allocs && isdisplay(s) && !isdisplay(wb) &&
+	    lcm_reg[26] == 0x0F, "the second screen has the display");
+	drawbox(s, 100, 50);
+	step("a box in front", 0);
+	for (k = 0; k < 3; k++) {
+		drawbox(wb, 300 + 40 * k, 120);
+		step("a box behind", 0);
+		tofront(wb, s, wbcolours);
+		check(hasbox(wb, 300 + 40 * k, 120) && !hasbox(wb, 100, 50),
+		    "the Workbench's pixels");
+		drawbox(s, 100 + 40 * k, 150);
+		step("a box behind", 0);
+		tofront(s, wb, 0x0F);
+		check(hasbox(s, 100, 50) && hasbox(s, 100 + 40 * k, 150) &&
+		    !hasbox(s, 300, 120), "the second screen's pixels");
+	}
+	CloseScreen(s);
+	bm = wb->RastPort.BitMap;
+	step("the second screen closed", 0);
+	check(isdisplay(wb) && lcm_reg[26] == wbcolours,
+	    "the Workbench gets the display back");
+}
+
 /* A screen in mode i of the list after 640x200 */
 static void othermode(UWORD i)
 {
@@ -185,6 +262,7 @@ int main(void)
 	step("OpenWorkBench", 0);
 	check(lcm_reg[26] == 0xF2, "white on blue");
 	windows(wb);
+	flips(wb);
 	UnlockPubScreen(NULL, wb);
 	check(CloseWorkBench(), "CloseWorkBench");
 	check(lct_frees == 1, "the display goes back");

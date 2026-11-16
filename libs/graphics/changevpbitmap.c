@@ -38,9 +38,9 @@
     RESULT
 
     NOTES
-        There is no display start to move: a bitmap in RAM is copied to
-        the display, at once, and both of db's messages are replied
-        then.
+        There is no display start to move: a bitmap in RAM trades planes
+        with the display's, as in LoadView(), at once, and both of db's
+        messages are replied then.
 
     EXAMPLE
 
@@ -68,10 +68,11 @@
     ReleaseSemaphore(GfxBase->ActiViewCprSemaphore);
 
     if(db) {
-        if(db->dbi_SafeMessage.mn_ReplyPort)
-            ReplyMsg(&db->dbi_SafeMessage);
+        /* As on the Amiga: shown first, then safe to draw into the old one */
         if(db->dbi_DispMessage.mn_ReplyPort)
             ReplyMsg(&db->dbi_DispMessage);
+        if(db->dbi_SafeMessage.mn_ReplyPort)
+            ReplyMsg(&db->dbi_SafeMessage);
     }
 
     AROS_LIBFUNC_EXIT

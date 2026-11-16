@@ -36,7 +36,9 @@
 /* The glyphs of a font: LoChar to HiChar, then the default glyph */
 #define NUMCHARS(tf) 	((tf->tf_HiChar - tf->tf_LoChar) + 2)
 
-#define SIZERECTBUF		32
+/* Rectangles per chunk: a chunk of 6 is 124 bytes, a small block that
+ * stays out of the whole free pages big allocations need */
+#define SIZERECTBUF		6
 
 struct RegionRectangleExt {
     struct RegionRectangle     RR;
@@ -98,6 +100,10 @@ struct GfxBase_intern {
 
     /* The display bitmap LoadView() last showed, or NULL */
     struct BitMap              *shown;
+    /* The bitmap with the display's planes, or NULL */
+    struct BitMap              *vram;
+    /* graphics' own bitmap for the display's planes (display.c), or NULL */
+    struct BitMap              *spare;
 
     /* The display's driver and its library, once looked for (display.c) */
     struct Library             *drvlib;
@@ -109,7 +115,6 @@ struct GfxBase_intern {
 
     /* Regions pool */
     struct SignalSemaphore  	regionsem;
-    struct MinList              ChunkPoolList;
 
     /* Text()'s template when it fits, and whether a task has it */
     UBYTE                       textras[TEXTRAS];
@@ -180,34 +185,11 @@ BOOL _LinkRegionRectangleList
     struct GfxBase          *GfxBase
 );
 
-struct RegionRectangleExtChunk *__NewRegionRectangleExtChunk(struct GfxBase *GfxBase);
-
 #define _NewRegionRectangleExtChunk() \
-    __NewRegionRectangleExtChunk(GfxBase)
+    ((struct RegionRectangleExtChunk *)AllocMem(sizeof(struct RegionRectangleExtChunk), MEMF_ANY))
 
 #define _DisposeRegionRectangleExtChunk(_chunk) \
-    __DisposeRegionRectangleExtChunk(_chunk, GfxBase)
-
-#define SIZECHUNKBUF 4
-
-struct ChunkExt {
-    struct RegionRectangleExtChunk  Chunk;
-    struct ChunkPool               *Owner;
-};
-
-struct ChunkPool {
-    struct MinNode  Node;
-    struct MinList  ChunkList;
-    LONG            NumChunkFree;
-    LONG            NumChunks;
-    struct ChunkExt Chunks[];
-};
-
-void __DisposeRegionRectangleExtChunk
-(
-    struct RegionRectangleExtChunk *Chunk,
-    struct GfxBase *GfxBase
-);
+    FreeMem(_chunk, sizeof(struct RegionRectangleExtChunk))
 
 
 #endif /* GRAPHICS_INTERN_H */

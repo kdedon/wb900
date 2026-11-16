@@ -12,6 +12,16 @@
 #include "graphics_intern.h"
 #include "gfxfuncsupport.h"
 
+/* A bitmap of a display mode has its own pens' pixels, after the struct */
+static void ownpixtab(struct GfxBitMap *gbm)
+{
+    UWORD i;
+
+    gbm->gb_PixTab = (UBYTE *)(gbm + 1);
+    for(i = 0; i < 256; i++)
+        gbm->gb_PixTab[i] = i & ((1 << gbm->gb_BitMap.Depth) - 1);
+}
+
 /*****************************************************************************
 
     NAME */
@@ -100,7 +110,8 @@
               - BMATags_DisplayID (ULONG)
                     A bitmap for this display mode: the display's own when
                     it is free and sizex and sizey fit the mode, else one in
-                    RAM of the mode's format.
+                    RAM of the mode's format, of the mode's size when they
+                    fit, so that it can take the display's planes.
               - BMATags_GfxFormat (ULONG)
                     The format (GDF_, <graphics/gfxdriver.h>) when there is no
                     friend. Default GDF_PLANAR.
@@ -164,6 +175,7 @@
     UWORD             bpr, plane, planes;
     ULONG             format = GDF_PLANAR;
     ULONG             modeid = INVALID_ID;
+    BOOL              fits;
 
     if(BITMAPFLAGS_ARE_EXTENDED(flags)) {
         struct TagItem *tag, *tstate = (struct TagItem *)friend_bitmap;
@@ -205,8 +217,15 @@
 
         if(!m)
             return NULL;
-        if(sizex <= m->gm_Width && sizey <= m->gm_Height &&
-           (nbm = gd->gd_AllocDisplay(gd, m))) {
+        fits = sizex <= m->gm_Width && sizey <= m->gm_Height;
+        gbm = fits ? AllocVec(sizeof(struct GfxBitMap) + 256, MEMF_ANY | MEMF_CLEAR) : NULL;
+        ObtainSemaphore(GfxBase->ActiViewCprSemaphore);
+        nbm = gbm && gd->gd_AllocDisplay(gd, m, &gbm->gb_BitMap) ? &gbm->gb_BitMap : NULL;
+        if(nbm)
+            PrivGBase(GfxBase)->vram = nbm;
+        ReleaseSemaphore(GfxBase->ActiViewCprSemaphore);
+        if(nbm) {
+            ownpixtab(gbm);
             if(clear) {
                 struct GfxPens pens;
                 struct Rectangle r;
@@ -222,6 +241,11 @@
                 gd->gd_Fill(nbm, &r, &pens);
             }
             return nbm;
+        }
+        FreeVec(gbm);
+        if(fits) {
+            sizex = m->gm_Width;
+            sizey = m->gm_Height;
         }
         format = m->gm_Format;
         depth = m->gm_Depth;
@@ -248,7 +272,8 @@
     if(size > 0x20000L || (planes > 1 && size > 0x10000L))
         return NULL;
 
-    gbm = AllocVec(sizeof(struct GfxBitMap), MEMF_ANY | MEMF_CLEAR);
+    gbm = AllocVec(sizeof(struct GfxBitMap) + (modeid != INVALID_ID ? 256 : 0),
+                   MEMF_ANY | MEMF_CLEAR);
     if(!gbm)
         return NULL;
     nbm = &gbm->gb_BitMap;
@@ -261,10 +286,15 @@
     gbm->gb_Driver   = drv;
     gbm->gb_ModeID   = modeid;
     gbm->gb_PlaneSize = size;
-    /* Friends of the same format share the pens' pixels */
+    if(modeid != INVALID_ID)
+        ownpixtab(gbm);
+    /* Friends of the same format share the pens' pixels, of its depth also the mode */
     if(friend_bitmap && IS_GFXBM(friend_bitmap) &&
-       GFXBM(friend_bitmap)->gb_Driver->gd_Format == drv->gd_Format)
+       GFXBM(friend_bitmap)->gb_Driver->gd_Format == drv->gd_Format) {
         gbm->gb_PixTab = GFXBM(friend_bitmap)->gb_PixTab;
+        if(modeid == INVALID_ID && depth == friend_bitmap->Depth)
+            gbm->gb_ModeID = GFXBM(friend_bitmap)->gb_ModeID;
+    }
 
     if(alloc) {
         gbm->gb_Flags = GBF_OWNPLANES;

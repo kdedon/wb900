@@ -70,7 +70,7 @@ GFXDRIVERS = hr lc
 DEVS	= input console
 TESTS	= $(basename $(notdir $(wildcard $(TOP)/tests/*.c)))
 # The tests that open intuition.library
-ITESTS	= intuition wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin asl more edit expunge wbmulti
+ITESTS	= intuition idisplay wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin asl more edit editbig expunge wbmulti
 # The demos also made as NAME-1x.bin, in the Workbench 1.x style
 STYLED	= wbdemo wbinter gtdemo wbboot
 
@@ -134,7 +134,7 @@ $(eval $(call LIBRARY,keymap,Keymap,km))
 $(eval $(call LIBRARY,graphics,Graphics,gfx))
 $(eval $(call LIBRARY,layers,Layers,la))
 # graphics calls layers.library through the base layers leaves in GfxBase.
-$(graphics_OBJS): $(OUT)/include/lvo/layers_lib.h
+$(graphics_OBJS): $(OUT)/include/lvo/layers_lib.h $(OUT)/include/lvo/utility_lib.h
 $(eval $(call DEVICE,input,Input,id))
 console_LINK = $(ALIB)
 console_SRC = $(TOP)/lib
@@ -240,6 +240,9 @@ $(patsubst %,$(OUT)/progs/%,$(ALIBTESTS)): $(ALIB)
 # amiga.lib's commodities calls
 CXLIB	= $(patsubst $(TOP)/lib/%.c,$(OBJ)/lib/%.o,$(wildcard $(TOP)/lib/cx/*.c))
 $(OUT)/progs/commodities: $(OBJ)/lib/cx/hotkey.o
+# amiga.lib's gadtools varargs calls
+GTLIB	= $(OBJ)/lib/gadtools/gadtools.o
+$(OUT)/progs/gadtools $(OUT)/util/More $(OUT)/util/Edit: $(GTLIB)
 
 # Programs for Workbench's disk (wb/), linked as the tests are.
 $(OBJ)/w_%.o: $(TOP)/wb/%.c $(HDRS) $(patsubst %,$(OUT)/include/lvo/%_lib.h,$(LIBS) $(DEVS))
@@ -349,7 +352,7 @@ DISK	= $(if $(filter $(LNAMES),$(1)),--lnames) $(if $(HRMODE),--hrmode=$(HRMODE)
 
 # The disks with Workbench's files: Boot holds the modules, the System
 # volume (SYS:) keeps names of up to 30 bytes
-LNAMES	= wbboot shellwin wbmulti more edit cxtools $(TOOLTESTS)
+LNAMES	= wbboot shellwin wbmulti more edit editbig cxtools $(TOOLTESTS)
 # A test's more files on its disk: NAME_PUT, mkdisk --put options
 workbench_PUT = --put=Demos/Hello=$(OUT)/wb/hello --put=Demos/Hello.info=$(OUT)/wb/Hello.info
 $(OUT)/workbench.bin: $(OUT)/wb/hello $(OUT)/wb/Hello.info
@@ -371,11 +374,16 @@ wbboot_PUT = $(workbench_PUT) --put=Demos/Notes=$(TOP)/wb/Notes \
 	--module=$(EXEC900_OUT)/hunks/ram-handler $(WBSTACK)
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin $(OUT)/shellwin.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS) $(PREFSDEPS)
-# More's test: the utilities and the Shell
-more_PUT = $(UTILPUT) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg
+# More's test: the utilities and the Shell, with room for its files of
+# 100 and 300 KB
+more_PUT = $(UTILPUT) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg --sys=3072
 $(OUT)/more.bin: $(UTILDEPS)
 edit_PUT = $(more_PUT)
 $(OUT)/edit.bin: $(UTILDEPS)
+# Edit's big files: edit.c built with BIG
+editbig_PUT = $(more_PUT)
+$(OUT)/editbig.bin: $(UTILDEPS)
+$(OBJ)/t_editbig.o: $(TOP)/tests/edit.c
 # ScreenMode's test: the tool on HR's modes
 ITESTS	+= screenmode
 LNAMES	+= screenmode

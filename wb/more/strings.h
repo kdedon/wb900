@@ -10,7 +10,6 @@
 #define MSG_CANCEL              "Cancel"
 #define MSG_CONTINUE            "Continue"
 #define MSG_NO_MEM              "Out of memory!"
-#define MSG_TOO_BIG             "The file is too large."
 #define MSG_CANT_OPEN_LIB       "Can't open %s V%ld!"
 #define MSG_CANT_LOCK_SCR       "Can't lock screen!"
 #define MSG_CANT_GET_DRI        "Can't get screen's draw info!"

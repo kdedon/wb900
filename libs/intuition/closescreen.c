@@ -164,6 +164,11 @@ static VOID int_closescreen(struct CloseScreenActionMsg *msg,
         FreeBitMap(IS(screen)->AllocatedBitMap);
     }
 
+    if (IS(screen)->RestoreDBufInfo != NULL)
+    {
+        FreeDBufInfo(IS(screen)->RestoreDBufInfo);
+    }
+
     screen->RastPort.BitMap = NULL;
 
     /* Free the RastPort's contents */

@@ -5,7 +5,7 @@
 
 	.globl	gfx_FillRows_, gfx_FillRect_, gfx_TmplRows_, gfx_TmplRows1_
 	.globl	gfx_CopyRows_, gfx_ShiftRows_
-	.globl	gfx_LineRun_, gfx_WCopy_, gfx_Bits_, gfx_MulDiv_, gfx_Glyphs_, gfx_FastChars_
+	.globl	gfx_LineRun_, gfx_WCopy_, gfx_WSwap_, gfx_Bits_, gfx_MulDiv_, gfx_Glyphs_, gfx_FastChars_
 
 	.shri
 
@@ -1222,6 +1222,37 @@ gfx_WCopy_:
 	jr	z, 1f
 	ldir	(rr4), (rr2), r1
 1:	ret
+
+/ gfx_WSwap(a, b, n): n words of a and b exchanged, 4 at a time.
+gfx_WSwap_:
+	sub	r15, $16
+	ldm	(rr14), r6, $8
+	ldl	rr2, rr14(20)
+	ldl	rr4, rr14(24)
+	ld	r1, rr14(28)
+	ld	r0, r1
+	and	r0, $3
+	srl	r1, $2
+	jr	z, 2f
+1:	ldm	r6, (rr2), $4
+	ldm	r10, (rr4), $4
+	ldm	(rr2), r10, $4
+	ldm	(rr4), r6, $4
+	inc	r3, $8
+	inc	r5, $8
+	djnz	r1, 1b
+2:	test	r0
+	jr	z, 4f
+3:	ld	r6, (rr2)
+	ld	r7, (rr4)
+	ld	(rr2), r7
+	ld	(rr4), r6
+	inc	r3, $2
+	inc	r5, $2
+	djnz	r0, 3b
+4:	ldm	r6, (rr14), $8
+	add	r15, $16
+	ret
 
 / gfx_Bits(out, s, sh, n): n words of the bits of byte string s from bit
 / sh (0-7): bytes s[0] to s[2n], or to s[2n - 1] when sh is 0.

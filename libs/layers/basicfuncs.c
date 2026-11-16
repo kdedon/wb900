@@ -1232,7 +1232,8 @@ void _BackFillRegion(struct Layer * l,
   }
   
   
-  if (TRUE == addtodamagelist)
+  /* Nobody refreshes the root layer, so damage there would stay */
+  if (TRUE == addtodamagelist && !IS_ROOTLAYER(l))
   {
     l->Flags |= LAYERREFRESH;
 

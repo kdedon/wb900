@@ -1,9 +1,10 @@
 /*
  * gadtools.library from LIBS:, on screens in RAM bitmaps: mono
  * 1024x800, colour 640x400 and the 1.x colour look.  On each, a window
- * with a gadget of every kind and a menu strip; checks the pixels of the
- * bevels and labels, then drives the gadgets and menus with events
- * written to input.device and reads the results through GT_GetIMsg.
+ * with a gadget of every kind and a menu strip, made through the
+ * varargs calls; checks the pixels of the bevels and labels, then drives
+ * the gadgets and menus with events written to input.device and reads
+ * the results through GT_GetIMsg.
  */
 #include <exec/exec.h>
 #include <devices/input.h>
@@ -165,13 +166,15 @@ static struct NewMenu newmenu[] = {
 	{ NM_END, NULL, NULL, 0, 0, NULL }
 };
 
-/* One gadget: ng's position and size, the kind and its tags */
-static struct Gadget *make(struct Gadget *prev, ULONG kind, UWORD id,
-    char *label, ULONG flags, WORD x, WORD y, WORD w, WORD h,
-    struct TagItem *tags, APTR vi)
-{
-	struct NewGadget ng;
+static struct Gadget *glist;
+static struct Menu *menus;
+static APTR vi;
+static struct NewGadget ng;
 
+/* ng of gadget id: its label, flags, position and size */
+static struct NewGadget *at(UWORD id, char *label, ULONG flags, WORD x,
+    WORD y, WORD w, WORD h)
+{
 	ng.ng_LeftEdge = scr->WBorLeft + x;
 	ng.ng_TopEdge = scr->WBorTop + scr->Font->ta_YSize + 1 + y;
 	ng.ng_Width = w;
@@ -182,52 +185,21 @@ static struct Gadget *make(struct Gadget *prev, ULONG kind, UWORD id,
 	ng.ng_Flags = flags;
 	ng.ng_VisualInfo = vi;
 	ng.ng_UserData = NULL;
-	prev = CreateGadgetA(kind, prev, &ng, tags);
-	check(prev != NULL, label ? label : "unlabelled gadget");
-	gads[id] = prev;
-	return prev;
+	return &ng;
 }
 
-static struct Gadget *glist;
-static struct Menu *menus;
-static APTR vi;
+/* The gadget CreateGadget made from ng */
+static struct Gadget *made(struct Gadget *g)
+{
+	check(g != NULL, ng.ng_GadgetText ? ng.ng_GadgetText : "unlabelled gadget");
+	gads[ng.ng_GadgetID] = g;
+	return g;
+}
 
 static BOOL build(void)
 {
-	static struct TagItem numtags[] = {
-		{ GTNM_Number, 42 }, { GTNM_Border, TRUE }, { TAG_DONE, 0 } };
-	static struct TagItem texttags[] = {
-		{ GTTX_Text, (IPTR)"hello" }, { GTTX_Border, TRUE },
-		{ TAG_DONE, 0 } };
-	static struct TagItem inttags[] = {
-		{ GTIN_Number, 7 }, { GTIN_MaxChars, 6 }, { TAG_DONE, 0 } };
-	static struct TagItem strtags[] = {
-		{ GTST_String, (IPTR)"abc" }, { GTST_MaxChars, 30 },
-		{ TAG_DONE, 0 } };
-	static struct TagItem cytags[] = {
-		{ GTCY_Labels, (IPTR)cyclabels }, { TAG_DONE, 0 } };
-	static struct TagItem sltags[] = {
-		{ GTSL_Min, 0 }, { GTSL_Max, 10 }, { GTSL_Level, 3 },
-		{ GTSL_MaxLevelLen, 2 }, { GTSL_LevelFormat, (IPTR)"%2ld" },
-		{ GTSL_LevelPlace, PLACETEXT_RIGHT },
-		{ TAG_DONE, 0 } };
-	static struct TagItem sctags[] = {
-		{ GTSC_Total, 20 }, { GTSC_Visible, 5 }, { GTSC_Top, 0 },
-		{ GTSC_Arrows, 16 }, { TAG_DONE, 0 } };
-	static struct TagItem mxtags[] = {
-		{ GTMX_Labels, (IPTR)mxlabels }, { GTMX_Spacing, 2 },
-		{ TAG_DONE, 0 } };
-	static struct TagItem patags[] = {
-		{ GTPA_Depth, 1 }, { GTPA_Color, 1 },
-		{ GTPA_IndicatorWidth, 16 }, { TAG_DONE, 0 } };
-	static struct TagItem lvtags[] = {
-		{ GTLV_Labels, (IPTR)&lvlist }, { GTLV_ShowSelected, 0 },
-		{ GTLV_Selected, ~0 }, { TAG_DONE, 0 } };
-	static struct TagItem buttags[] = {
-		{ GT_Underscore, '_' }, { TAG_DONE, 0 } };
-	static struct TagItem menutags[] = {
-		{ GTMN_NewLookMenus, TRUE }, { TAG_DONE, 0 } };
 	struct Gadget *g;
+	ULONG depth;
 	WORD i;
 
 	NewList(&lvlist);
@@ -235,29 +207,47 @@ static BOOL build(void)
 		lvnodes[i].ln_Name = lvnames[i];
 		AddTail(&lvlist, &lvnodes[i]);
 	}
-	patags[0].ti_Data = GetBitMapAttr(scr->RastPort.BitMap, BMA_DEPTH);
-	if (patags[0].ti_Data > 2)
-		patags[0].ti_Data = 2;
+	depth = GetBitMapAttr(scr->RastPort.BitMap, BMA_DEPTH);
+	if (depth > 2)
+		depth = 2;
 
-	vi = GetVisualInfoA(scr, NULL);
-	check(vi != NULL, "GetVisualInfoA");
+	vi = GetVisualInfo(scr, TAG_DONE);
+	check(vi != NULL, "GetVisualInfo");
 	if (vi == NULL)
 		return FALSE;
 	g = CreateContext(&glist);
 	check(g != NULL, "CreateContext");
-	g = make(g, BUTTON_KIND, G_BUTTON, "_Button", 0, 90, 4, 80, 14, buttags, vi);
-	g = make(g, CHECKBOX_KIND, G_CHECKBOX, "Check", 0, 90, 22, 0, 0, NULL, vi);
-	g = make(g, INTEGER_KIND, G_INTEGER, "Integer", 0, 90, 38, 80, 14, inttags, vi);
-	g = make(g, STRING_KIND, G_STRING, "String", 0, 90, 56, 120, 14, strtags, vi);
-	g = make(g, NUMBER_KIND, G_NUMBER, "Number", 0, 90, 74, 80, 12, numtags, vi);
-	g = make(g, TEXT_KIND, G_TEXT, "Text", 0, 90, 90, 120, 12, texttags, vi);
-	g = make(g, CYCLE_KIND, G_CYCLE, "Cycle", 0, 90, 106, 120, 14, cytags, vi);
-	g = make(g, SLIDER_KIND, G_SLIDER, "Slider", 0, 90, 124, 100, 11, sltags, vi);
-	g = make(g, SCROLLER_KIND, G_SCROLLER, "Scroller", 0, 90, 140, 120, 12, sctags, vi);
-	g = make(g, MX_KIND, G_MX, NULL, PLACETEXT_RIGHT, 260, 4, 0, 0, mxtags, vi);
-	g = make(g, PALETTE_KIND, G_PALETTE, "Palette", PLACETEXT_ABOVE, 260, 50, 100, 20, patags, vi);
-	g = make(g, LISTVIEW_KIND, G_LISTVIEW, "List", PLACETEXT_ABOVE, 260, 90, 120, 70, lvtags, vi);
-	g = make(g, GENERIC_KIND, G_GENERIC, NULL, 0, 10, 160, 60, 12, NULL, vi);
+	g = made(CreateGadget(BUTTON_KIND, g, at(G_BUTTON, "_Button", 0, 90, 4, 80, 14),
+	    GT_Underscore, (ULONG)'_', TAG_DONE));
+	g = made(CreateGadget(CHECKBOX_KIND, g, at(G_CHECKBOX, "Check", 0, 90, 22, 0, 0),
+	    TAG_DONE));
+	g = made(CreateGadget(INTEGER_KIND, g, at(G_INTEGER, "Integer", 0, 90, 38, 80, 14),
+	    GTIN_Number, 7L, GTIN_MaxChars, 6L, TAG_DONE));
+	g = made(CreateGadget(STRING_KIND, g, at(G_STRING, "String", 0, 90, 56, 120, 14),
+	    GTST_String, "abc", GTST_MaxChars, 30L, TAG_DONE));
+	g = made(CreateGadget(NUMBER_KIND, g, at(G_NUMBER, "Number", 0, 90, 74, 80, 12),
+	    GTNM_Number, 42L, GTNM_Border, (ULONG)TRUE, TAG_DONE));
+	g = made(CreateGadget(TEXT_KIND, g, at(G_TEXT, "Text", 0, 90, 90, 120, 12),
+	    GTTX_Text, "hello", GTTX_Border, (ULONG)TRUE, TAG_DONE));
+	g = made(CreateGadget(CYCLE_KIND, g, at(G_CYCLE, "Cycle", 0, 90, 106, 120, 14),
+	    GTCY_Labels, cyclabels, TAG_DONE));
+	g = made(CreateGadget(SLIDER_KIND, g, at(G_SLIDER, "Slider", 0, 90, 124, 100, 11),
+	    GTSL_Min, 0L, GTSL_Max, 10L, GTSL_Level, 3L, GTSL_MaxLevelLen, 2L,
+	    GTSL_LevelFormat, "%2ld", GTSL_LevelPlace, (ULONG)PLACETEXT_RIGHT,
+	    TAG_DONE));
+	g = made(CreateGadget(SCROLLER_KIND, g, at(G_SCROLLER, "Scroller", 0, 90, 140, 120, 12),
+	    GTSC_Total, 20L, GTSC_Visible, 5L, GTSC_Top, 0L, GTSC_Arrows, 16L,
+	    TAG_DONE));
+	g = made(CreateGadget(MX_KIND, g, at(G_MX, NULL, PLACETEXT_RIGHT, 260, 4, 0, 0),
+	    GTMX_Labels, mxlabels, GTMX_Spacing, 2L, TAG_DONE));
+	g = made(CreateGadget(PALETTE_KIND, g, at(G_PALETTE, "Palette", PLACETEXT_ABOVE, 260, 50, 100, 20),
+	    GTPA_Depth, depth, GTPA_Color, 1L, GTPA_IndicatorWidth, 16L,
+	    TAG_DONE));
+	g = made(CreateGadget(LISTVIEW_KIND, g, at(G_LISTVIEW, "List", PLACETEXT_ABOVE, 260, 90, 120, 70),
+	    GTLV_Labels, &lvlist, GTLV_ShowSelected, NULL, GTLV_Selected, ~0L,
+	    TAG_DONE));
+	g = made(CreateGadget(GENERIC_KIND, g, at(G_GENERIC, NULL, 0, 10, 160, 60, 12),
+	    TAG_DONE));
 	if (g) {
 		/* a boolean gadget the program draws itself */
 		g->GadgetType |= GTYP_BOOLGADGET;
@@ -267,11 +257,12 @@ static BOOL build(void)
 	if (g == NULL)
 		return FALSE;
 
-	menus = CreateMenusA(newmenu, NULL);
-	check(menus != NULL, "CreateMenusA");
+	menus = CreateMenus(newmenu, TAG_DONE);
+	check(menus != NULL, "CreateMenus");
 	if (menus == NULL)
 		return FALSE;
-	check(LayoutMenusA(menus, vi, menutags), "LayoutMenusA");
+	check(LayoutMenus(menus, vi, GTMN_NewLookMenus, (ULONG)TRUE, TAG_DONE),
+	    "LayoutMenus");
 	return TRUE;
 }
 
@@ -309,8 +300,6 @@ static void pixels(void)
 {
 	struct Gadget *g;
 	WORD l, t, r, b;
-	static struct TagItem bbtags[] = {
-		{ GT_VisualInfo, 0 }, { GTBB_Recessed, TRUE }, { TAG_DONE, 0 } };
 
 	/* button: raised bevel, label inside */
 	g = gads[G_BUTTON];
@@ -388,35 +377,26 @@ static void pixels(void)
 	check(count(PEN(TEXTPEN), g->LeftEdge + 4, g->TopEdge + 3,
 	    g->LeftEdge + 40, g->TopEdge + 30) > 30, "listview items");
 
-	/* DrawBevelBoxA: recessed */
-	bbtags[0].ti_Data = (IPTR)vi;
-	DrawBevelBoxA(win->RPort, 300, 170, 60, 20, bbtags);
+	/* DrawBevelBox: recessed */
+	DrawBevelBox(win->RPort, 300, 170, 60, 20, GT_VisualInfo, vi,
+	    GTBB_Recessed, (ULONG)TRUE, TAG_DONE);
 	check(ReadPixel(win->RPort, 300, 180) == PEN(SHADOWPEN) &&
 	    ReadPixel(win->RPort, 359, 180) == PEN(SHINEPEN) &&
 	    ReadPixel(win->RPort, 330, 170) == PEN(SHADOWPEN) &&
-	    ReadPixel(win->RPort, 330, 189) == PEN(SHINEPEN), "DrawBevelBoxA");
+	    ReadPixel(win->RPort, 330, 189) == PEN(SHINEPEN), "DrawBevelBox");
 }
 
 static LONG getattr(UWORD id, Tag tag)
 {
-	struct TagItem t[2];
 	LONG v = -1;
 
-	t[0].ti_Tag = tag;
-	t[0].ti_Data = (IPTR)&v;
-	t[1].ti_Tag = TAG_DONE;
-	GT_GetGadgetAttrsA(gads[id], win, NULL, t);
+	GT_GetGadgetAttrs(gads[id], win, NULL, tag, &v, TAG_DONE);
 	return v;
 }
 
 static void setattr(UWORD id, Tag tag, IPTR data)
 {
-	struct TagItem t[2];
-
-	t[0].ti_Tag = tag;
-	t[0].ti_Data = data;
-	t[1].ti_Tag = TAG_DONE;
-	GT_SetGadgetAttrsA(gads[id], win, NULL, t);
+	GT_SetGadgetAttrs(gads[id], win, NULL, tag, data, TAG_DONE);
 }
 
 static int strcmp(const char *a, const char *b)
@@ -435,6 +415,7 @@ static void input(void)
 	WORD n;
 	STRPTR s;
 	WORD x;
+	LONG tot, vis;
 
 	flush();
 
@@ -574,7 +555,11 @@ static void input(void)
 	s = (STRPTR)getattr(G_TEXT, GTTX_Text);
 	check(s != (STRPTR)-1 && strcmp(s, "bye") == 0, "GTTX_Text");
 	setattr(G_SLIDER, GTSL_Level, 9);
-	check(getattr(G_SLIDER, GTSL_Level) == 9, "GT_SetGadgetAttrsA");
+	check(getattr(G_SLIDER, GTSL_Level) == 9, "GT_SetGadgetAttrs");
+	tot = vis = -1;
+	check(GT_GetGadgetAttrs(gads[G_SCROLLER], win, NULL, GTSC_Total, &tot,
+	    GTSC_Visible, &vis, TAG_DONE) == 2 && tot == 20 && vis == 5,
+	    "GT_GetGadgetAttrs, two tags");
 
 	/* a disabled button sends nothing */
 	setattr(G_BUTTON, GA_Disabled, TRUE);
@@ -628,7 +613,6 @@ static UWORD pick(struct Menu *m, struct MenuItem *it, struct MenuItem *sub)
 static void menuchecks(void)
 {
 	struct MenuItem *it, *quit, *toggle;
-	struct TagItem t[2];
 	UWORD code;
 	WORD top;
 
@@ -642,9 +626,9 @@ static void menuchecks(void)
 	check(it->NextItem && !(it->NextItem->Flags & ITEMTEXT) &&
 	    it->NextItem->Height < it->Height, "bar label");
 	check(quit && quit->TopEdge > it->TopEdge + it->Height,
-	    "LayoutMenusA item positions");
+	    "LayoutMenus item positions");
 	check(menus->NextMenu && menus->NextMenu->LeftEdge >
-	    menus->LeftEdge + menus->Width - 8, "LayoutMenusA title positions");
+	    menus->LeftEdge + menus->Width - 8, "LayoutMenus title positions");
 	toggle = menus->NextMenu ? menus->NextMenu->FirstItem->NextItem : NULL;
 	check(toggle && (toggle->Flags & CHECKIT) && (toggle->Flags & MENUTOGGLE),
 	    "CHECKIT item");
@@ -654,12 +638,9 @@ static void menuchecks(void)
 	    (APTR)232, "sub-items");
 	if (quit == NULL || toggle == NULL)
 		return;
-	t[0].ti_Tag = GTMN_Menu;
-	t[0].ti_Data = (IPTR)menus;
-	t[1].ti_Tag = TAG_DONE;
 	top = quit->TopEdge;
-	check(LayoutMenuItemsA(menus->FirstItem, vi, t) && quit->TopEdge == top,
-	    "LayoutMenuItemsA");
+	check(LayoutMenuItems(menus->FirstItem, vi, GTMN_Menu, menus, TAG_DONE) &&
+	    quit->TopEdge == top, "LayoutMenuItems");
 
 	flush();
 	code = pick(menus, quit, NULL);

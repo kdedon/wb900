@@ -33,11 +33,13 @@
 
     NOTES
         The first ViewPort that is not hidden is shown: its bitmap when
-        that is a display's, or a copy of a RAM bitmap of the mode shown.
-        A display is taken from the console with its bitmap
-        (AllocBitMap() with BMATags_DisplayID), and LoadView(NULL), or a
-        View that shows no display, gives it back once that bitmap is
-        freed.
+        that is a display's, or one in RAM of the display's mode and size,
+        which takes the display's planes from the bitmap that has them and
+        gives it its own, each keeping its pixels; another bitmap of the
+        display's format is copied in.  A display is taken from the
+        console with its bitmap (AllocBitMap() with BMATags_DisplayID),
+        and LoadView(NULL), or a View that shows no display, gives it back
+        once that bitmap is freed.
 
     EXAMPLE
 
@@ -56,7 +58,7 @@
 
     struct ViewPort *vp;
     struct BitMap *bm = NULL;
-    struct BitMap *shown;
+    struct GfxDriver *gd;
 
     ObtainSemaphore(GfxBase->ActiViewCprSemaphore);
 
@@ -68,12 +70,17 @@
     if (vp)
         bm = gfx_ViewPortDisplay(vp, GfxBase);
 
-    shown = PrivGBase(GfxBase)->shown;
-    if (shown && (!bm || GFXBM(bm)->gb_Driver != GFXBM(shown)->gb_Driver))
-        GFXBM(shown)->gb_Driver->gd_Show(GFXBM(shown)->gb_Driver, NULL);
+    gd = PrivGBase(GfxBase)->display;
+    if (PrivGBase(GfxBase)->shown && !bm)
+        gd->gd_Show(gd, NULL);
     if (bm)
-        GFXBM(bm)->gb_Driver->gd_Show(GFXBM(bm)->gb_Driver, bm);
+        gd->gd_Show(gd, bm);
     PrivGBase(GfxBase)->shown = bm;
+    /* graphics' own bitmap for the display's planes goes once not shown */
+    if (PrivGBase(GfxBase)->spare && PrivGBase(GfxBase)->spare != bm) {
+        FreeBitMap(PrivGBase(GfxBase)->spare);
+        PrivGBase(GfxBase)->spare = NULL;
+    }
 
     ReleaseSemaphore(GfxBase->ActiViewCprSemaphore);
 

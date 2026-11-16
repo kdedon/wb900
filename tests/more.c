@@ -6,8 +6,9 @@
  * the same font and pens: line and page scrolling, top and bottom,
  * horizontal scrolling, tab stops, the arrow gadget, Find and Jump,
  * Open from the menu, and redraws after another window covered it.
- * Then a process runs More from the Shell with the file as its
- * argument.  It reports More's stack use.
+ * Files of 100 KB and 300 KB, over many buffers and line blocks: page,
+ * Find near the end and the bottom.  Then a process runs More from the
+ * Shell with the file as its argument.  It reports More's stack use.
  */
 #include <exec/exec.h>
 #include <dos/dos.h>
@@ -198,12 +199,16 @@ static void waitreq(char *title)
 #define TABLINE	3
 #define FINDLINE 70
 
-static char line[200];
-static LONG nlines = NLINES;
+static char line[256];
+static LONG nlines = NLINES, findline = FINDLINE;
+
+/* The digits of a line's number, and the letters after them */
+static WORD digits = 3, pad;
 
 static char *text(LONG n)
 {
 	char *p = line;
+	LONG m;
 	int i;
 
 	if (n == TABLINE) {
@@ -219,24 +224,29 @@ static char *text(LONG n)
 	*p++ = 'n';
 	*p++ = 'e';
 	*p++ = ' ';
-	*p++ = '0' + n / 100;
-	*p++ = '0' + n / 10 % 10;
-	*p++ = '0' + n % 10;
+	for (i = digits, m = n; i-- > 0; m /= 10)
+		p[i] = '0' + m % 10;
+	p += digits;
 	if (n == LONGLINE)
 		for (i = 0; i < 150; i++)
 			*p++ = 'a' + i % 26;
-	if (n == FINDLINE) {
+	if (n == findline) {
 		for (i = 0; i < 7; i++)
 			*p++ = " needle"[i];
 	}
+	for (i = 0; i < pad; i++)
+		*p++ = 'a' + (n + i) % 26;
 	*p = 0;
 	return line;
 }
 
-static BOOL writefile(char *name, LONG n)
+/* n lines of text(), written in blocks; *size is the file's */
+static BOOL writefile(char *name, LONG n, LONG *size)
 {
+	static char buf[2048];
 	BPTR fh;
-	LONG i, len;
+	LONG i, len, used = 0, total = 0;
+	BOOL ok = TRUE;
 
 	if ((fh = Open(name, MODE_NEWFILE)) == NULL)
 		return FALSE;
@@ -245,10 +255,19 @@ static BOOL writefile(char *name, LONG n)
 		for (len = 0; line[len]; len++)
 			;
 		line[len++] = '\n';
-		Write(fh, line, len);
+		if (used + len > sizeof(buf)) {
+			ok &= Write(fh, buf, used) == used;
+			used = 0;
+		}
+		CopyMem(line, buf + used, len);
+		used += len;
+		total += len;
 	}
+	ok &= Write(fh, buf, used) == used;
 	Close(fh);
-	return TRUE;
+	if (size)
+		*size = total;
+	return ok;
 }
 
 static BOOL script(void)
@@ -414,6 +433,87 @@ static void jump(char *n)
 	idle();
 }
 
+/* v in decimal at p; the end */
+static char *decimal(char *p, LONG v)
+{
+	char d[12];
+	int n = 0;
+
+	do
+		d[n++] = '0' + v % 10;
+	while ((v /= 10) != 0);
+	while (n > 0)
+		*p++ = d[--n];
+	return p;
+}
+
+/* Until More's title holds s, for a file read in */
+static BOOL waittitle(char *s)
+{
+	int i;
+
+	for (i = 0; i < 600 && !titled(s); i++)
+		Delay(5);
+	idle();
+	return titled(s);
+}
+
+/* A file of n lines of 60 or more bytes, opened from the menu */
+static void bigfile(char *name, LONG n)
+{
+	char title[60], *p, *q;
+	LONG size, top;
+
+	digits = 5;
+	pad = 49;
+	nlines = n;
+	findline = n - 100;
+	check(writefile(name, n, &size), name);
+	for (p = title, q = name + 4; *q; )
+		*p++ = *q++;
+	*p++ = ' ';
+	*p++ = '(';
+	p = decimal(p, n);
+	for (q = " lines, "; *q; )
+		*p++ = *q++;
+	p = decimal(p, size);
+	*p = 0;
+	xKPrintf("more: %s, %ld bytes free\n", title, AvailMem(MEMF_ANY));
+
+	key(0x18, AMIGA);			/* Amiga-O */
+	waitreq("Open File");
+	keywait(0x32, IEQUALIFIER_CONTROL);
+	type(name + 4);
+	key(0x44, 0);
+	check(waittitle(title), title);
+	check(view(1, 0), "big: first page");
+	key(0x40, 0);				/* space */
+	idle();
+	check(view(visible, 0), "big: page down");
+
+	type("f");
+	waitreq("Find Text");
+	keywait(0x32, IEQUALIFIER_CONTROL);
+	type("needle");
+	key(0x44, 0);
+	Delay(10);
+	idle();
+	top = findline - visible / 2;
+	check(row(0, top, 0, FALSE) &&
+	    row(findline - top, findline, 0, TRUE), "big: find");
+	key(0x45, 0);				/* the requester's Esc */
+	idle();
+
+	type("b");
+	idle();
+	check(view(n - visible + 1, 0), "big: bottom");
+
+	digits = 3;
+	pad = 0;
+	nlines = NLINES;
+	findline = FINDLINE;
+}
+
 static void workbench(void)
 {
 	struct TagItem t[3];
@@ -527,6 +627,9 @@ static void workbench(void)
 	check(titled("MoreTest2 (5 lines"), "title");
 	nlines = NLINES;
 
+	bigfile("SYS:MoreBig", 1700);
+	bigfile("SYS:MoreHuge", 5000);
+
 	stackuse(more);
 	key(0x45, 0);
 	check(waitwin(FALSE) == NULL, "Esc quits");
@@ -603,8 +706,8 @@ int main(void)
 		KPutStr("FAIL more: OpenLibrary\n");
 		return 1;
 	}
-	check(writefile("SYS:MoreTest", NLINES) && writefile("SYS:MoreTest2", 5) &&
-	    script(), "test files");
+	check(writefile("SYS:MoreTest", NLINES, NULL) &&
+	    writefile("SYS:MoreTest2", 5, NULL) && script(), "test files");
 	check(OpenWorkBench() != 0, "OpenWorkBench");
 	wb = LockPubScreen("Workbench");
 	dri = GetScreenDrawInfo(wb);

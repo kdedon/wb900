@@ -19,6 +19,7 @@
 #include <intuition/intuitionbase.h>
 #include <intuition/screens.h>
 #include <intuition/preferences.h>
+#include <intuition/iprefs.h>
 #include <intuition/gadgetclass.h>
 #include <intuition/imageclass.h>
 #include <proto/graphics.h>
@@ -114,6 +115,8 @@ static struct TagItem scrtags[] = {
 
 static struct Screen *scr;
 
+static void dbuf(struct Screen *s);
+
 static void screens(void)
 {
 	struct Screen *s2, *ps;
@@ -187,6 +190,7 @@ static void screens(void)
 			check(n > 0, "1-plane close gadget");
 			CloseWindow(w);
 		}
+		dbuf(s2);
 		ScreenToBack(s2);
 		sync();
 		check(IntuitionBase->FirstScreen == scr, "ScreenToBack");
@@ -644,6 +648,231 @@ static void requesters(void)
 }
 
 /*
+ * DisplayAlert: a helper waits for the alert's text on the frontmost
+ * screen, checks its frame and background, then answers with alertcode.
+ * The alert is 40 rows: the frame is rows and columns 4-7 in, the first
+ * line's baseline at (40, 20).
+ */
+static UBYTE alerttext[] = "\000(\024Test alert\000\001\000(\036Line two";
+static UWORD alertcode;
+static volatile BOOL alertdrawn;
+
+static void alerttask(void)
+{
+	struct MsgPort *p = CreateMsgPort();
+	struct IOStdReq *r = (struct IOStdReq *)CreateIORequest(p, sizeof(*r));
+	struct InputEvent e;
+	struct Screen *s;
+	struct RastPort rp;
+	ULONG f, b;
+	int i, k, n, x, y;
+
+	if (r == NULL || OpenDevice("input.device", 0, (struct IORequest *)r, 0))
+		Wait(0);
+	for (i = 0; i < 100; i++) {
+		TimeDelay(UNIT_VBLANK, 0, 20000);
+		if ((s = IntuitionBase->FirstScreen) == NULL)
+			continue;
+		InitRastPort(&rp);
+		rp.BitMap = s->ViewPort.RasInfo->BitMap;
+		f = ReadPixel(&rp, 5, 20);
+		b = ReadPixel(&rp, 20, 20);
+		n = 0;
+		for (y = 12; f != b && y <= 21; y++)
+			for (x = 40; x < 120; x++)
+				n += ReadPixel(&rp, x, y) == f;
+		if (n < 20)
+			continue;
+		alertdrawn = ReadPixel(&rp, 300, 5) == f &&
+		    ReadPixel(&rp, 300, 34) == f &&
+		    ReadPixel(&rp, s->Width - 6, 20) == f &&
+		    ReadPixel(&rp, 2, 20) == b && ReadPixel(&rp, 300, 38) == b &&
+		    n < 400;
+		break;
+	}
+	for (k = 0; k < 2; k++) {
+		e.ie_NextEvent = NULL;
+		e.ie_Class = alertcode == IECODE_LBUTTON ||
+		    alertcode == IECODE_RBUTTON ? IECLASS_RAWMOUSE : IECLASS_RAWKEY;
+		e.ie_SubClass = 0;
+		e.ie_Code = k ? alertcode | IECODE_UP_PREFIX : alertcode;
+		e.ie_Qualifier = 0;
+		e.ie_X = e.ie_Y = 0;
+		r->io_Command = IND_WRITEEVENT;
+		r->io_Data = &e;
+		r->io_Length = sizeof(e);
+		DoIO((struct IORequest *)r);
+	}
+	CloseDevice((struct IORequest *)r);
+	Wait(0);
+}
+
+/* A sum over the alert's rows of the frontmost screen */
+static ULONG alertrows(void)
+{
+	struct Screen *s = IntuitionBase->FirstScreen;
+	ULONG sum = 0;
+	int x, y;
+
+	for (y = 0; s && y < 40; y += 3)
+		for (x = 0; x < s->Width; x += 7)
+			sum = sum * 3 + ReadPixel(&s->RastPort, x, y);
+	return sum;
+}
+
+static void alert(ULONG num, UWORD code, BOOL want, char *what)
+{
+	struct Task *t;
+	ULONG before = alertrows();
+	BOOL r;
+
+	alertcode = code;
+	alertdrawn = FALSE;
+	t = CreateTask("alert helper", 1, (TASKPROC)alerttask, 1536);
+	check(t != NULL, "alert helper task");
+	if (t == NULL)
+		return;
+	r = DisplayAlert(num, alerttext, 40);
+	check(alertdrawn && r == want, what);
+	check(alertrows() == before, "alert restores the screen");
+	RemTask(t);
+}
+
+static void alerts(void)
+{
+	ULONG before = alertrows();
+
+	alert(DEADEND_ALERT, IECODE_LBUTTON, FALSE, "dead-end alert");
+	alert(RECOVERY_ALERT, IECODE_LBUTTON, TRUE, "alert left button");
+	alert(RECOVERY_ALERT, RAWKEY_ESCAPE, FALSE, "alert Escape");
+	check(!TimedDisplayAlert(RECOVERY_ALERT, alerttext, 40, 10) &&
+	    alertrows() == before, "TimedDisplayAlert");
+}
+
+/*
+ * Double buffering on s: the screen's own bitmap, a copy of it and a
+ * cleared one; ChangeScreenBuffer() swaps the screen's bitmap and replies
+ * shown, then safe.
+ */
+static void dbuf(struct Screen *s)
+{
+	struct ScreenBuffer *sb0, *sb1, *sb2;
+	struct BitMap *own = s->RastPort.BitMap;
+	struct MsgPort *mp;
+	struct RastPort rp;
+	struct Message *m1, *m2;
+	ULONG title = ReadPixel(&s->RastPort, 200, 1);
+
+	mp = CreateMsgPort();
+	sb0 = AllocScreenBuffer(s, NULL, SB_SCREEN_BITMAP);
+	sb1 = AllocScreenBuffer(s, NULL, SB_COPY_BITMAP);
+	sb2 = AllocScreenBuffer(s, NULL, 0);
+	check(mp && sb0 && sb1 && sb2 && sb0->sb_BitMap == own &&
+	    sb1->sb_BitMap != own && sb2->sb_BitMap != own &&
+	    sb1->sb_DBufInfo && sb2->sb_DBufInfo, "AllocScreenBuffer");
+	if (!mp || !sb0 || !sb1 || !sb2)
+		return;
+	InitRastPort(&rp);
+	rp.BitMap = sb1->sb_BitMap;
+	check(ReadPixel(&rp, 200, 1) == title && ReadPixel(&rp, 150, 80) ==
+	    ReadPixel(&s->RastPort, 150, 80), "SB_COPY_BITMAP");
+	SetAPen(&rp, 3);
+	RectFill(&rp, 10, 50, 30, 60);
+	rp.BitMap = sb2->sb_BitMap;
+	check(ReadPixel(&rp, 200, 1) == 0 && ReadPixel(&rp, 20, 55) == 0,
+	    "cleared screen buffer");
+
+	sb1->sb_DBufInfo->dbi_SafeMessage.mn_ReplyPort = mp;
+	sb1->sb_DBufInfo->dbi_DispMessage.mn_ReplyPort = mp;
+	check(ChangeScreenBuffer(s, sb1) && s->RastPort.BitMap == sb1->sb_BitMap &&
+	    s->ViewPort.RasInfo->BitMap == sb1->sb_BitMap &&
+	    ReadPixel(&s->RastPort, 20, 55) == (3 & ((1 << s->RastPort.BitMap->Depth) - 1)),
+	    "ChangeScreenBuffer");
+	m1 = GetMsg(mp);
+	m2 = GetMsg(mp);
+	check(m1 == &sb1->sb_DBufInfo->dbi_DispMessage &&
+	    m2 == &sb1->sb_DBufInfo->dbi_SafeMessage && GetMsg(mp) == NULL,
+	    "DBufInfo messages");
+	check(ChangeScreenBuffer(s, sb0) && s->RastPort.BitMap == own &&
+	    GetMsg(mp) == NULL, "ChangeScreenBuffer back");
+	ChangeScreenBuffer(s, sb2);
+	FreeScreenBuffer(s, sb2);
+	check(s->RastPort.BitMap == own && s->ViewPort.RasInfo->BitMap == own,
+	    "FreeScreenBuffer of the one shown");
+	FreeScreenBuffer(s, sb1);
+	FreeScreenBuffer(s, sb0);
+	check(ReadPixel(&s->RastPort, 200, 1) == title, "screen bitmap kept");
+	DeleteMsgPort(mp);
+}
+
+/*
+ * SetIPrefs: pens and palette as IPrefs gives them, then the Workbench
+ * screen's size; QueryOverscan without a display.  The pens start with
+ * intuition's DETAILPEN and BLOCKPEN, which a screen takes as its own.
+ */
+static void iprefs(void)
+{
+	static struct IOldPenPrefs pens = { 1, 0, 0, { 1, 0, 3, 1, (UWORD)~0 } };
+	static struct ColorSpec colours[] = { { 0, 0x1111, 0x2222, 0x3333 }, { -1 } };
+	static struct TagItem t[] = {
+		{ SA_Width, 320 }, { SA_Height, 200 }, { SA_Depth, 2 }, { TAG_DONE, 0 }
+	};
+	struct Preferences prefs;
+	struct Rectangle r;
+	struct Screen *s;
+	UWORD *dp, keep[NUMDRIPENS];
+	int i;
+
+	s = OpenScreenTagList(NULL, t);
+	check(s != NULL, "screen for IPrefs pens");
+	if (s == NULL)
+		return;
+	dp = GetScreenDrawInfo(s)->dri_Pens;
+	for (i = 0; i < NUMDRIPENS; i++)
+		keep[i] = dp[i];
+	CloseScreen(s);
+	check(SetIPrefs(&pens, sizeof(pens), IPREFS_TYPE_PENS_V39), "SetIPrefs pens");
+	s = OpenScreenTagList(NULL, t);
+	dp = GetScreenDrawInfo(s)->dri_Pens;
+	check(dp[TEXTPEN] == 3 && dp[SHINEPEN] == 1 &&
+	    dp[SHADOWPEN] == keep[SHADOWPEN], "screen with IPrefs pens");
+	CloseScreen(s);
+	pens.PenTable[TEXTPEN] = keep[TEXTPEN];
+	pens.PenTable[SHINEPEN] = keep[SHINEPEN];
+	SetIPrefs(&pens, sizeof(pens), IPREFS_TYPE_PENS_V39);
+
+	GetPrefs(&prefs, sizeof(prefs));
+	i = prefs.color0;
+	check(SetIPrefs(colours, sizeof(colours), IPREFS_TYPE_PALETTE_V39) &&
+	    GetPrefs(&prefs, sizeof(prefs)) && prefs.color0 == 0x123,
+	    "SetIPrefs palette");
+	colours[0].Red = (i >> 8 & 15) * 0x1111;
+	colours[0].Green = (i >> 4 & 15) * 0x1111;
+	colours[0].Blue = (i & 15) * 0x1111;
+	SetIPrefs(colours, sizeof(colours), IPREFS_TYPE_PALETTE_V39);
+	check(!SetIPrefs(&prefs, sizeof(prefs), 99), "SetIPrefs of no type");
+
+	check(!QueryOverscan(INVALID_ID, &r, OSCAN_TEXT), "QueryOverscan without a mode");
+}
+
+/* SetIPrefs of the Workbench screen's mode reopens it in that size */
+static void wbmode(void)
+{
+	static struct IScreenModePrefs smp = { INVALID_ID, 640, 480, 1, 0 };
+	struct Screen *wb;
+
+	check(SetIPrefs(&smp, sizeof(smp), IPREFS_TYPE_SCREENMODE_V37),
+	    "SetIPrefs screen mode");
+	wb = LockPubScreen("Workbench");
+	check(wb && wb->Width == 640 && wb->Height == 480, "Workbench reopened");
+	if (wb)
+		UnlockPubScreen(NULL, wb);
+	smp.smp_Width = 1024;
+	smp.smp_Height = 800;
+	SetIPrefs(&smp, sizeof(smp), IPREFS_TYPE_SCREENMODE_V37);
+}
+
+/*
  * Whether an area of the screen shows the Workbench backfill, pen fp
  * over BACKGROUNDPEN in a 50% pattern (solid when fp is BACKGROUNDPEN):
  * every third pixel of every 13th row, and row 204, where the bitmap
@@ -752,6 +981,8 @@ static void colour(void)
 		    "backfill after CloseWindow");
 	}
 
+	alerts();
+	dbuf(scr);
 	windows();
 	gadgets();
 	menus();
@@ -957,6 +1188,7 @@ static void workbench(void)
 	    "Workbench backfill");
 	pointer(wb);
 	UnlockPubScreen(NULL, wb);
+	wbmode();
 	check(CloseWorkBench(), "CloseWorkBench");
 }
 
@@ -1012,9 +1244,14 @@ int main(void)
 	}
 	check(IntuitionBase->LibNode.lib_Version == 50, "version");
 
+	alert(RECOVERY_ALERT, IECODE_RBUTTON, FALSE, "alert on its own screen");
+	check(IntuitionBase->FirstScreen == NULL, "alert screen closed");
 	rendering();
+	iprefs();
 	screens();
 	if (scr) {
+		alerts();
+		dbuf(scr);
 		windows();
 		gadgets();
 		menus();

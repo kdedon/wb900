@@ -4,6 +4,7 @@
     Desc: Set one color register for this Viewport
 */
 
+#include <graphics/modeid.h>
 #include <proto/graphics.h>
 
 #include "graphics_intern.h"
@@ -11,8 +12,8 @@
 
 /*
  * The display of the ViewPort's bitmap gets the colours: a programmable
- * palette is loaded, and with a fixed one the pens take the nearest of
- * its colours.
+ * palette is loaded while the bitmap is shown, and with a fixed one the
+ * pens of a bitmap of a display mode take the nearest of its colours.
  */
 void internal_SetRGB32Colors(struct ViewPort *vp, UBYTE *rgb,
                              ULONG first, ULONG count,
@@ -25,15 +26,20 @@ void internal_SetRGB32Colors(struct ViewPort *vp, UBYTE *rgb,
     UWORD p;
     WORD dr, dg, db;
 
-    if (!bm || !IS_GFXBM(bm) || !(GFXBM(bm)->gb_Flags & GBF_DISPLAY))
+    if (!bm || !IS_GFXBM(bm) || GFXBM(bm)->gb_ModeID == INVALID_ID)
         return;
-    gd = GFXBM(bm)->gb_Driver;
+    gd = PrivGBase(GfxBase)->display;
+    if (GFXBM(bm)->gb_Driver->gd_Format != gd->gd_Format)
+        return;
     pixtab = GFXBM(bm)->gb_PixTab;
 
     for (i = 0; i < count; i++, rgb += 3)
     {
         if (gd->gd_SetColor)
-            gd->gd_SetColor(gd, first + i, rgb[0], rgb[1], rgb[2]);
+        {
+            if (GFXBM(bm)->gb_Flags & GBF_DISPLAY)
+                gd->gd_SetColor(gd, first + i, rgb[0], rgb[1], rgb[2]);
+        }
         else if (pixtab && first + i < 256)
         {
             bestd = 0xFFFFFFFFL;

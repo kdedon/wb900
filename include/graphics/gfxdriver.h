@@ -116,9 +116,12 @@ struct GfxDriver
 		    UBYTE g, UBYTE b);
     /* The colour of pixel n of a fixed palette, 0x00RRGGBB */
     ULONG	(*gd_GetColor)(struct GfxDriver *gd, UWORD n);
-    /* A bitmap on the display for a mode, or NULL */
-    struct BitMap *(*gd_AllocDisplay)(struct GfxDriver *gd,
-		    const struct GfxMode *m);
+    /*
+     * Fill in bm, graphics' GfxBitMap, as the display in mode m, but for
+     * gb_PixTab, which graphics sets; or FALSE
+     */
+    BOOL	(*gd_AllocDisplay)(struct GfxDriver *gd,
+		    const struct GfxMode *m, struct BitMap *bm);
     void	(*gd_FreeDisplay)(struct GfxDriver *gd, struct BitMap *bm);
     /* Show bm (from gd_AllocDisplay), or give the display up (NULL) */
     BOOL	(*gd_Show)(struct GfxDriver *gd, struct BitMap *bm);
@@ -134,6 +137,13 @@ struct GfxDriver
      * takes the jumper to be that one.  NULL: every mode is available.
      */
     const struct GfxMode *gd_Jumper;
+    /*
+     * Show bm, a RAM bitmap of the display bitmap's format and size, from
+     * its own planes, which become the display's; the display bitmap's
+     * planes become RAM.  NULL: the display's planes are fixed, so
+     * graphics trades their pixels and pointers with bm's.
+     */
+    void	(*gd_Adopt)(struct GfxDriver *gd, struct BitMap *bm);
 };
 
 /*
@@ -154,7 +164,7 @@ struct GfxBitMap
 };
 
 #define GBF_OWNPLANES	1	/* FreeBitMap() frees the planes */
-#define GBF_DISPLAY	2	/* the driver's gd_FreeDisplay() frees it */
+#define GBF_DISPLAY	2	/* the display's planes: gd_FreeDisplay() frees them */
 
 #define GFXBM(bm)	((struct GfxBitMap *)(bm))
 #define IS_GFXBM(bm)	((bm)->pad == GFXBM_MAGIC)
@@ -172,7 +182,9 @@ struct GfxBitMap
  * bitmaps draw with its gd_Fill to gd_WriteRow.  gd_Modes are the
  * display's modes.  gd_AllocDisplay() takes the display from the
  * console, blanked until gd_Show(); it goes back to the console once
- * its bitmap is freed and not shown.
+ * its bitmap is freed and not shown.  A display bitmap's planes may move
+ * to another bitmap of its mode (gd_Adopt), which then has
+ * GBF_DISPLAY and the driver's table.
  */
 #define GFX_GETDRIVER(base, fmts) \
 	(*(struct GfxDriver *(*)())((char *)(base) - 30))((base), (fmts))

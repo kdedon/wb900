@@ -65,7 +65,9 @@
                 PrivGBase(GfxBase)->shown = NULL;
             }
             gbm->gb_Driver->gd_FreeDisplay(gbm->gb_Driver, bm);
+            PrivGBase(GfxBase)->vram = NULL;
             ReleaseSemaphore(GfxBase->ActiViewCprSemaphore);
+            FreeVec(gbm);
             return;
         }
 

@@ -66,7 +66,7 @@ intuition's includes: graphics 66, layers 43, utility 41, alib 34, cybergraphics
 7. **Display ownership.** Done: `framebuf.resource` (EXEC_ASKS 1; design in exec816 `c900/docs/design/hr-display-sharing.md`): GetFBInfo/AllocFB/FreeFB. FBInfo has the card and a mode list; each FBMode has fbm_SplitRow/fbm_SplitByte, with FB_ADDR and FB_ROWSPLIT. graphics calls AllocFB at the first LoadView and FreeFB at LoadView(NULL). The kernel reclaims the display on panic.
    - VRAM costs ~7 clocks per access (2–5 wait states) vs 3 for DRAM, so save-under and backing store stay in RAM. A full-screen mono scroll in VRAM is ~0.2 s at 6 MHz (estimate).
    - Port 0x0404 is write-only; owners write only 0x03 (blank), 0x07 (dim) or 0x0F (full). Never word-write a port with A1=0 other than 0x0404 (mouse port 0x0400 included): it loads the latch.
-   - No display-start register, so no hardware double buffering; ChangeScreenBuffer must copy.
+   - No display-start register. The front screen's bitmap (or screen buffer) has VRAM and draws there; the others in its mode are RAM bitmaps of the full mode size. Bringing one to the front swaps its pixels and planes with VRAM's: no extra buffer, about 0.27 s for 100 KB mono and 0.35 s for 125 KB RGBI at 6 MHz (modelled cycles, before VRAM wait states). On LC the shadow moves to the front screen's bitmap and all 16 KB is pushed, about 0.24 s. A screen on a custom bitmap of another size is copied in, the VRAM screen first moved to a RAM bitmap allocated for the time.
    - Mono is big-endian (bit 7 of the even byte leftmost). Colour is 2 px per byte, high nibble leftmost, bits I R G B.
 8. **CPU budget.** No blitter at 6 MHz makes full-window moves on 1024x800 slow. Default to SIMPLE_REFRESH and outline drags; SMART_REFRESH backing store costs RAM.
 
@@ -81,16 +81,16 @@ Measured (B; "stack" is the most a task used of its allocation):
 | utility.library | 8,066 | 440 | 1,423 code lines | |
 | graphics.library | 59,032 | 4,074 | | was 54,828 + 3,802 before pens, VideoControl and View calls |
 | layers.library | 29,882 | 422 | hyperlayers, no composited layers | deepest test call ~1.1 KB stack |
-| intuition.library | 201,412 in 4 hunks (54,786, 62,380, 64,290, 19,956) | 3,644 | ~38.8k lines with autodocs; toolchain 337f2b6 | without monitorclass, CGX/HIDD, screen notification, screen buffers, IPrefs, alerts, group/model/fillrect/itext/barlabel; with decorators. input task and menu task in §5a |
+| intuition.library | 215,016 in 4 hunks (57,726, 63,016, 65,136, 29,138) | 4,276 | ~38.8k lines with autodocs; toolchain 337f2b6 | without monitorclass, CGX/HIDD, screen notification, group/model/fillrect/itext/barlabel; with decorators. input task and menu task in §5a |
 | gadtools.library | 63,626 | 1,970 | all of it, 8.3k lines | menu task 1,893 (§5a) |
 | icon.library | ~21 K | ~2 K | classic .info only | |
 | workbench.library | 16 K | 0.4 K | | handler 886 of 1,280 |
-| Workbench | 28 K | | | 2,626 of 3,072 |
+| Workbench | 32 K | | | 2,626 of 3,072 |
 | asl.library | 126,800 in 3 hunks (52,964, 60,662, 13,174) | 3,488 | all but locale, prefs, truecolour images; 16.1k lines | caller needs ~3.4 K (tests/asl 3,360) |
 | commodities.library | 9,960 | 1,950 | | handlers run on the input task: 2,652 of 3,840 in tests/cxtools; three allocs and frees per event per broker |
 | NoCapsLock, AutoPoint, ClickToFront, Blanker, DepthMenu | 2.5, 3.1, 3.3, 4.3, 6.6 K | | | 850–1,300 of 2,048 each |
-| More | 18.6 K | 1.7 K + 6.0 K bss | | 2,869 with asl's requester open; icon 4,096; files ≤ 65,520 B (one segment) |
-| Edit (JanoEditor) | 72.7 K in 2 hunks (62.0, 10.6) | 4.1 K | | as More |
+| More | 19.9 K | 1.6 K + 6.2 K bss | | 2,869 with asl's requester open; icon 4,096; reads through a window of up to 16 KB with 4 B per line, so 300 KB takes 36 KB; the scroller works to 65,537 lines |
+| Edit (JanoEditor) | 73.8 K in 2 hunks (62.7, 11.1) | 4.0 K | | as More; holds the file in buffers of whole lines (16 KB, up to 64 KB for a long line) plus 24 B per line: about 120 KB opens on 1 MB beside Workbench |
 | Calculator | 8.3 K | 0.6 K | | 2,209; icon 2,816 |
 | Clock | 6.2 K | 0.6 K | | 1,192; icon 2,048 |
 | KeyShow | 6.0 K | 0.9 K + 2.2 K bss | | 1,282; icon 2,048 |

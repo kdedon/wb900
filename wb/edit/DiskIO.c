@@ -17,7 +17,10 @@
 #include "strings.h"
 
 #define	MEM_CHUNK		8192		/* To save file */
-#define	MAX_FILE		0xFFF0	/* A file is read into one 64 KB segment */
+/* A file is read into buffers of whole lines, each in one 64 KB segment;
+** a line longer than BUFLEN gets a buffer of MAXBUFLEN */
+#define	BUFLEN		0x4000
+#define	MAXBUFLEN	0xFFE0
 
 
 extern struct Library *AslBase;
@@ -275,7 +278,8 @@ BYTE save_file(STRPTR name, LINE *svg, unsigned char eol, LONG protection)
 		{
 			if(i == 0) buf = ln->stream;
 			/* An unmodified line (2nd cond. is for deleted lines) */
-			if(ln->max == 0 && ln->stream-buf == i) i+=ln->size+szeol;
+			/* Compared as pointers: an offset difference ignores the segment */
+			if(ln->max == 0 && ln->stream == buf+i) i+=ln->size+szeol;
 
 			else {
 				/* Flush preceding unmodified buffer */
@@ -311,102 +315,139 @@ BYTE save_file(STRPTR name, LINE *svg, unsigned char eol, LONG protection)
 	return retval;
 }
 
-/*** Simple proc to read a file ***/
-WORD read_file( LoadFileArgs *args, ULONG *len )
+/*** Read a file into buffers of whole lines, and find its end of line type ***/
+WORD read_file( LoadFileArgs *args )
 {
+	struct FileInfoBlock *fib;
 	BPTR fh;
+	TEXTBUF *tb, **link = &args->buffer;
+	STRPTR text, tail = NULL;
+	ULONG size, carry = 0, got, left = 0, i;
+	LONG n;
 	WORD err = RETURN_OK;
+	char eol = 0, grown = 0;
 
 	args->buffer = NULL;
 	args->lines  = NULL;
 	args->protection = 0;
-	*len         = 0;
+	args->eol    = AMIGA_EOL;
 
-	if( ( fh = Open(args->filename, MODE_OLDFILE) ) )
+	/* A file that doesn't exist is empty */
+	if( NULL == ( fh = Open(args->filename, MODE_OLDFILE) ) ) return RETURN_OK;
+
+	if( ( fib = (APTR) AllocDosObject( DOS_FIB, NULL ) ) )
 	{
-		/* First: Get file size */
-		struct FileInfoBlock *fib;
-		if( ( fib = (APTR) AllocDosObject( DOS_FIB, NULL ) ) )
-		{
-			if( ExamineFH(fh, fib) )
-			{
-				args->protection = fib->fib_Protection;
-				/* Then reads it in one large buffer */
-				if( (*len = fib->fib_Size) > MAX_FILE )
-					err = ERR_TOOBIG;
-				else if( *len > 0 )
-				{
-					/* This is a critical call, with a high probability to fail ! */
-					if( ( args->buffer = (STRPTR) AllocVec(*len, MEMF_PUBLIC) ) )
-					{
-						if( Read(fh, args->buffer, *len) != *len )
-							err = ERR_LOADFILE;
-					}
-					else err = ERR_NOMEM;
-				}
-				/* This file is empty: we still need to allocate one line */
-			}
-			else err = ERR_LOADFILE;
-			FreeDosObject( DOS_FIB, fib );
-		}
-		else err = ERR_NOMEM;
-
-		Close( fh );
+		if( ExamineFH(fh, fib) ) args->protection = fib->fib_Protection, left = fib->fib_Size;
+		else err = ERR_LOADFILE;
+		FreeDosObject( DOS_FIB, fib );
 	}
+	else err = ERR_NOMEM;
+
+	while( err == RETURN_OK )
+	{
+		/* What is left fits, or a buffer of whole lines */
+		size = (grown || carry >= BUFLEN ? MAXBUFLEN : BUFLEN);
+		if( carry + left < size ) size = carry + left;
+		if( NULL == ( tb = (TEXTBUF *) AllocVec(sizeof(*tb) + size + 1, MEMF_PUBLIC) ) ) {
+			err = ERR_NOMEM; break;
+		}
+		tb->next = NULL;
+		text = TEXTBUF_TEXT(tb);
+		if( carry ) CopyMem(tail, text, carry);
+		/* A grown buffer replaces the one it was copied from */
+		if( grown ) FreeVec( *link );
+		*link = tb;
+
+		for(got = carry, n = 0; got < size && (n = Read(fh, text + got, size - got)) > 0; got += n);
+		if( n < 0 ) { err = ERR_LOADFILE; break; }
+		text[got] = 0;
+		left -= got - carry;
+
+		/* The end of line type of the first line, once its end is read */
+		if( eol == 0 )
+		{
+			for(i = 0; i < got && text[i] != '\r' && text[i] != '\n'; i++);
+			if( i < got && (i + 1 < got || left == 0) )
+			{
+				if( text[i] == '\r' )
+					args->eol = (text[i+1] == '\n' ? MSDOS_EOL : MACOS_EOL);
+				eol = (args->eol == MACOS_EOL ? '\r' : '\n');
+			}
+		}
+
+		/* The end, or a file that shrank */
+		if( left == 0 || got < size )
+		{
+			tb->len = got;
+			break;
+		}
+
+		i = got;
+		if( eol ) while( i > 0 && text[i-1] != eol ) i--;
+		else      i = 0;
+
+		if( (grown = (i == 0)) )
+		{
+			if( size == MAXBUFLEN ) { err = ERR_TOOBIG; break; }
+			carry = got; tail = text;
+			continue;
+		}
+		tb->len = i;
+		carry = got - i;
+		tail  = text + i;
+		link  = &tb->next;
+	}
+	Close( fh );
+	if( err ) { trash_text( args->buffer ); args->buffer = NULL; }
 	return err;
 }
 
 /*** load specified file from disk ***/
 WORD load_file( LoadFileArgs *args )
 {
-	ULONG  len;
 	WORD   err;
 	LINE * new;
 
 	BusyWindow(Wnd);
 
-	/* We have read the file in a buffer: create the lines */
-	if( RETURN_OK == (err = read_file( args, &len )) )
+	/* We have read the file in buffers: create the lines */
+	if( RETURN_OK == (err = read_file( args )) )
 	{
-		STRPTR p, q; char eol = '\n';
-		ULONG  i;
+		TEXTBUF *tb;
+		STRPTR p = NULL, q = NULL, end;
+		char eol = (args->eol == AMIGA_EOL ? '\n' : '\r');
 
-		args->eol = AMIGA_EOL;
-		/* Search in the very first line, the End Of Line type */
-		for(args->nblines=1, i=0, q=p=args->buffer;
-		    i<len && *p!='\r' && *p!='\n'; p++, i++);
-
-		if( i < len && *p == '\r' )
-			args->eol = (p[1] == '\n' ? MSDOS_EOL : MACOS_EOL),
-			eol = '\r';
-
+		args->nblines = 1;
 		/* Build lines list */
 		if( ( args->lines = new = new_line(NULL) ) )
 		{
 			/* This loop is the most CPU consuming part */
-			for(; i<len; p++, i++)
-				if (*p == eol)
-				{
-					new->size   = p-q; 
-					/* *p = '\n';   Removed to preserve MS-DOS/Windows CRLF end-of-line chars */ 
-					new->stream = q;
-					args->nblines++;
-					if(args->eol == MSDOS_EOL && p[1]=='\n')
-                                        {
-                                            p++;
-                                            i++;
-                                        }
-                                        q = p+1;
-					if(NULL == (new = new_line(new))) {
-						err = ERR_NOMEM; break;
+			for(tb = args->buffer; tb && err == 0; tb = tb->next)
+				for(q = p = TEXTBUF_TEXT(tb), end = p + tb->len; p < end; p++)
+					if (*p == eol)
+					{
+						new->size   = p-q;
+						/* *p = '\n';   Removed to preserve MS-DOS/Windows CRLF end-of-line chars */
+						new->stream = q;
+						args->nblines++;
+						if(args->eol == MSDOS_EOL && p[1]=='\n')
+						{
+							p++;
+						}
+						q = p+1;
+						if(NULL == (new = new_line(new))) {
+							err = ERR_NOMEM; break;
+						}
 					}
-				}
-			new->size   = p-q;
-			new->stream = q;
+			if( new ) new->size = p-q, new->stream = q;
 		} else err = ERR_NOMEM;
 	}
 	/* If there was errors: cleanup all things */
-	if( err != 0 && args->lines ) trash_file(args->lines);
+	if( err != 0 )
+	{
+		if( args->lines ) trash_file(args->lines);
+		trash_text(args->buffer);
+	}
 
 	WakeUp(Wnd);
 	return err;

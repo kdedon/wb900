@@ -220,6 +220,7 @@ struct IntIntuitionBase
     ULONG                   	*IDCMPPool;
 
     struct IScreenModePrefs 	 *ScreenModePrefs;
+    BOOL                         IPrefsScreenMode;  /* ScreenModePrefs from SetIPrefs() */
     struct IIControlPrefs   	 IControlPrefs;
     struct IClass           	*pointerclass;
     Object                  	*DefaultPointer;
@@ -357,6 +358,9 @@ struct IntScreen
     struct NewDecorator     *Decorator;
 
     struct BitMap           *AllocatedBitMap;
+    /* For FreeScreenBuffer(): the screen's own bitmap */
+    struct DBufInfo         *RestoreDBufInfo;
+    struct BitMap           *RestoreBitMap;
     UBYTE                    BeepingCounter;
     BOOL                     ShowPointer;
     BOOL                     SysFont;
@@ -590,6 +594,8 @@ struct IntScreenBuffer
 /* Driver prototypes */
 
 extern void intui_CloseWindow (struct Window *, struct IntuitionBase *);
+
+void UpdateScreenBitMap(struct Screen *screen, struct IntuitionBase *IntuitionBase);
 
 /* wbtasktalk protos */
 

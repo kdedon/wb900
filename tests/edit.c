@@ -5,7 +5,8 @@
  * of the same font: inserting, splitting and joining lines, saving,
  * undo, Find, Save As and Quit, checking the files written.  Then More
  * starts Edit on its file with E, and a Shell runs Edit with a file
- * argument.  It reports Edit's stack use.
+ * argument.  It reports Edit's stack use.  Built with BIG, it edits big
+ * files instead.
  */
 #include <exec/exec.h>
 #include <dos/dos.h>
@@ -23,6 +24,10 @@
 #include <proto/graphics.h>
 #include <proto/intuition.h>
 #include <proto/workbench.h>
+
+#ifndef NAME
+#define NAME	"edit"
+#endif
 
 struct DosLibrary *DOSBase;
 struct GfxBase *GfxBase;
@@ -164,6 +169,203 @@ static void idle(void)
 	check(FALSE, "idle");
 }
 
+/* Edit's window on SYS:name */
+static BOOL edited(char *name)
+{
+	win = findwin(name, TRUE);
+	check(win != NULL, name);
+	if (win == NULL)
+		return FALSE;
+	task = win->UserPort->mp_SigTask;
+	idle();
+	return TRUE;
+}
+
+/* Whether t is still a task */
+static BOOL alive(struct Task *t)
+{
+	struct Node *n;
+	BOOL found = FALSE;
+
+	Disable();
+	for (n = SysBase->TaskReady.lh_Head; n->ln_Succ; n = n->ln_Succ)
+		found |= n == &t->tc_Node;
+	for (n = SysBase->TaskWait.lh_Head; n->ln_Succ; n = n->ln_Succ)
+		found |= n == &t->tc_Node;
+	Enable();
+	return found;
+}
+
+static void quit(char *name)
+{
+	int i;
+
+	key(0x10, AMIGA);			/* Amiga-Q */
+	check(findwin(name, FALSE) == NULL, "quit");
+	for (i = 0; i < 200 && alive(task); i++)
+		Delay(1);
+	check(i < 200, "Edit ends");
+}
+
+#ifdef BIG
+/* Line n of a big file, with its newline, "Hi " first if hi */
+static char *bigline(LONG n, BOOL hi)
+{
+	static char line[80];
+	char *p = line;
+	LONG m;
+	int i;
+
+	if (hi) {
+		*p++ = 'H';
+		*p++ = 'i';
+		*p++ = ' ';
+	}
+	*p++ = 'L';
+	*p++ = 'i';
+	*p++ = 'n';
+	*p++ = 'e';
+	*p++ = ' ';
+	for (i = 5, m = n; i-- > 0; m /= 10)
+		p[i] = '0' + m % 10;
+	p += 5;
+	for (i = 0; i < 49; i++)
+		*p++ = 'a' + (n + i) % 26;
+	*p++ = '\n';
+	*p = 0;
+	return line;
+}
+
+static BOOL writebig(char *name, LONG n)
+{
+	static char buf[2048];
+	BPTR fh;
+	LONG i, len, used = 0;
+	BOOL ok = TRUE;
+	char *l;
+
+	if ((fh = Open(name, MODE_NEWFILE)) == NULL)
+		return FALSE;
+	for (i = 1; i <= n; i++) {
+		l = bigline(i, FALSE);
+		for (len = 0; l[len]; len++)
+			;
+		if (used + len > sizeof(buf)) {
+			ok &= Write(fh, buf, used) == used;
+			used = 0;
+		}
+		CopyMem(l, buf + used, len);
+		used += len;
+	}
+	ok &= Write(fh, buf, used) == used;
+	Close(fh);
+	return ok;
+}
+
+/* Whether the file holds the n lines, line hi with "Hi " first */
+static BOOL bighas(char *name, LONG n, LONG hi)
+{
+	static char buf[2048];
+	BPTR fh;
+	LONG len = 0, i = 0, line = 0;
+	char *e = "";
+
+	if ((fh = Open(name, MODE_OLDFILE)) == NULL)
+		return FALSE;
+	for (;;) {
+		if (i == len) {
+			i = 0;
+			if ((len = Read(fh, buf, sizeof(buf))) <= 0)
+				break;
+		}
+		if (*e == 0) {
+			if (line == n)
+				break;
+			line++;
+			e = bigline(line, line == hi);
+		}
+		if (buf[i++] != *e++)
+			break;
+	}
+	Close(fh);
+	return len <= 0 && *e == 0 && line == n;
+}
+
+/* Until the title shows the file saved (or modified), the file written */
+static void waitsaved(BOOL saved)
+{
+	int i;
+
+	for (i = 0; i < 600 && contains(win->Title, "+") == saved; i++)
+		Delay(5);
+	idle();
+}
+
+/* v in decimal at p; the end */
+static char *decimal(char *p, LONG v)
+{
+	char d[12];
+	int n = 0;
+
+	do
+		d[n++] = '0' + v % 10;
+	while ((v /= 10) != 0);
+	while (n > 0)
+		*p++ = d[--n];
+	return p;
+}
+
+/* A file of n lines of 60 bytes: three lines up from the end, "Hi " */
+static void bigfile(char *name, LONG n)
+{
+	struct TagItem t[3];
+	char path[20], pos[20], *p, *q;
+	BPTR sys;
+
+	for (p = path, q = "SYS:"; *q; )
+		*p++ = *q++;
+	for (q = name; *q; )
+		*p++ = *q++;
+	*p = 0;
+	p = pos;
+	*p++ = '(';
+	*p++ = '4';
+	*p++ = ',';
+	*p++ = ' ';
+	p = decimal(p, n - 2);
+	*p++ = ')';
+	*p = 0;
+
+	check(writebig(path, n), path);
+	xKPrintf("edit: %s, %ld bytes free\n", name, AvailMem(MEMF_ANY));
+	sys = Lock("SYS:", SHARED_LOCK);
+	t[0].ti_Tag = WBOPENA_ArgLock;	t[0].ti_Data = (IPTR)sys;
+	t[1].ti_Tag = WBOPENA_ArgName;	t[1].ti_Data = (IPTR)name;
+	t[2].ti_Tag = TAG_DONE;
+	check(OpenWorkbenchObjectA("SYS:Utilities/Edit", t), "launch");
+	UnLock(sys);
+	if (!edited(name))
+		return;
+	key(0x71, IEQUALIFIER_CONTROL);		/* Ctrl-End */
+	key(0x4C, 0);
+	key(0x4C, 0);
+	key(0x4C, 0);
+	idle();
+	type("Hi ");
+	idle();
+	check(contains(win->Title, pos), pos);
+	key(0x11, AMIGA);			/* Amiga-W saves */
+	waitsaved(TRUE);
+	check(bighas(path, n, n - 2), "big: saved");
+	key(0x16, AMIGA);			/* Amiga-U undoes */
+	waitsaved(FALSE);
+	key(0x11, AMIGA);
+	waitsaved(TRUE);
+	check(bighas(path, n, 0), "big: undone and saved");
+	quit(name);
+}
+
+#else
 /* Until the active window's title holds s */
 static void waitactive(char *s)
 {
@@ -226,8 +428,6 @@ static BOOL filehas(char *name, char *text)
 static char original[] = "Line 001\nLine 002\nLine 003\nLine 004\n"
     "Line 005\nLine 006\nLine 007\nLine 008\n";
 
-/* Edit's text area: the default font at the window's inner corner */
-static WORD fw, fh, x0, y0;
 static struct BitMap *refbm;
 static struct RastPort ref;
 static struct DrawInfo *dri;
@@ -236,8 +436,13 @@ static struct DrawInfo *dri;
 #define COLS	16
 static BOOL row(WORD r, char *s, WORD skip)
 {
-	WORD x, y, len;
+	WORD x, y, len, fw, fh, x0, y0;
 
+	/* Edit's text area: the default font at the window's inner corner */
+	fw = GfxBase->DefaultFont->tf_XSize;
+	fh = GfxBase->DefaultFont->tf_YSize;
+	x0 = win->BorderLeft;
+	y0 = win->BorderTop;
 	for (len = 0; s[len]; len++)
 		;
 	SetAPen(&ref, dri->dri_Pens[BACKGROUNDPEN]);
@@ -268,48 +473,6 @@ static void stackuse(struct Task *t)
 		p++;
 	xKPrintf("edit: %s stack %d of %d bytes used\n", t->tc_Node.ln_Name,
 	    (int)(top - p), (int)(top - (UBYTE *)t->tc_SPLower));
-}
-
-/* Edit's window on SYS:name */
-static BOOL edited(char *name)
-{
-	win = findwin(name, TRUE);
-	check(win != NULL, name);
-	if (win == NULL)
-		return FALSE;
-	task = win->UserPort->mp_SigTask;
-	fw = GfxBase->DefaultFont->tf_XSize;
-	fh = GfxBase->DefaultFont->tf_YSize;
-	x0 = win->BorderLeft;
-	y0 = win->BorderTop;
-	idle();
-	return TRUE;
-}
-
-/* Whether t is still a task */
-static BOOL alive(struct Task *t)
-{
-	struct Node *n;
-	BOOL found = FALSE;
-
-	Disable();
-	for (n = SysBase->TaskReady.lh_Head; n->ln_Succ; n = n->ln_Succ)
-		found |= n == &t->tc_Node;
-	for (n = SysBase->TaskWait.lh_Head; n->ln_Succ; n = n->ln_Succ)
-		found |= n == &t->tc_Node;
-	Enable();
-	return found;
-}
-
-static void quit(char *name)
-{
-	int i;
-
-	key(0x10, AMIGA);			/* Amiga-Q */
-	check(findwin(name, FALSE) == NULL, "quit");
-	for (i = 0; i < 200 && alive(task); i++)
-		Delay(1);
-	check(i < 200, "Edit ends");
 }
 
 static void workbench(void)
@@ -460,23 +623,10 @@ static void cli(void)
 	check(s.s_RC == 0, "Shell: return code");
 }
 
-int main(void)
+/* The editing cases, then More and the Shell */
+static void small(void)
 {
-	DOSBase = (struct DosLibrary *)OpenLibrary(DOSNAME, 36L);
-	GfxBase = (struct GfxBase *)OpenLibrary(GRAPHICSNAME, 39L);
-	IntuitionBase = (struct IntuitionBase *)OpenLibrary(INTUITIONNAME, 39L);
-	WorkbenchBase = OpenLibrary(WORKBENCH_NAME, 45L);
-	ioport = CreateMsgPort();
-	io = (struct IOStdReq *)CreateIORequest(ioport, sizeof(struct IOStdReq));
-	if (DOSBase == NULL || GfxBase == NULL || IntuitionBase == NULL ||
-	    WorkbenchBase == NULL ||
-	    OpenDevice("input.device", 0, (struct IORequest *)io, 0) != 0) {
-		KPutStr("FAIL edit: OpenLibrary\n");
-		return 1;
-	}
 	check(writefile("SYS:EditTest", original), "test file");
-	check(OpenWorkBench() != 0, "OpenWorkBench");
-	wb = LockPubScreen("Workbench");
 	dri = GetScreenDrawInfo(wb);
 	refbm = AllocBitMap(COLS * 8, 16, GetBitMapAttr(wb->RastPort.BitMap,
 	    BMA_DEPTH), BMF_CLEAR, wb->RastPort.BitMap);
@@ -493,9 +643,34 @@ int main(void)
 
 	FreeBitMap(refbm);
 	FreeScreenDrawInfo(wb, dri);
+}
+#endif
+
+int main(void)
+{
+	DOSBase = (struct DosLibrary *)OpenLibrary(DOSNAME, 36L);
+	GfxBase = (struct GfxBase *)OpenLibrary(GRAPHICSNAME, 39L);
+	IntuitionBase = (struct IntuitionBase *)OpenLibrary(INTUITIONNAME, 39L);
+	WorkbenchBase = OpenLibrary(WORKBENCH_NAME, 45L);
+	ioport = CreateMsgPort();
+	io = (struct IOStdReq *)CreateIORequest(ioport, sizeof(struct IOStdReq));
+	if (DOSBase == NULL || GfxBase == NULL || IntuitionBase == NULL ||
+	    WorkbenchBase == NULL ||
+	    OpenDevice("input.device", 0, (struct IORequest *)io, 0) != 0) {
+		KPutStr("FAIL edit: OpenLibrary\n");
+		return 1;
+	}
+	check(OpenWorkBench() != 0, "OpenWorkBench");
+	wb = LockPubScreen("Workbench");
+#ifdef BIG
+	bigfile("EditBig", 1700);
+	bigfile("EditHuge", 5000);
+#else
+	small();
+#endif
 	UnlockPubScreen(NULL, wb);
 	if (fails != 0)
 		return 1;
-	KPutStr("PASS edit\n");
+	xKPrintf("PASS %s\n", NAME);
 	return 0;
 }

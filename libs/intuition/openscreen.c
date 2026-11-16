@@ -86,13 +86,6 @@ static ULONG WBBackFillFunc(struct Hook *hook, struct RastPort *rp,
     return 0;
 }
 
-/* Old programs read the screen's bitmap from BitMap_OBSOLETE: keep a copy
-   of the header there. Drawing goes to the real one. */
-static void UpdateScreenBitMap(struct Screen *screen, struct IntuitionBase *IntuitionBase)
-{
-    CopyMem(screen->RastPort.BitMap, &screen->BitMap_OBSOLETE, sizeof(struct BitMap));
-}
-
 /*
  * wb900: what the display database would say of a screen in RAM when
  * there is no display: the nominal size, square pixels in the ticks of a

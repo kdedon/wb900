@@ -35,8 +35,9 @@
         order to reflect the real result of the operation.
 
         The displays have no display start to move: a ViewPort on
-        display with a bitmap in RAM is copied to the display from its
-        new offsets, and one with the display's own bitmap stays.
+        display with a bitmap in RAM of another size is copied to the
+        display from its new offsets, and one with the display's planes
+        stays.
 
     EXAMPLE
 

@@ -47,10 +47,11 @@ static BOOL LoadScreenMode(struct ScreenModePrefs *smp, struct IntuitionBase *In
 }
 
 /*
- * The Workbench's mode and size: the saved mode when the display has it,
- * else the display's first mode, the card's own.  A saved mode may be one
- * the display has no monitor for, the other setting of a jumper.  Shift
- * held ignores the saved mode, so a bad one can be undone.
+ * The Workbench's mode and size: the one SetIPrefs() gave, else the saved
+ * mode, when the display has it, else the display's first mode, the
+ * card's own.  A mode may be one the display has no monitor for, the
+ * other setting of a jumper.  Shift held ignores both, so a bad one can
+ * be undone.
  */
 static ULONG ChooseMode(struct IntuitionBase *IntuitionBase)
 {
@@ -66,6 +67,13 @@ static ULONG ChooseMode(struct IntuitionBase *IntuitionBase)
         return INVALID_ID;
     if (PeekQualifier() & (IEQUALIFIER_LSHIFT | IEQUALIFIER_RSHIFT))
         why = "Shift held";
+    else if (GetPrivIBase(IntuitionBase)->IPrefsScreenMode)
+    {
+        if (FindDisplayInfo(smp->smp_DisplayID) &&
+            !(ModeNotAvailable(smp->smp_DisplayID) & ~DI_AVAIL_NOMONITOR))
+            return smp->smp_DisplayID;
+        why = "IPrefs mode not available";
+    }
     else if (!LoadScreenMode(&saved, IntuitionBase))
         why = "no saved mode";
     else if (!FindDisplayInfo(saved.smp_DisplayID) ||

@@ -45,8 +45,6 @@ static const struct GfxMode hr_jumper[3] = {
 	{ HRCOLOR_ID, 640, 400, 4, GDF_CHUNKY4 }
 };
 static struct GfxMode hr_modes[3];
-static struct GfxBitMap hr_bm;
-static UBYTE hr_pixtab[256];
 static BOOL hr_alloc, hr_shown;
 
 /* Take the jumper to be m: draw in its format */
@@ -84,17 +82,16 @@ static ULONG hr_GetColor(struct GfxDriver *gd, UWORD n)
 	return c;
 }
 
-static struct BitMap *hr_AllocDisplay(struct GfxDriver *gd,
-    const struct GfxMode *m)
+static BOOL hr_AllocDisplay(struct GfxDriver *gd, const struct GfxMode *m,
+    struct BitMap *bm)
 {
-	struct BitMap *bm = &hr_bm.gb_BitMap;
-	UWORD i;
+	struct GfxBitMap *gbm = (struct GfxBitMap *)bm;
 
 	if (hr_alloc)
-		return NULL;
+		return FALSE;
 	if (!hr_shown) {
 		if (AllocFB(hrowner) != NULL)
-			return NULL;
+			return FALSE;
 		outb(FBHR_CTL, FBHR_BLANK);
 	}
 	if (m != gd->gd_Jumper)
@@ -105,18 +102,15 @@ static struct BitMap *hr_AllocDisplay(struct GfxDriver *gd,
 	bm->Depth = m->gm_Depth;
 	bm->pad = GFXBM_MAGIC;
 	bm->Planes[0] = hr_fbm->fbm_Half[0];
-	hr_bm.gb_Half1 = hr_fbm->fbm_Half[1];
-	hr_bm.gb_Driver = gd;
-	hr_bm.gb_Flags = GBF_DISPLAY;
-	hr_bm.gb_PlaneSize = hr_fbm->fbm_Size;
-	hr_bm.gb_ModeID = m->gm_ModeID;
+	gbm->gb_Half1 = hr_fbm->fbm_Half[1];
+	gbm->gb_Driver = gd;
+	gbm->gb_Flags = GBF_DISPLAY;
+	gbm->gb_PlaneSize = hr_fbm->fbm_Size;
+	gbm->gb_ModeID = m->gm_ModeID;
 	bm->Flags = BMF_DISPLAYABLE;
 	if (m->gm_Format == GDF_PLANAR)
 		bm->Flags |= BMF_STANDARD;
-	for (i = 0; i < 256; i++)
-		hr_pixtab[i] = i & ((1 << bm->Depth) - 1);
-	hr_bm.gb_PixTab = hr_pixtab;
-	return bm;
+	return TRUE;
 }
 
 static void hr_FreeDisplay(struct GfxDriver *gd, struct BitMap *bm)

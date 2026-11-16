@@ -16,7 +16,7 @@ CloseScreen(screen)(struct Screen *) BOOL @Intuition_11
 CloseWindow(window)(struct Window *) void @Intuition_12
 CloseWorkBench()() LONG @Intuition_13
 CurrentTime(seconds,micros)(ULONG *,ULONG *) void @Intuition_14
-DisplayAlert(alertnumber,string,height)(d0,a0,d1)
+DisplayAlert(alertnumber,string,height)(ULONG,UBYTE *,UWORD) BOOL @Intuition_15
 DisplayBeep(screen)(struct Screen *) void @Intuition_16
 DoubleClick(sSeconds,sMicros,cSeconds,cMicros)(ULONG,ULONG,ULONG,ULONG) BOOL @Intuition_17
 DrawBorder(rp,border,leftOffset,topOffset)(struct RastPort *,struct Border *,WORD,WORD) void @Intuition_18
@@ -80,7 +80,7 @@ ActivateWindow(window)(struct Window *) void @Intuition_75
 RefreshWindowFrame(window)(struct Window *) void @Intuition_76
 ActivateGadget(gadget,window,requester)(struct Gadget *,struct Window *,struct Requester *) BOOL @Intuition_77
 NewModifyProp(gadget,window,requester,flags,horizPot,vertPot,horizBody,vertBody,numGad)(struct Gadget *,struct Window *,struct Requester *,UWORD,UWORD,UWORD,UWORD,UWORD,WORD) void @Intuition_78
-QueryOverscan(displayid,rect,oscantype)(a0,a1,d0)
+QueryOverscan(displayid,rect,oscantype)(ULONG,struct Rectangle *,WORD) LONG @Intuition_79
 MoveWindowInFrontOf(window,behindwindow)(struct Window *,struct Window *) void @Intuition_80
 ChangeWindowBox(window,left,top,width,height)(struct Window *,WORD,WORD,WORD,WORD) void @Intuition_81
 SetEditHook(hook)(struct Hook *) struct Hook * @Intuition_82
@@ -97,7 +97,7 @@ PubScreenStatus(scr,StatusFlags)(struct Screen *,UWORD) UWORD @Intuition_92
 ObtainGIRPort(gInfo)(struct GadgetInfo *) struct RastPort * @Intuition_93
 ReleaseGIRPort(rp)(struct RastPort *) void @Intuition_94
 GadgetMouse(gadget,ginfo,mousepoint)(struct Gadget *,struct GadgetInfo *,WORD *) void @Intuition_95
-SetIPrefs(data,length,type)(a0,d0,d1)
+SetIPrefs(data,length,type)(APTR,ULONG,ULONG) ULONG @Intuition_96
 GetDefaultPubScreen(nameBuffer)(UBYTE *) struct Screen * @Intuition_97
 EasyRequestArgs(window,easyStruct,IDCMP_ptr,argList)(struct Window *,struct EasyStruct *,ULONG *,RAWARG) LONG @Intuition_98
 BuildEasyRequestArgs(RefWindow,easyStruct,IDCMP,Args)(struct Window *,struct EasyStruct *,ULONG,RAWARG) struct Window * @Intuition_99
@@ -131,16 +131,16 @@ intuitionPrivate6()()
 intuitionPrivate7()()
 intuitionPrivate8()()
 ##public
-AllocScreenBuffer(screen,bitmap,flags)(a0,a1,d0)
-FreeScreenBuffer(screen,screenbuffer)(a0,a1)
-ChangeScreenBuffer(screen,screenbuffer)(a0,a1)
+AllocScreenBuffer(screen,bitmap,flags)(struct Screen *,struct BitMap *,ULONG) struct ScreenBuffer * @Intuition_128
+FreeScreenBuffer(screen,screenbuffer)(struct Screen *,struct ScreenBuffer *) void @Intuition_129
+ChangeScreenBuffer(screen,screenbuffer)(struct Screen *,struct ScreenBuffer *) ULONG @Intuition_130
 ScreenDepth(screen,flags,reserved)(struct Screen *,ULONG,APTR) void @Intuition_131
 ScreenPosition(screen,flags,x1,y1,x2,y2)(struct Screen *,ULONG,LONG,LONG,LONG,LONG) void @Intuition_132
 ScrollWindowRaster(win,dx,dy,xmin,ymin,xmax,ymax)(struct Window *,WORD,WORD,WORD,WORD,WORD,WORD) void @Intuition_133
 LendMenus(fromwindow,towindow)(struct Window *,struct Window *) void @Intuition_134
 DoGadgetMethodA(gad,win,req,msg)(struct Gadget *,struct Window *,struct Requester *,Msg) IPTR @Intuition_135
 SetWindowPointerA(window,taglist)(struct Window *,struct TagItem *) void @Intuition_136
-TimedDisplayAlert(alertnumber,string,height,time)(d0,a0,d1,a1)
+TimedDisplayAlert(alertnumber,string,height,time)(ULONG,UBYTE *,UWORD,ULONG) BOOL @Intuition_137
 HelpControl(window,flags)(struct Window *,ULONG) void @Intuition_138
 IsWindowVisible(window)(struct Window *) LONG @Intuition_139
 ShowWindow(window,other)(struct Window *,struct Window *) BOOL @Intuition_140

@@ -59,7 +59,7 @@ void change_project(Project p, LINE *new)
 	flush_undo_buf( &p->undo );
 	flush_undo_buf( &p->redo );
 	trash_file(p->the_line);
-	if(p->buffer) FreeVec(p->buffer);
+	trash_text(p->buffer);
 	memset(&p->nbc, 0, 4*sizeof(ULONG));
 	p->edited    = p->the_line = p->show = new;
 	p->top_line  = p->left_pos = 0;
@@ -141,29 +141,37 @@ void reload_project( Project p )
 void insert_file( Project p )
 {
 	LoadFileArgs args;
-	ULONG        length;
 	WORD         err;
 
 	if( ( args.filename = ask_load(Wnd, (AskArgs *)&p->path, GetMenuText(208)) ) )
 	{
-		if( 0 == (err = read_file( &args, &length )) )
+		if( 0 == (err = read_file( &args )) )
 		{
-			LONG pos[3];
+			LONG pos[3], dy = 0, n;
+			ULONG x = p->nbc;
+			LINE *ln = p->edited;
+			TEXTBUF *tb;
+			BOOL ok = TRUE;
 			reg_group_by(&p->undo);
-			if( add_string( &p->undo, p->edited, p->nbc, args.buffer, length, pos) )
-			{
-				/* Just one line concerned? */
-				p->max_lines += pos[2];
-				if( pos[1] == 0 ) REDRAW_CURLINE(p)
+			/* Each buffer goes in where the one before it ended */
+			for(tb = args.buffer; ok && tb; tb = tb->next)
+				if( (ok = add_string( &p->undo, ln, x, TEXTBUF_TEXT(tb), tb->len, pos)) )
+				{
+					for(n = pos[1]; n--; ln = ln->next);
+					dy += pos[1]; x = pos[0];
+				}
 
-				move_cursor(p, pos[0], pos[1]);
-				if( pos[1] > 0 )    redraw_content(p, p->show, gui.topcurs, gui.nbline);
-				if( p->ccp.select ) move_selection(p, p->nbrc, p->nbl);
-				inv_curs(p,TRUE); prop_adj(p);
-			}
-			else ThrowDOSError(Wnd, args.filename);
+			/* Just one line concerned? */
+			p->max_lines += dy;
+			if( dy == 0 ) REDRAW_CURLINE(p)
 
-			if( args.buffer ) FreeVec( args.buffer );
+			move_cursor(p, x, dy);
+			if( dy > 0 )        redraw_content(p, p->show, gui.topcurs, gui.nbline);
+			if( p->ccp.select ) move_selection(p, p->nbrc, p->nbl);
+			inv_curs(p,TRUE); prop_adj(p);
+			if( !ok ) ThrowDOSError(Wnd, args.filename);
+
+			trash_text( args.buffer );
 
 			reg_group_by(&p->undo);
 		}
@@ -406,7 +414,7 @@ char close_project(Project p)
 		flush_undo_buf( &p->undo );
 		flush_undo_buf( &p->redo );
 		if(p->path)   FreeVec(p->path);
-		if(p->buffer) FreeVec(p->buffer);
+		trash_text(p->buffer);
 		Destroy(&first, p);
 		return TRUE;
 	}

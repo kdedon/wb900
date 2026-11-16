@@ -84,6 +84,17 @@ void trash_file(LINE *next)
 	}
 }
 
+/*** Free the buffers of a file read in ***/
+void trash_text(TEXTBUF *tb)
+{
+	TEXTBUF *next;
+	for(; tb; tb=next)
+	{
+		next=tb->next;
+		FreeVec(tb);
+	}
+}
+
 /*** Add a char in a line ***/
 BOOL add_char(JBuf jb, LINE *ln, ULONG pos, UBYTE newchar)
 {

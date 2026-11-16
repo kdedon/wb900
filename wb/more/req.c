@@ -210,7 +210,6 @@ void Make_Goto_Requester(void)
 BOOL Handle_Goto_Requester(LONG *line)
 {
     struct IntuiMessage *msg;
-    struct TagItem t[2];
     IPTR l;
     BOOL killreq = FALSE, rc = FALSE;
 
@@ -236,9 +235,7 @@ BOOL Handle_Goto_Requester(LONG *line)
 
                     case GAD_GOTO_STRING:
                     case GAD_GOTO_OK:
-                        t[0].ti_Tag = GTIN_Number;  t[0].ti_Data = (IPTR)&l;
-                        t[1].ti_Tag = TAG_DONE;
-                        GT_GetGadgetAttrsA(gotogad, gotowin, NULL, t);
+                        GT_GetGadgetAttrs(gotogad, gotowin, NULL, GTIN_Number, &l, TAG_DONE);
                         rc = TRUE;
                         break;
 
@@ -301,7 +298,6 @@ void Make_Find_Requester(void)
 WORD Handle_Find_Requester(char **text)
 {
     struct IntuiMessage *msg;
-    struct TagItem t[2];
     char *sp;
     BOOL killreq = FALSE;
     WORD rc = 0;
@@ -328,9 +324,7 @@ WORD Handle_Find_Requester(char **text)
 
                     case GAD_FIND_TEXT:
                     case GAD_FIND_OK:
-                        t[0].ti_Tag = GTST_String;  t[0].ti_Data = (IPTR)&sp;
-                        t[1].ti_Tag = TAG_DONE;
-                        GT_GetGadgetAttrsA(findgad, findwin, NULL, t);
+                        GT_GetGadgetAttrs(findgad, findwin, NULL, GTST_String, &sp, TAG_DONE);
                         strncpy(searchtext, sp, sizeof(searchtext) - 1);
 
                         rc = SEARCH_NEW;

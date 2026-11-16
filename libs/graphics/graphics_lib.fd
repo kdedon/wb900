@@ -168,8 +168,8 @@ ChangeVPBitMap(vp,bm,db)(struct ViewPort *,struct BitMap *,struct DBufInfo *) vo
 ReleasePen(cm,n)(struct ColorMap *,ULONG) void @Graphics_158
 ObtainPen(cm,n,r,g,b,flags)(struct ColorMap *,ULONG,ULONG,ULONG,ULONG,ULONG) LONG @Graphics_159
 GetBitMapAttr(bitmap,attribute)(struct BitMap *,ULONG) IPTR @Graphics_160
-AllocDBufInfo(vp)(a0)
-FreeDBufInfo(db)(a1)
+AllocDBufInfo(vp)(struct ViewPort *) struct DBufInfo * @Graphics_161
+FreeDBufInfo(db)(struct DBufInfo *) void @Graphics_162
 SetOutlinePen(rp,pen)(struct RastPort *,ULONG) ULONG @Graphics_163
 SetWriteMask(rp,mask)(struct RastPort *,ULONG) ULONG @Graphics_164
 SetMaxPen(rp,maxpen)(a0,d0)
