@@ -9,6 +9,8 @@
  * per mode, the time to open the display, draw the pattern and clear it,
  * the field rate read from the chip's vertical blank (status bit 5), and
  * each turn's time: a register write once both bitmaps are in VRAM.
+ * Each bitmap shown is read back through R31 from where the registers
+ * fetch it and summed against the shadow.
  * Without an LC card it only says so.
  */
 #include <exec/exec.h>
@@ -30,6 +32,10 @@ struct Device *TimerBase;
 APTR FrameBufBase;
 
 extern int inb();
+int lcb_wr(UWORD reg, UWORD val);
+int lcb_ready(void);
+int lcb_rd(UWORD reg);
+int lcb_read(UBYTE *dst, UWORD n);
 
 static int fails;
 
@@ -80,6 +86,70 @@ static ULONG framerate(void)
 	t = us();
 	Permit();
 	return n > 30 ? 30L * 10000000L / (t / 10) : 0;
+}
+
+/* A sum that shifted or swapped bytes change */
+static UWORD sum(UWORD s, const UBYTE *p, UWORD n)
+{
+	for (; n > 0; n--)
+		s = (s << 1 | s >> 15) + *p++;
+	return s;
+}
+
+/*
+ * The lines the registers show, read back a line at a time, against bm:
+ * rows above VSYNC (shown rows count from 1), interlaced fields one after
+ * the other.  The update address is put back, as the port layer keeps it.
+ */
+static void vram(struct BitMap *bm, char *name, char *what)
+{
+	static UBYTE back[80];
+	UWORD ua, a, start, bpr, rows, lines, even, n, k, vs = 0, ss;
+	static const UBYTE regs[] = { 1, 6, 7, 8, 9, 12, 13, 18, 19, 27 };
+	UBYTE r[28];
+	BOOL lace;
+
+	Forbid();
+	Disable();
+	lcb_ready();
+	for (n = 0; n < sizeof(regs); n++)
+		r[regs[n]] = lcb_rd(regs[n]);
+	ua = r[18] << 8 | r[19];
+	Enable();
+	start = r[12] << 8 | r[13];
+	bpr = r[1] < 80 ? r[1] : 80;
+	rows = r[7] != 0 && r[7] <= r[6] ? r[7] - 1 : r[6];
+	lines = rows * ((r[9] & 0x1F) + 1);
+	even = r[6] * ((r[9] & 0x1F) + 1) / 2;
+	lace = (r[8] & 3) == 3;
+	for (n = 0; n < lines; n++) {
+		a = lace ? (n & 1 ? even + n / 2 : n / 2) : n;
+		a = start + a * (r[1] + r[27]);
+		/* 40 bytes at a time, about 1 ms with interrupts off */
+		for (k = 0; k < bpr; k += 40) {
+			Disable();
+			if (k == 0) {
+				lcb_wr(18, a >> 8);
+				lcb_wr(19, a & 0xFF);
+			}
+			lcb_read(back + k, bpr - k < 40 ? bpr - k : 40);
+			lcb_ready();
+			Enable();
+		}
+		vs = sum(vs, back, bpr);
+	}
+	Disable();
+	lcb_wr(18, ua >> 8);
+	lcb_wr(19, ua & 0xFF);
+	lcb_ready();
+	Enable();
+	Permit();
+	ss = sum(0, bm->Planes[0], bm->BytesPerRow * bm->Rows);
+	xKPrintf("lcmodes: %s: %s: VRAM %u x %u sum %04x, shadow %u x %u"
+	    " sum %04x\n", name, what, bpr, lines, vs, bm->BytesPerRow,
+	    bm->Rows, ss);
+	check(bpr == bm->BytesPerRow && lines == bm->Rows && vs == ss,
+	    "VRAM is not the shadow");
 }
 
 /* Pens 0 and 1: Workbench 1.x blue and white */
@@ -207,6 +277,7 @@ static void turns(ULONG id, struct BitMap *bm, char *name)
 		t1 = turn(1);
 		t2 = turn(0);
 		t3 = turn(1);
+		vram(b2, name, "box");
 		xKPrintf("lcmodes: %s: turns %ld us, %ld us, %ld us\n", name, t1,
 		    t2, t3);
 		turn(0);
@@ -262,6 +333,7 @@ static void mode(ULONG id, struct TextFont *tf)
 	start();
 	pattern(&rp, w, h, &di.Resolution, (char *)ni.Name);
 	tdraw = us();
+	vram(bm, (char *)ni.Name, "pattern");
 	hz = framerate();
 	xKPrintf("lcmodes: %s: %d x %d, ticks %d x %d, open %ld us, pattern"
 	    " %ld us, %ld.%02ld Hz\n", ni.Name, w, h, di.Resolution.x,

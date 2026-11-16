@@ -225,11 +225,16 @@ void lcm_watch(BOOL on)
 BOOL lcm_frame(struct LCMFrame *f)
 {
 	UWORD cth = lcm_reg[22] >> 4, dbl = (lcm_reg[25] >> 4) & 1;
+	UWORD rows = lcm_reg[6];
+
+	/* shown rows count from 1; VSYNC from row R7 blanks the rest */
+	if (lcm_reg[7] != 0 && lcm_reg[7] <= rows)
+		rows = lcm_reg[7] - 1;
 
 	f->lf_Start = lcm_reg[12] << 8 | lcm_reg[13];
 	f->lf_Width = lcm_reg[1] * 8;
 	f->lf_Stride = lcm_reg[1] + lcm_reg[27];
-	f->lf_Lines = lcm_reg[6] * ((lcm_reg[9] & 0x1F) + 1);
+	f->lf_Lines = rows * ((lcm_reg[9] & 0x1F) + 1);
 	f->lf_Dots = dbl + 1;
 	f->lf_Total = (lcm_reg[4] + 1) * ((lcm_reg[9] & 0x1F) + 1) +
 	    (lcm_reg[5] & 0x1F);

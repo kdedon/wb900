@@ -253,7 +253,7 @@ unsigned long f(int c, short a, short b, unsigned short w)
 
 18's MULT is missed when the widened operand is a `?:`, with or without a cast to `short` inside: 453 clocks against 164 for `(unsigned long)a * w`. A `?:` nested in a sum, `(unsigned long)(a + (c ? b : 0)) * w`, gets MULT (220). Not blocking: graphics.library puts the `?:` outside the products. Expected: MULT when both arms are 16-bit.
 
-## 21. cc1 internal error EDFA69 on a `?:` of a signed quotient (opened 2026-11-16)
+## 21. cc1 internal error EDFA69 on a `?:` of a signed quotient (opened 2026-11-16; landed in toolchain 4dd106d)
 
 ```c
 int f(unsigned h, int dy, int u) { unsigned k; k = h < dy / u ? h : dy / u; return k; }	/* cc1: Internal compiler error: : EDFA69 */

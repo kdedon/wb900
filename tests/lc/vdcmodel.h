@@ -40,7 +40,7 @@ struct LCMFrame {
 	UWORD	lf_Start;	/* R12/R13 */
 	UWORD	lf_Width;	/* pixels a line: R1 columns of 8 */
 	UWORD	lf_Stride;	/* bytes from a line to the next: R1 + R27 */
-	UWORD	lf_Lines;	/* R6 rows of R9 + 1 lines */
+	UWORD	lf_Lines;	/* R6 rows of R9 + 1 lines, those above VSYNC */
 	UWORD	lf_Dots;	/* dots a pixel: 2 at double width (R25 bit 4) */
 	UWORD	lf_Total;	/* lines a frame: R4 + 1 rows, plus R5 */
 	ULONG	lf_LineNs;	/* time of a line, at 16 MHz dots */

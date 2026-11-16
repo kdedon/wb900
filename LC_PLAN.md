@@ -302,8 +302,8 @@ Expect about 11 clocks an instruction, so roughly: clear 45 ms, scroll 55 ms, 40
 | `LCLORESPAL_ID` 0x00110300 | LC:320x256 | 44 x 41 | 40 x 256 = 10240 B | 6 of 0x2800 | as 320x200 | 26 00 20 23 | 64 µs x 312, 50.08 Hz |
 | `LCHIRESLACE_ID` 0x00110004 | LC:640x400 Interlace | 22 x 26 | 80 x 400 = 32000 B | 2 of 0x7D00 | as 640x200 | 1F 0D 19 1D | 63.5 µs x 525, 59.99 fields |
 | `LCLORESLACE_ID` 0x00110104 | LC:320x400 Interlace | 44 x 26 | 40 x 400 = 16000 B | 4 of 0x3F00 | as 320x200 | 1F 0D 19 1D | 64 µs x 525, 59.52 fields |
-| `LCHIRESLACE480_ID` 0x00110404 | LC:640x480 Interlace | 22 x 22 | 80 x 480 = 38400 B | 1 | as 640x200 | 1F 0D 1E 1E | 63.5 µs x 525, 59.99 fields |
-| `LCLORESLACE480_ID` 0x00110504 | LC:320x480 Interlace | 44 x 22 | 40 x 480 = 19200 B | 3 of 0x4B00 | as 320x200 | 1F 0D 1E 1E | 64 µs x 525, 59.52 fields |
+| `LCHIRESLACE480_ID` 0x00110404 | LC:640x480 Interlace | 22 x 22 | 80 x 480 = 38400 B | 1 | as 640x200 | 1F 0D 1E 1F | 63.5 µs x 525, 59.99 fields |
+| `LCLORESLACE480_ID` 0x00110504 | LC:320x480 Interlace | 44 x 22 | 40 x 480 = 19200 B | 3 of 0x4B00 | as 320x200 | 1F 0D 1E 1F | 64 µs x 525, 59.52 fields |
 
 - **Lores:** R25 bit 4 halves the character clock, so a 40-byte row shows 320 pixels of 2 dots. The shadow is 320 wide and VRAM has the same layout: no doubling in software. R22 = 0x89 makes a column 8 doubled pixels, as the C128's 40-column mode does.
 - **Ticks:** a pixel on a 4:3 screen with the active lines filling its height, 22 for 640 across (Amiga hires is 22 x 44). `GfxMode` gained `gm_ResX/gm_ResY` and `gm_Name`; HR keeps the computed ticks and names. The interlaced modes set LACE (bit 2) in the ModeID, and `DIPF_IS_LACE`.
@@ -313,18 +313,25 @@ Expect about 11 clocks an instruction, so roughly: clear 45 ms, scroll 55 ms, 40
   - *640x512 interlaced (PAL).* 40960 B fits; not asked for.
   - *Attribute colour.* 8x8 cells at +2000 B (bitmap) are possible, but intuition draws 3-4 pens per title bar and gadget, so cells clash. Not useful for the Workbench.
 - **Verified on the port model:** `lcgfx` checks the list, names, ticks, `DIPF_IS_LACE` and `BestModeIDA()`, and draws its cases at 640x200, 640x400 and 640x480; `lcwb` opens the Workbench at 640x200 and a screen in each other mode, opens, moves, sizes and closes a window (all but the last three interlaced modes) and moves the pointer; after each step the bitmap the model shows equals the shadow, and `lcm_frame()` reads from the registers the bitmap they show (start, width, stride, lines, fields, dot width, field rate). The model reads unused register bits as 1, as the chip does. 50 Hz and lores are untested on the board.
-- **Board:** `lcmodes.bin` shows each mode for 4 s (border, 8-pixel ticks, a square by the ticks, checkerboard and stripes, the name in topaz 8), then a second bitmap of the mode, black on white with a box, in turns with the first, 1 s each. It prints open, pattern, clear and turn times and the field rate measured from status bit 5. `make LCMODE=640x400 wbboot-lc.bin` boots the Workbench in that mode through a saved ENV:Sys/screenmode.prefs; Shift at boot ignores it.
+- **Board:** `lcmodes.bin` shows each mode for 4 s (border, 8-pixel ticks, a square by the ticks, checkerboard and stripes, the name in topaz 8), then a second bitmap of the mode, black on white with a box, in turns with the first, 1 s each. It prints open, pattern, clear and turn times and the field rate measured from status bit 5. Each bitmap shown is read back through R31 where the registers fetch it (the lines above VSYNC, fields as the core weaves them) and its sum printed beside the shadow's; a difference fails. `make LCMODE=640x400 wbboot-lc.bin` boots the Workbench in that mode through a saved ENV:Sys/screenmode.prefs; Shift at boot ignores it.
 - **lcbench:** every setup reads the status before `Enable()`, so no INTR is left pending. It prints R1, R6, R24, R25, R28 and R36 read back, and checks that the R30 copies and `lcv_copy` wrote the source bytes. The board's copy timing matched a fill. The driver sets R24 bit 7 before every copy, and the model copies only with bit 7 set and is checked byte by byte, so the board run of these checks decides it.
 
 ## Interlace (2026-11-16)
 
 Core C900_e005332 supports interlaced bitmaps: with R8 = 3 and R25 bit 7, R12/R13 load once a frame, at the even field, and the odd field fetches on from where the even field ended. The core flags the odd field to the scaler, which weaves.
 
-- **Registers:** R8 = 3, R9 = 0x0F (16-line rows, 8 a field), R23 = 0x10, R4 = 0x1F and R5 = 0x0D (32 rows and 13 half lines: 262.5 lines a field), R6 = 25 or 30 rows. VSYNC at row 29 (R7 = 0x1D) for 400 lines, as the core's bench; right below the picture (R7 = 0x1E) for 480, leaving 22.5 lines a field of blanking. R9 = 15 splits the fields exactly; O-35 (Bowen's odd R9) does not apply.
+- **Registers:** R8 = 3, R9 = 0x0F (16-line rows, 8 a field), R23 = 0x10, R4 = 0x1F and R5 = 0x0D (32 rows and 13 half lines: 262.5 lines a field), R6 = 25 or 30 rows. VSYNC at row 29 (R7 = 0x1D) for 400 lines, as the core's bench; right below the picture (R7 = 0x1F) for 480, leaving 22.5 lines a field of blanking. The core counts shown rows from 1, so R7 = R6 starts VSYNC at the last shown row; see [480 lines](#480-lines-2026-11-16). R9 = 15 splits the fields exactly; O-35 (Bowen's odd R9) does not apply.
 - **Layout:** the shadow stays top to bottom. Row y is at slot + (y odd ? rows / 2 * bpr : 0) + (y / 2) * bpr. The port layer keeps the slot's base and the VRAM step from an even row and from an odd row (`lp_Base`, `lp_Step`); a progressive mode has both steps bpr. Dirty marks, flushes, fills and copies all go by shadow row, the layer turning rows into VRAM addresses.
 - **Fills:** a fill of whole rows is a block a field: rows y, y + 2, ... are contiguous in VRAM.
 - **Copies:** whole rows moved by an even number of lines stay in their field, so they copy as a block a field (bottom up in blocks when moving down, as before). An odd number of lines crosses fields; the rows chain even, odd, even..., so no two blocks can do it without scratch, and they copy a row at a time in shadow order, each a seek, R32/R33 and R30 (scroll up 1 at 640x400: 82 ms against 65 ms for 2 lines). Partial rows go a row at a time in either case, as at 200 lines.
 - **Measured on the model (lcgfx, 640x400, at the plan's rates):** clear 33 ms; scroll by 2 lines, 400 rows, 65 ms; by 1 or 3 lines 83 ms; 40-byte window by 1 line 48 ms; text and a line over all rows 138 ms.
+
+## 480 lines (2026-11-16)
+
+Board, C900_e005332: 320x480 was garbled (640x480 not caught). Cause: R7 = 0x1E with R6 = 30. The core counts shown rows from 1 (row 0 holds the R5 adjust), so VSYNC started at the last shown row, over field lines 232-239.
+- MiSTer's video path blanks under VSYNC, and the odd field's VSYNC rises mid-line, so the scaler saw a short line (about 236 pixels) and restarted its frame mid-line: the capture's right part and odd lines came from the wrong offsets.
+- **Model:** `lcm_frame()` had no VSYNC; `lf_Lines` now counts only the rows above it (R7 <= R6 ends the picture at row R7 - 1), and lcgfx and lcwb failed at 464 lines.
+- **Fix:** R7 = 0x1F, VSYNC in row 31, below the picture under either counting. Driver bug, not the core's.
 
 ## Screen switches (2026-11-16)
 

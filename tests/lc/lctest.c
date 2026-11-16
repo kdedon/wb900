@@ -140,16 +140,16 @@ BOOL lct_mode(struct BitMap *bm, UWORD hz)
 	    " ns, %ld.%02ld Hz\n", test, f.lf_Width, f.lf_Lines,
 	    f.lf_Lace ? " interlaced" : "", f.lf_Dots, f.lf_Stride, f.lf_Total,
 	    f.lf_LineNs, mhz / 100, mhz % 100);
-	if (f.lf_Lace && f.lf_Even * 2 != f.lf_Lines) {
-		xKPrintf("FAIL %s: fields of %u and %u lines\n", test, f.lf_Even,
-		    f.lf_Lines - f.lf_Even);
-		return FALSE;
-	}
 	if (f.lf_Start != 0 || f.lf_Width != bm->BytesPerRow * 8 ||
 	    f.lf_Stride != bm->BytesPerRow || f.lf_Lines != bm->Rows ||
 	    f.lf_Width * f.lf_Dots != 640 || mhz / 100 + 1 < hz ||
 	    mhz / 100 > hz) {
 		xKPrintf("FAIL %s: the registers show another bitmap\n", test);
+		return FALSE;
+	}
+	if (f.lf_Lace && f.lf_Even * 2 != f.lf_Lines) {
+		xKPrintf("FAIL %s: fields of %u and %u lines\n", test, f.lf_Even,
+		    f.lf_Lines - f.lf_Even);
 		return FALSE;
 	}
 	return TRUE;

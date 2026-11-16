@@ -117,12 +117,13 @@ static const UBYTE lc_hnum[7] = { 0, 1, 2, 22, 25, 34, 35 };
  * lines, 50 Hz); vsync 4 rows before the top.  Interlaced, rows of 16
  * lines count 8 a field: 25 or 30 rows of 32 and 13 half lines (525
  * lines, 60 fields a second); vsync at row 29, or right below 480.
+ * Shown rows count from 1, so R7 = R6 puts vsync over the last one.
  */
 static const UBYTE lc_vregs[4][4] = {
 	{ 0x20, 0x00, 0x19, 0x1D },
 	{ 0x26, 0x00, 0x20, 0x23 },
 	{ 0x1F, 0x0D, 0x19, 0x1D },
-	{ 0x1F, 0x0D, 0x1E, 0x1E }
+	{ 0x1F, 0x0D, 0x1E, 0x1F }
 };
 
 /* The colours of RGBI 0-15 (R 8, G 4, B 2, I 1) */

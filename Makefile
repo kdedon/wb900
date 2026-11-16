@@ -190,7 +190,7 @@ $(OUT)/lcmode.prefs: $(TOP)/tools/screenmodeprefs.py FORCE
 	@cmp -s $@.new $@ || mv $@.new $@; rm -f $@.new
 FORCE:
 # lcmodes: each LC mode on the board for 4 seconds, timed
-$(OUT)/progs/lcmodes: $(ALIB)
+$(OUT)/progs/lcmodes: $(OBJ)/lcm/bench.o $(ALIB)
 intuition_LINK = $(ALIB)
 intuition_SRC = $(TOP)/lib
 $(eval $(call LIBRARY,intuition,Intuition,it))
