@@ -67,7 +67,7 @@ GFXDRIVERS = hr lc
 DEVS	= input console
 TESTS	= $(basename $(notdir $(wildcard $(TOP)/tests/*.c)))
 # The tests that open intuition.library
-ITESTS	= intuition idisplay wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin asl more edit editbig expunge wbmulti
+ITESTS	= intuition idisplay gpalert wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin asl more edit editbig expunge wbmulti
 # The demos also made as NAME-1x.bin, in the Workbench 1.x style
 STYLED	= wbdemo wbinter gtdemo wbboot
 
@@ -234,7 +234,7 @@ $(OUT)/progs/%: $(OBJ)/startup.o $(OBJ)/t_%.o $(OBJ)/amiga.o $(OBJ)/portio.o $(O
 	$(LD) -r -o $(OBJ)/p_$*.r $^
 	$(MKHUNK) --entry=start $@ $(OBJ)/p_$*.r
 # The tests that link amiga.lib
-ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin asl expunge wbmulti screenmode diskfont
+ALIBTESTS = intuition gadtools gtdemo console conhandler shellwin asl expunge wbmulti screenmode diskfont crashreq crashreqlc
 $(patsubst %,$(OUT)/progs/%,$(ALIBTESTS)): $(ALIB)
 # amiga.lib's commodities calls
 CXLIB	= $(patsubst $(TOP)/lib/%.c,$(OBJ)/lib/%.o,$(wildcard $(TOP)/lib/cx/*.c))
@@ -416,10 +416,24 @@ $(OUT)/shellwin.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)
 wbmulti_PUT = $(shellwin_PUT)
 $(OUT)/wbmulti.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK))) \
 	$(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS) $(PREFSDEPS) $(FONTDEPS)
+# The crash requester's stack, in topaz and SYS:Fonts' fonts, on HR and LC
+ITESTS	+= crashreq crashreqlc
+crashreq_PUT = $(FONTPUT)
+crashreqlc_PUT = $(FONTPUT)
+$(OUT)/crashreq.bin $(OUT)/crashreqlc.bin: $(FONTDEPS)
+$(OBJ)/t_crashreqlc.o: $(TOP)/tests/crashreq.c
+$(OUT)/progs/crashreqlc: $(LCTEST)
 # diskfont's test: the fonts
 ITESTS	+= diskfont
 diskfont_PUT = $(FONTPUT)
 $(OUT)/diskfont.bin: $(FONTDEPS)
+# The board check, on a long-name disk with the fonts
+ITESTS	+= boardchk
+LNAMES	+= boardchk
+boardchk_PUT = $(FONTPUT)
+$(OUT)/boardchk.bin: $(FONTDEPS)
+.PHONY: boardchk.bin
+boardchk.bin: $(OUT)/boardchk.bin
 
 BINDEPS	= $(patsubst %,$(OUT)/libs/%.library,$(LIBS)) $(patsubst %,$(OUT)/libs/%.gfxdriver,$(GFXDRIVERS)) $(patsubst %,$(OUT)/devs/%.device,$(DEVS)) $(OUT)/l/con-handler $(EXEC900_OUT)/exec900.sys
 $(OUT)/%.bin: $(OUT)/progs/% $(BINDEPS)

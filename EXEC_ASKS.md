@@ -43,6 +43,13 @@ Opened 2026-11-14; status from exec816-0f and the c900/exec900 log. The user app
 | 36 | Cheaper kernel console output (below) | open | — |
 | 35 | The boot assign `FONTS:` → `SYS:Fonts` (below) | **Landed** 9f4f7561: dos.library assigns FONTS: to SYS:Fonts at boot (DH1: on --lnames disks) | done |
 | 37 | gameport.device on the C emulator, so `GetGPButtons` can be tested (below) | **Fixed in the emulator** (dcfe4c0): ports 0x0400-0x0407 decode like the core under plain `--hr` | done |
+| 38 | runtest.sh: `MOUSE:` on the emulator (below) | open | — |
+
+### 38. MOUSE: on the emulator
+
+The emulator now models the HR mouse under `--hr`, but runtest.sh ignores `MOUSE:` there, so a test spells each event as its own `--mouse=T:DX:DY:B` word in `EMUFLAGS` (B: 4 left, 2 middle, 1 right), and `--hr` too (wb900 `tests/gpalert.c`).
+
+Asked for: runtest.sh to turn `MOUSE: TICK:DX:DY[:LRM],...` into `--hr` and one `--mouse` per event, as `EMUKEYS` does for `--key`.
 
 ### 37. gameport.device on the C emulator
 

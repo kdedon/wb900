@@ -1496,8 +1496,6 @@ AROS_UFH2(struct InputEvent *, IntuiInputHandler,
 
     ObtainSemaphore(&GetPrivIBase(IntuitionBase)->InputHandlerLock);
 
-    if (!iihdata->InputDeviceTask) iihdata->InputDeviceTask = FindTask(NULL);
-
     /* Then free generated InputEvents done in the previous round */
 
     FreeGeneratedInputEvents(iihdata);

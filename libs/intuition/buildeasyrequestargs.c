@@ -85,6 +85,48 @@ static struct Gadget *buildeasyreq_makegadgets(struct IntReqDims *dims,
                                 struct IntuitionBase *IntuitionBase);
 static struct Gadget *FindGadgetByID(struct Gadget *thisgadget, UWORD GadgetID);
 
+/*
+ * The requester's window on scr; this and the scroller's setting are out
+ * of BuildEasyRequestArgs' frame, as the body and gadgets render below it.
+ */
+static struct Window *buildeasyreq_openwindow(struct IntReqDims *dims,
+                                              struct Screen *scr, BOOL pub,
+                                              CONST_STRPTR reqtitle, ULONG idcmp,
+                                              struct IntuitionBase *IntuitionBase)
+{
+    struct TagItem win_tags[] =
+    {
+        { WA_Width                                    , dims->width                                                  },
+        { WA_Height                                   , dims->height                                                 },
+        { WA_Left                                     , - scr->LeftEdge + (scr->ViewPort.DWidth/2) - (dims->width/2) },
+        { WA_Top                                      , - scr->TopEdge + (scr->ViewPort.DHeight/2) - (dims->height/2)},
+        { WA_IDCMP                                    , idcmp                                                        },
+        { WA_Title                                    , (IPTR)reqtitle                                               },
+        { (pub ? WA_PubScreen : WA_CustomScreen)      , (IPTR)scr                                                    },
+        { WA_Flags                                    , WFLG_DRAGBAR     |
+                                                        WFLG_DEPTHGADGET |
+                                                        WFLG_ACTIVATE    |
+                                                        WFLG_RMBTRAP   /*|
+                                                        WFLG_SIMPLE_REFRESH*/                                        },
+        {TAG_DONE                                                                                                    }
+    };
+
+    return OpenWindowTagList(NULL, win_tags);
+}
+
+static void buildeasyreq_setscroller(struct Window *req, struct Gadget *g,
+                                     struct IntReqDims *dims,
+                                     struct IntuitionBase *IntuitionBase)
+{
+    struct TagItem proptags[4];
+
+    proptags[0].ti_Tag = PGA_Total;   proptags[0].ti_Data = dims->textheight;
+    proptags[1].ti_Tag = PGA_Visible; proptags[1].ti_Data = req->GZZHeight;
+    proptags[2].ti_Tag = PGA_Top;     proptags[2].ti_Data = 0;
+    proptags[3].ti_Tag = TAG_END;
+    SetGadgetAttrsA(g, req, NULL, proptags);
+}
+
 const struct TagItem mapproptop[] = {
     {PGA_Top, ICSPECIAL_CODE},
     {TAG_END, }
@@ -203,61 +245,32 @@ const struct TagItem mapproptop[] = {
                                                requserdata->RawBody, gadgetlabels, IntuitionBase))
                 {
 
-                    struct TextAttr *reqfont = NULL;
-                    struct TextAttr defreqfont = {
-                        "topaz.font",
-                        scr->RastPort.Font->tf_YSize,
-                        scr->RastPort.Font->tf_Style,
-                        0
-                    };
-                    reqfont = GetPrivIBase(IntuitionBase)->ReqFont;
+                    struct TextAttr *reqfont = GetPrivIBase(IntuitionBase)->ReqFont;
+
                     requserdata->ReqBody = requester_makebodyplain(&requserdata->ReqDims, requserdata->RawBody, reqfont);
 
                     gadgets = buildeasyreq_makegadgets(&requserdata->ReqDims, gadgetlabels, scr, &reqidcmp, IntuitionBase);
                     if (gadgets)
                     {
 
-                        struct TagItem win_tags[] =
-                        {
-                            { WA_Width                                    , requserdata->ReqDims.width                                                  },
-                            { WA_Height                                   , requserdata->ReqDims.height                                                 },
-                            { WA_Left                                     , - scr->LeftEdge + (scr->ViewPort.DWidth/2) - (requserdata->ReqDims.width/2) },
-                            { WA_Top                                      , - scr->TopEdge + (scr->ViewPort.DHeight/2) - (requserdata->ReqDims.height/2)},
-                            { WA_IDCMP                                    , reqidcmp | (IDCMP & ~IDCMP_VANILLAKEY)                      },
-                            { WA_Gadgets                                  , (IPTR)gadgets                                               },
-                            { WA_Title                                    , (IPTR)reqtitle                                              },
-                            { (lockedscr ? WA_PubScreen : WA_CustomScreen), (IPTR)scr                                                   },
-                            { WA_Flags                                    , WFLG_DRAGBAR     |
-                                                                            WFLG_DEPTHGADGET |
-                                                                            WFLG_ACTIVATE    |
-                                                                            WFLG_RMBTRAP   /*|
-                                                                            WFLG_SIMPLE_REFRESH*/                                       },
-                            {TAG_DONE                                                                                                   }
-                        };
-
-                        req = OpenWindowTagList(NULL, win_tags);
+                        req = buildeasyreq_openwindow(&requserdata->ReqDims, scr,
+                                                      lockedscr != NULL, reqtitle,
+                                                      reqidcmp | (IDCMP & ~IDCMP_VANILLAKEY),
+                                                      IntuitionBase);
 
                         if (req)
                         {
                             if (lockedscr) UnlockPubScreen(NULL, lockedscr);
 
+                            /* Added here, not by OpenWindow, they render on less stack */
+                            AddGList(req, gadgets, -1, -1, NULL);
                             req->UserData = (BYTE *)requserdata;
                             requserdata->IDCMP = IDCMP;
                             requserdata->GadgetLabels = gadgetlabels;
                             requserdata->Gadgets = gadgets;
 
                             if (gadgets = FindGadgetByID(req->FirstGadget, (UWORD)-3))
-                            {
-
-                                struct TagItem proptags[4];
-
-                                proptags[0].ti_Tag = PGA_Total;   proptags[0].ti_Data = requserdata->ReqDims.textheight;
-                                proptags[1].ti_Tag = PGA_Visible; proptags[1].ti_Data = req->GZZHeight;
-                                proptags[2].ti_Tag = PGA_Top;     proptags[2].ti_Data = 0;
-                                proptags[3].ti_Tag = TAG_END;
-                                SetGadgetAttrsA(gadgets, req, NULL, proptags);
-                            }
-                            gadgets = requserdata->Gadgets;
+                                buildeasyreq_setscroller(req, gadgets, &requserdata->ReqDims, IntuitionBase);
                             buildreq_draw(&requserdata->ReqDims, requserdata->ReqBody,
                                      req, scr, requserdata->Gadgets, IntuitionBase);
 

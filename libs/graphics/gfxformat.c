@@ -39,16 +39,15 @@ void gfx_InitFormats(void)
         nib8[k] = ((ULONG)nib4[k >> 4] << 16) | nib4[k & 15];
 }
 
-WORD gfx_Planes(struct BitMap *bm, const struct GfxPens *p,
+/* Plane n of those of bm that p draws into, in *pl, and the bits a pixel; FALSE past the last */
+static BOOL gfx_Plane(struct BitMap *bm, const struct GfxPens *p, WORD n,
     struct GfxPlane *pl, UWORD *bpp)
 {
-    register struct GfxPlane *q = pl;
     register PLANEPTR *pp = bm->Planes;
     register UWORD i;
     UBYTE *hi = NULL;
     UBYTE m = p->gp_Mask, a = p->gp_APen, b = p->gp_BPen;
     UWORD depth = bm->Depth;
-    WORD np = 0;
     BOOL chunky = FALSE;
 
     if (IS_GFXBM(bm)) {
@@ -57,29 +56,38 @@ WORD gfx_Planes(struct BitMap *bm, const struct GfxPens *p,
     }
     if (chunky) {
         *bpp = 4;
-        if ((m & 15) == 0)
-            return 0;
-        q->pl_Lo = *pp;
-        q->pl_Hi = hi;
-        q->pl_F = (a & 15) * 0x1111;
-        q->pl_B = (b & 15) * 0x1111;
-        q->pl_M = (m & 15) * 0x1111;
-        return 1;
+        if (n > 0 || (m & 15) == 0)
+            return FALSE;
+        pl->pl_Lo = *pp;
+        pl->pl_Hi = hi;
+        pl->pl_F = (a & 15) * 0x1111;
+        pl->pl_B = (b & 15) * 0x1111;
+        pl->pl_M = (m & 15) * 0x1111;
+        return TRUE;
     }
     *bpp = 1;
     if (depth > 8)
         depth = 8;
     for (i = 0; i < depth; i++, pp++, a >>= 1, b >>= 1, m >>= 1) {
-        if (!(m & 1) || *pp == NULL || *pp == (PLANEPTR)-1)
+        if (!(m & 1) || *pp == NULL || *pp == (PLANEPTR)-1 || n-- > 0)
             continue;
-        q->pl_Lo = *pp;
-        q->pl_Hi = i == 0 ? hi : NULL;
-        q->pl_F = (a & 1) ? 0xFFFF : 0;
-        q->pl_B = (b & 1) ? 0xFFFF : 0;
-        q->pl_M = 0xFFFF;
-        q++;
-        np++;
+        pl->pl_Lo = *pp;
+        pl->pl_Hi = i == 0 ? hi : NULL;
+        pl->pl_F = (a & 1) ? 0xFFFF : 0;
+        pl->pl_B = (b & 1) ? 0xFFFF : 0;
+        pl->pl_M = 0xFFFF;
+        return TRUE;
     }
+    return FALSE;
+}
+
+WORD gfx_Planes(struct BitMap *bm, const struct GfxPens *p,
+    struct GfxPlane *pl, UWORD *bpp)
+{
+    WORD np = 0;
+
+    while (gfx_Plane(bm, p, np, &pl[np], bpp))
+        np++;
     return np;
 }
 
@@ -405,18 +413,18 @@ static void tmplrows(struct tmpljob *tj, UWORD *d, UWORD rows,
 void gfx_Template(struct BitMap *bm, const struct Rectangle *r,
     const UBYTE *src, UWORD srcx, UWORD srcmod, const struct GfxPens *p)
 {
-    struct GfxPlane pl[8];
+    struct GfxPlane pl;
     struct tmpljob tj;
     UWORD bpp, ppw, bpr = bm->BytesPerRow;
     UWORD qlen = ((srcx + (r->MaxX - r->MinX)) >> 3) + 1;
     UWORD w0, n, n1, lm, rm, c, cnt, rows, k, mode;
     UBYTE dm = p->gp_DrMd;
-    WORD np, i, y, bx0, bx1, tx, tb;
+    WORD i, y, bx0, bx1, tx, tb;
     const UBYTE *s;
     ULONG o, oc;
 
-    np = gfx_Planes(bm, p, pl, &bpp);
-    if (np == 0)
+    /* One plane at a time, as the blits below need the stack */
+    if (!gfx_Plane(bm, p, 0, &pl, &bpp))
         return;
     ppw = 16 / bpp;
     bx0 = r->MinX * bpp;
@@ -437,16 +445,16 @@ void gfx_Template(struct BitMap *bm, const struct Rectangle *r,
     tj.tj_SrcMod = srcmod;
     /* template bit of the first pixel of word w0 */
     tx = srcx - (r->MinX & (ppw - 1));
-    for (i = 0; i < np; i++) {
-        tj.tj_F = pl[i].pl_F;
-        tj.tj_B = pl[i].pl_B;
+    for (i = 0; i == 0 || gfx_Plane(bm, p, i, &pl, &bpp); i++) {
+        tj.tj_F = pl.pl_F;
+        tj.tj_B = pl.pl_B;
         if (mode == T_JAM2) {
             /* ((f ^ b) & t) ^ b, or with t inverted ^ f */
-            tj.tj_F ^= pl[i].pl_B;
+            tj.tj_F ^= pl.pl_B;
             if (dm & INVERSVID)
-                tj.tj_B = pl[i].pl_F;
+                tj.tj_B = pl.pl_F;
         }
-        tj.tj_M = pl[i].pl_M;
+        tj.tj_M = pl.pl_M;
         tj.tj_Mode = mode;
         tj.tj_Nib = bpp == 1 ? NULL : nib8;
         for (c = 0; c < n; c += cnt) {
@@ -458,16 +466,16 @@ void gfx_Template(struct BitMap *bm, const struct Rectangle *r,
             for (rows = r->MaxY - r->MinY + 1; rows > 0; rows -= k) {
                 k = runrows(o, cnt << 1, bpr, rows);
                 if (k > 0) {
-                    tmplrows(&tj, (UWORD *)PL_AT(&pl[i], o), k, s, tb, cnt,
+                    tmplrows(&tj, (UWORD *)PL_AT(&pl, o), k, s, tb, cnt,
                         c == 0 ? lm : 0xFFFF, c + cnt == n ? rm : 0xFFFF,
                         y + k - 1 == r->MaxY, qlen);
                 } else {
                     /* a row that crosses into the second half */
                     k = 1;
                     n1 = (UWORD)((0x10000L - o) >> 1);
-                    tmplrows(&tj, (UWORD *)PL_AT(&pl[i], o), 1, s, tb, n1,
+                    tmplrows(&tj, (UWORD *)PL_AT(&pl, o), 1, s, tb, n1,
                         c == 0 ? lm : 0xFFFF, 0xFFFF, y == r->MaxY, qlen);
-                    tmplrows(&tj, (UWORD *)pl[i].pl_Hi, 1, s,
+                    tmplrows(&tj, (UWORD *)pl.pl_Hi, 1, s,
                         tb + (WORD)(n1 * ppw), cnt - n1, 0xFFFF,
                         c + cnt == n ? rm : 0xFFFF, y == r->MaxY, qlen);
                 }

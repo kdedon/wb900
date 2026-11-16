@@ -113,29 +113,220 @@ static void fastglyphs(UBYTE *raster, struct glyphjob *gj, UWORD bpr,
 
 /***************************************************************************/
 
+/* Whether text's glyphs are all a fixed 8-pixel font's bytes */
+static BOOL fastchars(CONST_STRPTR text, ULONG len, struct TextFont *tf)
+{
+    struct glyphjob gj;
+
+    glyphjob(&gj, text, len, tf);
+    return gfx_FastChars(&gj);
+}
+
+/*
+ * The template of len glyphs of text in rp's font and style, from x in
+ * raster; out of BltTemplateBasedText's frame, below which the blits go.
+ */
+static void textglyphs(struct RastPort *rp, CONST_STRPTR text, ULONG len,
+                       UBYTE *raster, WORD x, WORD raswidth_bpr,
+                       WORD rasheight, BOOL fastfont)
+{
+    struct TextFont *tf = rp->Font;
+    BOOL is_bold = (rp->AlgoStyle & FSF_BOLD) != 0;
+    BOOL is_italic = (rp->AlgoStyle & FSF_ITALIC) != 0;
+    WORD y, gx;
+
+    /* The standard Amiga screen font is an unstyled, fixed-width,
+     * byte-aligned 8-pixel font. Build its template a byte at a time
+     * instead of running the generic bit-copy loop for every pixel. */
+    if (fastfont)
+    {
+        struct glyphjob gj;
+
+        glyphjob(&gj, text, len, tf);
+        fastglyphs(raster, &gj, raswidth_bpr, rasheight);
+    }
+    else while(len--) {
+        UBYTE c = *text++;
+        ULONG idx;
+        ULONG charloc;
+        UWORD glyphwidth, glyphpos, bold;
+        UBYTE *glyphdata;
+        UBYTE *dst;
+        ULONG srcmask;
+        ULONG dstmask;
+
+        if(c < tf->tf_LoChar || c > tf->tf_HiChar) {
+            idx = NUMCHARS(tf) - 1;
+        } else {
+            idx = c - tf->tf_LoChar;
+        }
+
+        charloc = ((ULONG *)tf->tf_CharLoc)[idx];
+
+        glyphwidth = charloc & 0xFFFF;
+        glyphpos = charloc >> 16;
+
+        if(tf->tf_CharKern) {
+            x += ((WORD *)tf->tf_CharKern)[idx];
+        }
+
+
+        if (!is_bold && !is_italic && glyphwidth <= 8) {
+            WORD wx = x;
+            UWORD srcshift = glyphpos & 7;
+            UWORD dstshift = wx & 7;
+
+            glyphdata = (UBYTE *)tf->tf_CharData + glyphpos / 8;
+            dst = raster + wx / 8;
+
+            for (y = 0; y < rasheight; y++) {
+                UWORD source = (UWORD)glyphdata[0] << 8;
+                UBYTE bits;
+                UWORD packed;
+
+                if (srcshift + glyphwidth > 8)
+                    source |= glyphdata[1];
+                bits = (source >> (8 - srcshift)) &
+                       (0xff << (8 - glyphwidth));
+                packed = ((UWORD)bits << 8) >> dstshift;
+
+                if (packed & 0xff00)
+                    dst[0] |= packed >> 8;
+                if ((dstshift + glyphwidth > 8) && (packed & 0xff))
+                    dst[1] |= packed;
+
+                glyphdata += tf->tf_Modulo;
+                dst += raswidth_bpr;
+            }
+        } else for(bold = 0; bold <= is_bold; bold++) {
+            WORD wx;
+            WORD italicshift, italiccheck = 0;
+
+            if(is_italic) {
+                italiccheck = tf->tf_Baseline;
+                italicshift = italiccheck / 2;
+            } else {
+                italicshift = 0;
+            }
+
+            wx = x + italicshift + (bold ? tf->tf_BoldSmear : 0);
+
+            glyphdata = ((UBYTE *)tf->tf_CharData) + glyphpos / 8;
+            dst = raster + wx / 8;
+
+            for(y = 0; y < rasheight; y++) {
+                UBYTE *glyphdatax = glyphdata;
+                UBYTE *dstx = dst;
+                UBYTE srcdata;
+
+                srcmask = 0x80 >> (glyphpos & 7);
+                dstmask = 0x80 >> (wx & 7);
+
+                srcdata = *glyphdatax;
+
+                for(gx = 0; gx < glyphwidth; gx++) {
+                    if(srcdata & srcmask) {
+                        *dstx |= dstmask;
+                    }
+
+                    if(dstmask == 0x1) {
+                        dstmask = 0x80;
+                        dstx++;
+                    } else {
+                        dstmask >>= 1;
+                    }
+
+                    if(srcmask == 0x1) {
+                        srcmask = 0x80;
+                        glyphdatax++;
+                        srcdata = *glyphdatax;
+                    } else {
+                        srcmask >>= 1;
+                    }
+
+                } /* for(gx = 0; gx < glyphwidth; gx++) */
+
+                glyphdata += tf->tf_Modulo;
+                dst += raswidth_bpr;
+
+                if(is_italic) {
+                    italiccheck--;
+                    if(italiccheck & 1) {
+                        italicshift--;
+
+                        wx--;
+                        if((wx & 7) == 7) dst--;
+
+                    }
+                }
+
+            } /* for(y = 0; y < rasheight; y++) */
+
+        } /* for(bold = 0; bold < ((rp->AlgoStyle & FSF_BOLD) ? 2 : 1); bold++) */
+
+        if(tf->tf_CharSpace) {
+            x += ((WORD *)tf->tf_CharSpace)[idx];
+        } else {
+            x += tf->tf_XSize;
+        }
+
+        x += rp->TxSpacing;
+
+    } /* while(len--) */
+
+    if(rp->AlgoStyle & FSF_UNDERLINED) {
+        UBYTE *dst;
+        ULONG prev_word, act_word = 0, next_word, word;
+        WORD count;
+        LONG underline;
+
+        underline = rp->TxBaseline + 1;
+        if(underline < rasheight - 1) underline++;
+
+        if(underline < rasheight) {
+            dst = raster + underline * (LONG)raswidth_bpr;
+            next_word = *(UWORD *)dst;
+            count  = raswidth_bpr / 2;
+
+            while(count--) {
+                prev_word = act_word;
+                act_word = next_word;
+                if(count > 1) {
+                    next_word = ((UWORD *)dst)[1];
+                } else {
+                    next_word = 0;
+                }
+                word = ((act_word << 1) & 0xFFFF) + (next_word >> 15);
+                word |= (act_word >> 1) + ((prev_word << 15) & 0xFFFF);
+                word &= ~act_word;
+
+                word = 0xFFFF & ~ word;
+
+                *(UWORD *)dst = word;
+                dst += 2;
+
+            } /* while(count--) */
+
+        } /* if (underline < rasheight) */
+
+    } /* if (rp->AlgoStyle & FSF_UNDERLINED) */
+}
+
 void BltTemplateBasedText(struct RastPort *rp, CONST_STRPTR text, ULONG len,
                           struct GfxBase *GfxBase)
 {
     struct TextExtent    te;
-    struct glyphjob      gj;
     struct TextFont     *tf;
-    WORD                 raswidth, raswidth16, raswidth_bpr, rasheight, x, y, gx;
+    WORD                 raswidth, raswidth_bpr, rasheight;
     UBYTE               *raster;
-    BOOL                 is_bold, is_italic, fastfont;
+    BOOL                 fastfont;
     BOOL                 allocated = FALSE, kept = FALSE;
     ULONG                rassize;
 
     tf = rp->Font;
-    is_bold = (rp->AlgoStyle & FSF_BOLD) != 0;
-    is_italic = (rp->AlgoStyle & FSF_ITALIC) != 0;
-    fastfont = !is_bold && !is_italic && tf->tf_XSize == 8 &&
-               rp->TxSpacing == 0;
-
-    if (fastfont)
-    {
-        glyphjob(&gj, text, len, tf);
-        fastfont = gfx_FastChars(&gj);
-    }
+    fastfont = !(rp->AlgoStyle & (FSF_BOLD | FSF_ITALIC)) &&
+               tf->tf_XSize == 8 && rp->TxSpacing == 0 &&
+               fastchars(text, len, tf);
 
     if (fastfont)
     {
@@ -152,8 +343,7 @@ void BltTemplateBasedText(struct RastPort *rp, CONST_STRPTR text, ULONG len,
     raswidth  = te.te_Extent.MaxX - te.te_Extent.MinX + 1;
     rasheight = te.te_Extent.MaxY - te.te_Extent.MinY + 1;
 
-    raswidth16 = (raswidth + 15) & ~15;
-    raswidth_bpr = raswidth16 / 8;
+    raswidth_bpr = ((raswidth + 15) & ~15) / 8;
     rassize = RASSIZE(raswidth, rasheight);
 
     if (rp->TmpRas && rp->TmpRas->RasPtr && rp->TmpRas->Size >= rassize)
@@ -183,182 +373,8 @@ void BltTemplateBasedText(struct RastPort *rp, CONST_STRPTR text, ULONG len,
             for (i = 0; i < rassize; i++)
                 raster[i] = 0;
         }
-
-        x = -te.te_Extent.MinX;
-
-        /* The standard Amiga screen font is an unstyled, fixed-width,
-         * byte-aligned 8-pixel font. Build its template a byte at a time
-         * instead of running the generic bit-copy loop for every pixel. */
-        if (fastfont)
-        {
-            fastglyphs(raster, &gj, raswidth_bpr, rasheight);
-            x += len * 8;
-        }
-        else while(len--) {
-            UBYTE c = *text++;
-            ULONG idx;
-            ULONG charloc;
-            UWORD glyphwidth, glyphpos, bold;
-            UBYTE *glyphdata;
-            UBYTE *dst;
-            ULONG srcmask;
-            ULONG dstmask;
-
-            if(c < tf->tf_LoChar || c > tf->tf_HiChar) {
-                idx = NUMCHARS(tf) - 1;
-            } else {
-                idx = c - tf->tf_LoChar;
-            }
-
-            charloc = ((ULONG *)tf->tf_CharLoc)[idx];
-
-            glyphwidth = charloc & 0xFFFF;
-            glyphpos = charloc >> 16;
-
-            if(tf->tf_CharKern) {
-                x += ((WORD *)tf->tf_CharKern)[idx];
-            }
-
-
-            if (!is_bold && !is_italic && glyphwidth <= 8) {
-                WORD wx = x;
-                UWORD srcshift = glyphpos & 7;
-                UWORD dstshift = wx & 7;
-
-                glyphdata = (UBYTE *)tf->tf_CharData + glyphpos / 8;
-                dst = raster + wx / 8;
-
-                for (y = 0; y < rasheight; y++) {
-                    UWORD source = (UWORD)glyphdata[0] << 8;
-                    UBYTE bits;
-                    UWORD packed;
-
-                    if (srcshift + glyphwidth > 8)
-                        source |= glyphdata[1];
-                    bits = (source >> (8 - srcshift)) &
-                           (0xff << (8 - glyphwidth));
-                    packed = ((UWORD)bits << 8) >> dstshift;
-
-                    if (packed & 0xff00)
-                        dst[0] |= packed >> 8;
-                    if ((dstshift + glyphwidth > 8) && (packed & 0xff))
-                        dst[1] |= packed;
-
-                    glyphdata += tf->tf_Modulo;
-                    dst += raswidth_bpr;
-                }
-            } else for(bold = 0; bold <= is_bold; bold++) {
-                WORD wx;
-                WORD italicshift, italiccheck = 0;
-
-                if(is_italic) {
-                    italiccheck = tf->tf_Baseline;
-                    italicshift = italiccheck / 2;
-                } else {
-                    italicshift = 0;
-                }
-
-                wx = x + italicshift + (bold ? tf->tf_BoldSmear : 0);
-
-                glyphdata = ((UBYTE *)tf->tf_CharData) + glyphpos / 8;
-                dst = raster + wx / 8;
-
-                for(y = 0; y < rasheight; y++) {
-                    UBYTE *glyphdatax = glyphdata;
-                    UBYTE *dstx = dst;
-                    UBYTE srcdata;
-
-                    srcmask = 0x80 >> (glyphpos & 7);
-                    dstmask = 0x80 >> (wx & 7);
-
-                    srcdata = *glyphdatax;
-
-                    for(gx = 0; gx < glyphwidth; gx++) {
-                        if(srcdata & srcmask) {
-                            *dstx |= dstmask;
-                        }
-
-                        if(dstmask == 0x1) {
-                            dstmask = 0x80;
-                            dstx++;
-                        } else {
-                            dstmask >>= 1;
-                        }
-
-                        if(srcmask == 0x1) {
-                            srcmask = 0x80;
-                            glyphdatax++;
-                            srcdata = *glyphdatax;
-                        } else {
-                            srcmask >>= 1;
-                        }
-
-                    } /* for(gx = 0; gx < glyphwidth; gx++) */
-
-                    glyphdata += tf->tf_Modulo;
-                    dst += raswidth_bpr;
-
-                    if(is_italic) {
-                        italiccheck--;
-                        if(italiccheck & 1) {
-                            italicshift--;
-
-                            wx--;
-                            if((wx & 7) == 7) dst--;
-
-                        }
-                    }
-
-                } /* for(y = 0; y < rasheight; y++) */
-
-            } /* for(bold = 0; bold < ((rp->AlgoStyle & FSF_BOLD) ? 2 : 1); bold++) */
-
-            if(tf->tf_CharSpace) {
-                x += ((WORD *)tf->tf_CharSpace)[idx];
-            } else {
-                x += tf->tf_XSize;
-            }
-
-            x += rp->TxSpacing;
-
-        } /* while(len--) */
-
-        if(rp->AlgoStyle & FSF_UNDERLINED) {
-            UBYTE *dst;
-            ULONG prev_word, act_word = 0, next_word, word;
-            WORD count;
-            LONG underline;
-
-            underline = rp->TxBaseline + 1;
-            if(underline < rasheight - 1) underline++;
-
-            if(underline < rasheight) {
-                dst = raster + underline * (LONG)raswidth_bpr;
-                next_word = *(UWORD *)dst;
-                count  = raswidth16 / 16;
-
-                while(count--) {
-                    prev_word = act_word;
-                    act_word = next_word;
-                    if(count > 1) {
-                        next_word = ((UWORD *)dst)[1];
-                    } else {
-                        next_word = 0;
-                    }
-                    word = ((act_word << 1) & 0xFFFF) + (next_word >> 15);
-                    word |= (act_word >> 1) + ((prev_word << 15) & 0xFFFF);
-                    word &= ~act_word;
-
-                    word = 0xFFFF & ~ word;
-
-                    *(UWORD *)dst = word;
-                    dst += 2;
-
-                } /* while(count--) */
-
-            } /* if (underline < rasheight) */
-
-        } /* if (rp->AlgoStyle & FSF_UNDERLINED) */
+        textglyphs(rp, text, len, raster, -te.te_Extent.MinX, raswidth_bpr,
+                   rasheight, fastfont);
 
         BltTemplate(raster,
                     0,

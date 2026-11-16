@@ -107,14 +107,11 @@ void render_requester(struct Requester *requester, struct IntuitionBase *Intuiti
 
 /*****************************************************************************/
 
-/* render a built requester */
-void buildreq_draw(struct IntReqDims *dims, struct IntuiText *itext,
-                             struct Window *req, struct Screen *scr,
-                             struct Gadget *gadgets,
-                             struct IntuitionBase *IntuitionBase)
+/* A built requester's text frame, out of buildreq_draw's frame, below which the gadgets render */
+static void buildreq_drawframe(struct IntReqDims *dims, struct Window *req,
+                               struct DrawInfo *dri,
+                               struct IntuitionBase *IntuitionBase)
 {
-    struct LayersBase *LayersBase = GetPrivIBase(IntuitionBase)->LayersBase;
-    struct GfxBase *GfxBase = GetPrivIBase(IntuitionBase)->GfxBase;
     struct TagItem   frame_tags[] =
     {
         {IA_Left        , req->BorderLeft + OUTERSPACING_X                                      },
@@ -127,8 +124,25 @@ void buildreq_draw(struct IntReqDims *dims, struct IntuiText *itext,
         {IA_EdgesOnly   , FALSE                                                                 },
         {TAG_DONE                                                                               }
     };
-    struct DrawInfo *dri;
     struct Image    *frame;
+
+    frame = (struct Image *)NewObjectA(NULL, FRAMEICLASS, frame_tags);
+    if (frame)
+    {
+        DrawImageState(req->RPort, frame, 0, 0, IDS_NORMAL, dri);
+        DisposeObject((Object *)frame);
+    }
+}
+
+/* render a built requester */
+void buildreq_draw(struct IntReqDims *dims, struct IntuiText *itext,
+                             struct Window *req, struct Screen *scr,
+                             struct Gadget *gadgets,
+                             struct IntuitionBase *IntuitionBase)
+{
+    struct LayersBase *LayersBase = GetPrivIBase(IntuitionBase)->LayersBase;
+    struct GfxBase *GfxBase = GetPrivIBase(IntuitionBase)->GfxBase;
+    struct DrawInfo *dri;
     struct Region   *clipreg, *origreg;
     struct Rectangle cliprect;
 
@@ -149,13 +163,7 @@ void buildreq_draw(struct IntReqDims *dims, struct IntuiText *itext,
              req->Height - req->BorderBottom);
     SetAfPt(req->RPort, NULL, 0);
 
-    /* render textframe */
-    frame = (struct Image *)NewObjectA(NULL, FRAMEICLASS, frame_tags);
-    if (frame)
-    {
-        DrawImageState(req->RPort, frame, 0, 0, IDS_NORMAL, dri);
-        DisposeObject((Object *)frame);
-    }
+    buildreq_drawframe(dims, req, dri, IntuitionBase);
 
     cliprect.MinX = req->BorderLeft + OUTERSPACING_X;
     cliprect.MinY = req->BorderTop + OUTERSPACING_Y + 1;

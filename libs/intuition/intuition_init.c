@@ -310,6 +310,9 @@ static int IntuitionOpen(struct IntuitionBase *IntuitionBase)
         GetPrivIBase(LIBBASE)->InputIO->io_Command = IND_ADDHANDLER;
 
         DoIO((struct IORequest *)GetPrivIBase(LIBBASE)->InputIO);
+        /* Known before the handler's first event, which an earlier handler may hold up */
+        ((struct IIHData *)GetPrivIBase(LIBBASE)->InputHandler->is_Data)->InputDeviceTask =
+            FindTask("input.device");
 
     }
 

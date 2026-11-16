@@ -656,7 +656,7 @@ static void requesters(void)
  * The alert is 40 rows: the frame is rows and columns 4-7 in, the first
  * line's baseline at (40, 20).
  */
-static UBYTE alerttext[] = "\000(\024Test alert\000\001\000(\036Line two";
+static UBYTE alerttext[] = "\000(\024Test alert\000\001\000(\036Line two\000";
 static UWORD alertcode;
 static volatile BOOL alertdrawn;
 
