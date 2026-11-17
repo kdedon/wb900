@@ -1,0 +1,37 @@
+# build: every wb900 library, tool and disk, then the emulator tests.
+name: build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Each by name, so a missing one fails saying which.
+      - name: Dependencies
+        run: |
+          for d in toolchain exec900 kboot emu; do make deps DEP=$d; done
+          head deps/*/.tag
+
+      - name: Build
+        run: make -j"$(nproc)" all
+
+      - name: Tests
+        run: make -j"$(nproc)" test
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wb900-disks
+          path: build/wb900/wbboot*.bin

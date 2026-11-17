@@ -27,6 +27,10 @@ extern struct IntuitionBase *IntuitionBase;
 extern struct GfxBase *GfxBase;
 
 LONG Workbench(char *args, LONG len);
+extern BOOL (*wbselftest)(void);
+extern LONG (*wbselftestdone)(void);
+BOOL selftest(void);
+LONG selftestdone(void);
 
 #define SHELLWINDOW "CON:0/20/640/180/AmigaShell/CLOSE"
 
@@ -207,6 +211,8 @@ int main(void)
 	BOOL display;
 
 	DOSBase = (struct DosLibrary *)OpenLibrary(DOSNAME, 36L);
+	wbselftest = selftest;
+	wbselftestdone = selftestdone;
 	IntuitionBase = (struct IntuitionBase *)OpenLibrary(INTUITIONNAME, 39L);
 	GfxBase = (struct GfxBase *)OpenLibrary(GRAPHICSNAME, 39L);
 	port = CreateMsgPort();

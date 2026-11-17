@@ -4,7 +4,7 @@
  * (shift adds) or lasso selects, outlines drag between windows, double
  * click opens or launches.  Drops on another volume copy.  Leave Out
  * lists icons in the volume's .backdrop.  Without a display it runs
- * selftest().
+ * the self test a test program sets.
  */
 #include "workbench.h"
 #include <devices/inputevent.h>
@@ -296,9 +296,11 @@ static void execute(void)
 }
 
 /* Open a drawer, or bring its window to the front */
-static void opendrawer(STRPTR path, struct DiskObject *dobj)
+/* A drawer's window, where its icon last snapshot it */
+static void opendrawer(STRPTR path)
 {
 	static char name[PATHLEN];
+	struct DiskObject *dobj;
 	struct WBWin *ww;
 	BPTR lock;
 
@@ -307,6 +309,7 @@ static void opendrawer(STRPTR path, struct DiskObject *dobj)
 		DisplayBeep(scr);
 		return;
 	}
+	dobj = GetDiskObjectNew(path);
 	if (NameFromLock(lock, name, PATHLEN))
 		path = name;
 	UnLock(lock);
@@ -316,12 +319,12 @@ static void opendrawer(STRPTR path, struct DiskObject *dobj)
 	} else if (openwin(path, dobj) == NULL) {
 		DisplayBeep(scr);
 	}
+	FreeDiskObject(dobj);
 }
 
 void openicon(struct WBWin *ww, struct WBIcon *in)
 {
 	static char path[PATHLEN];
-	struct DiskObject *dobj;
 
 	if (in->in_App != NULL) {
 		if (!SendAppIconMessage(in->in_App, 0, NULL, AMCLASSICON_Open,
@@ -335,10 +338,7 @@ void openicon(struct WBWin *ww, struct WBIcon *in)
 	case WBDISK:
 	case WBDRAWER:
 	case WBGARBAGE:
-		/* the window as last snapshot */
-		dobj = GetDiskObjectNew(path);
-		opendrawer(path, dobj);
-		FreeDiskObject(dobj);
+		opendrawer(path);
 		break;
 	default:
 		if (!OpenWorkbenchObjectA(path, NULL))
@@ -350,7 +350,6 @@ void openicon(struct WBWin *ww, struct WBIcon *in)
 static void parent(struct WBWin *ww)
 {
 	char dir[PATHLEN];
-	struct DiskObject *dobj;
 	WORD n;
 
 	if (ww == root || ww->ww_Path[strlen(ww->ww_Path) - 1] == ':') {
@@ -360,9 +359,7 @@ static void parent(struct WBWin *ww)
 	n = PathPart(ww->ww_Path) - ww->ww_Path;
 	CopyMem(ww->ww_Path, dir, n);
 	dir[n] = 0;
-	dobj = GetDiskObjectNew(dir);
-	opendrawer(dir, dobj);
-	FreeDiskObject(dobj);
+	opendrawer(dir);
 }
 
 static char *typename[] = { "?", "disk", "drawer", "tool", "project",
@@ -1094,7 +1091,7 @@ static void handler(void)
 	while ((m = (struct WBHandlerMessage *)GetMsg(wbport)) != NULL) {
 		switch (m->wbhm_Type) {
 		case WBHM_TYPE_OPEN:
-			opendrawer((STRPTR)m->wbhm_Data.Open.Name, NULL);
+			opendrawer((STRPTR)m->wbhm_Data.Open.Name);
 			break;
 		case WBHM_TYPE_UPDATE:
 			if (m->wbhm_Data.Update.Name != NULL)
@@ -1161,8 +1158,8 @@ static void envinit(void)
 		UnLock(lock);
 }
 
-BOOL selftest(void);
-LONG selftestdone(void);
+BOOL (*wbselftest)(void);
+LONG (*wbselftestdone)(void);
 
 /* Workbench's process: 0 when it quits, or the self test's result */
 LONG Workbench(char *args, LONG len)
@@ -1194,8 +1191,8 @@ LONG Workbench(char *args, LONG len)
 		makemenus();
 	arrowimages();
 	openwin(NULL, NULL);
-	test = NextDisplayInfo(INVALID_ID) == INVALID_ID;
-	if (test && !selftest())
+	test = wbselftest != NULL && NextDisplayInfo(INVALID_ID) == INVALID_ID;
+	if (test && !(*wbselftest)())
 		running = test = FALSE;
 	while (running) {
 		sigs = Wait((1L << idport->mp_SigBit) |
@@ -1209,7 +1206,7 @@ LONG Workbench(char *args, LONG len)
 	}
 
 	if (test)
-		rc = selftestdone();
+		rc = (*wbselftestdone)();
 	while ((ww = (struct WBWin *)wins.mlh_Head)->ww_Node.mln_Succ != NULL)
 		closewin(ww);
 	UnregisterWorkbench(wbport);

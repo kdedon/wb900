@@ -1,0 +1,42 @@
+# release: on a v* tag, build and test, then publish the packages.
+name: release
+
+on:
+  push:
+    tags: [ 'v*' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dependencies
+        run: for d in toolchain exec900 kboot emu; do make deps DEP=$d; done
+
+      - name: Build
+        run: make -j"$(nproc)" all
+
+      - name: Tests
+        run: make -j"$(nproc)" test
+
+      - name: Packages
+        id: pkg
+        run: |
+          make dist V="${GITHUB_REF_NAME#v}"
+          {
+            echo 'notes<<EOF'
+            echo 'Built with:'
+            for d in deps/*/; do echo "- $(basename "$d") $(cat "$d.tag")"; done
+            echo EOF
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: build/wb900/dist/*.tar.gz
+          body: ${{ steps.pkg.outputs.notes }}
+          fail_on_unmatched_files: true

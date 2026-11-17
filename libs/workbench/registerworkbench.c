@@ -4,6 +4,9 @@
 
 #include "workbench_intern.h"
 #include <workbench/workbench.h>
+#include "support_messages.h"
+#include "handler.h"
+#include "handler_support.h"
 
 /*****************************************************************************
 
@@ -77,6 +80,7 @@
     AROS_LIBFUNC_INIT
 
     BOOL success = FALSE;
+    struct WBCommandMessage *wbcm;
 
     if (messageport != NULL)
     {
@@ -90,7 +94,14 @@
         
         ReleaseSemaphore(&(WorkbenchBase->wb_WorkbenchPortSemaphore));
     }
-    
+
+    /* Requests made before the application came are held until now */
+    if (success && (wbcm = CreateWBCM(WBCM_TYPE_RELAY)) != NULL)
+    {
+        wbcm->wbcm_Data.Relay.Message = NULL;
+        PutMsg(&(WorkbenchBase->wb_HandlerPort), (struct Message *) wbcm);
+    }
+
     return success;
 
     AROS_LIBFUNC_EXIT

@@ -345,18 +345,21 @@ static VOID __HandleRelay_WB
 {
     struct WBHandlerMessage *relaymsg = message->wbcm_Data.Relay.Message;
     
-    relaymsg->wbhm_Message.mn_ReplyPort = hc->hc_RelayReplyPort;
+    /* No message: RegisterWorkbench() asks for the held ones */
+    if (relaymsg)
+        relaymsg->wbhm_Message.mn_ReplyPort = hc->hc_RelayReplyPort;
 
     if (WorkbenchBase->wb_WorkbenchPort)
     {
-        PutMsg(WorkbenchBase->wb_WorkbenchPort, (struct Message *) relaymsg);
+        if (relaymsg)
+            PutMsg(WorkbenchBase->wb_WorkbenchPort, (struct Message *) relaymsg);
 
         /* Send held messages */
         if (!IsListEmpty(&hc->hc_HeldRelayMsgs))
             while((relaymsg = (struct WBHandlerMessage *)RemHead(&hc->hc_HeldRelayMsgs)) != NULL)
                 PutMsg(WorkbenchBase->wb_WorkbenchPort, (struct Message *) relaymsg);
     }
-    else
+    else if (relaymsg)
     {
         AddTail(&hc->hc_HeldRelayMsgs, (struct Node *)relaymsg);
     }

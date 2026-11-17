@@ -18,6 +18,10 @@ extern struct DosLibrary *DOSBase;
 extern struct IntuitionBase *IntuitionBase;
 
 LONG Workbench(char *args, LONG len);
+extern BOOL (*wbselftest)(void);
+extern LONG (*wbselftestdone)(void);
+BOOL selftest(void);
+LONG selftestdone(void);
 
 struct sync {
 	struct Task *s_Task;
@@ -44,6 +48,8 @@ int main(void)
 		return 1;
 	}
 	DOSBase = dos;
+	wbselftest = selftest;
+	wbselftestdone = selftestdone;
 	s.s_Task = FindTask(NULL);
 	s.s_RC = -1;
 	SetSignal(0L, SIGBREAKF_CTRL_F);

@@ -25,6 +25,8 @@ extern struct IntuitionBase *IntuitionBase;
 extern struct Library *WorkbenchBase;
 
 LONG Workbench(char *args, LONG len);
+extern BOOL (*wbselftest)(void);
+extern LONG (*wbselftestdone)(void);
 
 #define CMDSTACK 4000
 
@@ -240,6 +242,8 @@ int main(void)
 	struct DosLibrary *dos;
 	struct IntuitionBase *ib;
 
+	wbselftest = selftest;
+	wbselftestdone = selftestdone;
 	if ((dos = (struct DosLibrary *)OpenLibrary(DOSNAME, 36L)) == NULL ||
 	    (ib = (struct IntuitionBase *)OpenLibrary(INTUITIONNAME, 39L))
 	    == NULL) {

@@ -5,25 +5,23 @@
 # `ld -r' and progabs.o, and mkhunk makes the hunk for LIBS:.
 # tests/NAME.c is a root program that passes with a "PASS NAME" line.
 #
-# Exec900 provides its MIT interface files, exec900.sys and the
-# dos.library and handler hunks:
-#   make -C $(EXEC900) OUT=$(EXEC900_OUT) ... all
+# `make deps' unpacks the toolchain, Exec900, kboot and emulator
+# releases into deps/.  Exec900 provides its MIT interface files,
+# exec900.sys and the dos.library and handler hunks.
 
 SHELL = /bin/sh
 .DELETE_ON_ERROR:
 .SECONDARY:
 
 TOP	:= $(patsubst %/,%,$(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
-GITDIR	:= $(abspath $(TOP)/..)
 OUT	?= $(TOP)/build/wb900
 OBJ	= $(OUT)/obj
 
-C900_TOOLCHAIN	?= $(GITDIR)/commodore-900-toolchain
-EXEC900		?= $(TOP)/build/exec900-src/c900
-EXEC900_OUT	?= $(TOP)/build/exec900
-KBOOTSRC	?= $(GITDIR)/commodore-900-kboot
-KBOOT		?= $(KBOOTSRC)/build/kboot
-C900_EMU	?= $(GITDIR)/commodore-900-emulator
+C900_TOOLCHAIN	?= $(TOP)/deps/commodore-900-toolchain
+EXEC900		?= $(TOP)/deps/exec816
+EXEC900_OUT	?= $(EXEC900)
+KBOOT		?= $(TOP)/deps/commodore-900-kboot/kboot
+C900_EMU	?= $(TOP)/deps/commodore-900-emulator
 
 TC	= $(C900_TOOLCHAIN)/host/build
 CC0	= $(TC)/z8001/cc0-z8001
@@ -69,11 +67,14 @@ TESTS	= $(basename $(notdir $(wildcard $(TOP)/tests/*.c)))
 # The tests that open intuition.library
 ITESTS	= intuition idisplay gpalert wbdemo wbinter gadtools gtdemo icon workbench wbboot console cxtools conhandler shellwin asl more edit editbig expunge wbmulti
 # The demos also made as NAME-1x.bin, in the Workbench 1.x style
-STYLED	= wbdemo wbinter gtdemo wbboot
+STYLED	= wbdemo wbinter gtdemo wbboot showcase
 
 
-.PHONY: all test clean
+.PHONY: all test clean deps dist
 all: $(patsubst %,$(OUT)/libs/%.gfxdriver,$(GFXDRIVERS)) $(patsubst %,$(OUT)/libs/%.library,$(LIBS)) $(patsubst %,$(OUT)/devs/%.device,$(DEVS)) $(patsubst %,$(OUT)/%.bin,$(TESTS)) $(patsubst %,$(OUT)/%-1x.bin,$(STYLED))
+
+deps:
+	sh tools/deps-fetch.sh $(DEP)
 
 clean:
 	rm -rf $(OUT)
@@ -93,7 +94,7 @@ $(OBJ)/amiga.o: $(EXEC900)/lib/amiga.c $(HDRS)
 
 # AROS amiga.lib's calls that intuition and its callers link.
 ALIB	= $(patsubst $(TOP)/lib/%.c,$(OBJ)/lib/%.o,$(wildcard $(TOP)/lib/*.c))
-$(OBJ)/lib/%.o: $(TOP)/lib/%.c $(HDRS)
+$(OBJ)/lib/%.o: $(TOP)/lib/%.c $(HDRS) $(patsubst %,$(OUT)/include/lvo/%_lib.h,$(LIBS) $(DEVS))
 	$(call CCRULE,$<,lib/$*,$@)
 
 # Libraries and devices: the callers' header and the vector table
@@ -167,19 +168,19 @@ lcwb_PUT = --put=Devs/system-configuration=$(OUT)/devs/system-configuration
 $(OUT)/lcwb.bin: $(OUT)/devs/system-configuration
 # lcbench: the card's port costs on the board
 $(OUT)/progs/lcbench: $(OBJ)/lcm/bench.o $(OBJ)/lc/lcport.o
-# lcdemo: the card on the board, timed; wbboot-lc.bin: its Workbench, in
+# lcdemo: the card on the board, timed; NAME-lc.bin: Workbench on it, in
 # the 1.x style; both with the serial mouse
-LCMOUSE	= --module=$(EXEC900_OUT)/hunks/gameport.dev
+LCMOUSE	= --module=$(EXEC900_OUT)/Boot/gameport.dev
 ITESTS	+= lcdemo
 $(OUT)/progs/lcdemo: $(ALIB)
 lcdemo_PUT = $(lcwb_PUT) $(LCMOUSE)
 $(OUT)/lcdemo.bin: $(OUT)/devs/system-configuration
 all: $(OUT)/wbboot-lc.bin
-$(OUT)/wbboot-lc.bin: $(OUT)/wbboot-1x.bin $(OUT)/lcmode.prefs
-	$(MKDISK) --kboot=$(KBOOT) --root=$(OUT)/progs/wbboot $(call DISK,wbboot) \
+$(OUT)/%-lc.bin: $(OUT)/%-1x.bin $(OUT)/lcmode.prefs
+	$(MKDISK) --kboot=$(KBOOT) --root=$(OUT)/progs/$* $(call DISK,$*) \
 	  --put=Devs/system-configuration=$(OUT)/devs/system-configuration \
 	  $(if $(LCMODE),--put=Prefs/Env-Archive/Sys/screenmode.prefs=$(OUT)/lcmode.prefs) \
-	  $(LCMOUSE) $@ $(EXEC900_OUT)/exec900.sys
+	  $(LCMOUSE) $@ $(EXEC900_OUT)/Boot/exec900.sys
 # make LCMODE=320x256: wbboot-lc.bin's Workbench in that LC mode, as its
 # saved ScreenMode setting; empty: the card's first mode, 640x200
 LCMODES	= 640x200=0x00110000 320x200=0x00110100 640x256=0x00110200 320x256=0x00110300 \
@@ -188,6 +189,7 @@ $(OUT)/lcmode.prefs: $(TOP)/tools/screenmodeprefs.py FORCE
 	@mkdir -p $(OUT)
 	$(if $(LCMODE),python3 $< $@.new $(patsubst $(LCMODE)=%,%,$(filter $(LCMODE)=%,$(LCMODES))) $(subst x, ,$(LCMODE)) 1,: >$@.new)
 	@cmp -s $@.new $@ || mv $@.new $@; rm -f $@.new
+.PHONY: FORCE
 FORCE:
 # lcmodes: each LC mode on the board for 4 seconds, timed
 $(OUT)/progs/lcmodes: $(OBJ)/lcm/bench.o $(ALIB)
@@ -280,6 +282,9 @@ $(eval $(call UTIL,Clock,clock))
 $(eval $(call UTIL,KeyShow,keyshow))
 $(eval $(call UTIL,SysMon,sysmon))
 $(eval $(call UTIL,LogView,logview))
+# LoadWB, in C: Workbench as a program
+$(eval $(call UTIL,LoadWB,loadwb))
+$(OUT)/util/LoadWB: $(OBJ)/w_workbench.o $(OBJ)/w_drawer.o
 # The preferences editors, in Prefs, and the drawer of the saved settings
 $(eval $(call UTIL,ScreenMode,prefs))
 PREFSPUT = --put=Prefs/ScreenMode=$(OUT)/util/ScreenMode \
@@ -352,11 +357,11 @@ $(OUT)/wb/%.info: $(TOP)/tools/mkinfo.py $(TOP)/wb/hello.txt $(TOP)/libs/icon/su
 DISKLIBS = $(if $(filter $(ITESTS),$(1)),$(LIBS),$(filter-out intuition gadtools icon workbench asl diskfont,$(LIBS)))
 # make HRMODE=800|1024|rgbi: tell Exec900 the HR jumper on every disk
 DISK	= $(if $(filter $(LNAMES),$(1)),--lnames) $(if $(HRMODE),--hrmode=$(HRMODE)) \
-	  --module=$(EXEC900_OUT)/hunks/dos.library \
-	  --module=$(EXEC900_OUT)/hunks/v7fs-handler \
+	  --module=$(EXEC900_OUT)/Boot/dos.library \
+	  --module=$(EXEC900_OUT)/Boot/v7fs-handler \
 	  $(if $(filter $(ITESTS),$(1)),--module=$(OUT)/l/con-handler) \
-	  $(patsubst %,--file=$(EXEC900_OUT)/hunks/%.display,lr hr lc) \
-	  --file=$(EXEC900_OUT)/hunks/gameport.dev \
+	  $(patsubst %,--file=$(EXEC900_OUT)/Boot/%.display,lr hr lc) \
+	  --file=$(EXEC900_OUT)/Boot/gameport.dev \
 	  $(foreach l,$(call DISKLIBS,$(1)),--put=Libs/$(l).library=$(OUT)/libs/$(l).library) \
 	  $(foreach g,$(GFXDRIVERS),--put=Libs/$(g).gfxdriver=$(OUT)/libs/$(g).gfxdriver) \
 	  $(foreach d,$(DEVS),--put=Devs/$(d).device=$(OUT)/devs/$(d).device) \
@@ -383,12 +388,12 @@ WBSTACK	= --rootstack=2
 wbboot_PUT = $(workbench_PUT) --put=Demos/Notes=$(TOP)/wb/Notes \
 	--put=Demos/ReadMe=$(TOP)/wb/ReadMe --mkdir=Trashcan $(CXPUT) $(UTILPUT) $(PREFSPUT) $(FONTPUT) \
 	$(foreach i,$(filter-out Demos/Hello.info,$(WBDISK)),--put=$(i)=$(OUT)/wb/$(notdir $(i))) \
-	--module=$(EXEC900_OUT)/hunks/ram-handler $(WBSTACK)
+	--module=$(EXEC900_OUT)/Boot/ram-handler $(WBSTACK)
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
 $(OUT)/wbboot.bin $(OUT)/wbboot-1x.bin $(OUT)/shellwin.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS) $(PREFSDEPS) $(FONTDEPS)
 # More's test: the utilities and the Shell, with room for its files of
 # 100 and 300 KB
-more_PUT = $(UTILPUT) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg --sys=3072
+more_PUT = $(UTILPUT) --put=L/Shell-Seg=$(EXEC900_OUT)/System/L/Shell-Seg --sys=3072
 $(OUT)/more.bin: $(UTILDEPS)
 edit_PUT = $(more_PUT)
 $(OUT)/edit.bin: $(UTILDEPS)
@@ -411,8 +416,15 @@ cxtools_PUT = $(CXPUT) --put=Tools/Commodities/Blanker.info=$(OUT)/wb/BlankerTes
 	$(foreach t,$(filter-out Blanker,$(CXTOOLS)),--put=Tools/Commodities/$(t).info=$(OUT)/wb/$(t).info)
 $(OUT)/cxtools.bin: $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(patsubst %,$(OUT)/wb/%.info,BlankerTest $(CXTOOLS))
 # Workbench's disk with the Shell
-shellwin_PUT = $(filter-out $(WBSTACK),$(wbboot_PUT)) --put=L/Shell-Seg=$(EXEC900_OUT)/hunks/Shell-Seg
+shellwin_PUT = $(filter-out $(WBSTACK),$(wbboot_PUT)) --put=L/Shell-Seg=$(EXEC900_OUT)/System/L/Shell-Seg
 $(OUT)/shellwin.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
+# Workbench and the tools held for screenshots
+ITESTS	+= showcase
+LNAMES	+= showcase
+showcase_PUT = $(shellwin_PUT)
+$(OUT)/showcase.bin $(OUT)/showcase-1x.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK))) \
+	$(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(UTILDEPS) $(PREFSDEPS) $(FONTDEPS)
+$(OUT)/progs/showcase: $(OBJ)/w_workbench.o $(OBJ)/w_drawer.o
 # Workbench, a Shell and four tools at once
 wbmulti_PUT = $(shellwin_PUT)
 $(OUT)/wbmulti.bin: $(OUT)/wb/hello $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK))) \
@@ -436,9 +448,9 @@ $(OUT)/boardchk.bin: $(FONTDEPS)
 .PHONY: boardchk.bin
 boardchk.bin: $(OUT)/boardchk.bin
 
-BINDEPS	= $(patsubst %,$(OUT)/libs/%.library,$(LIBS)) $(patsubst %,$(OUT)/libs/%.gfxdriver,$(GFXDRIVERS)) $(patsubst %,$(OUT)/devs/%.device,$(DEVS)) $(OUT)/l/con-handler $(EXEC900_OUT)/exec900.sys
+BINDEPS	= $(patsubst %,$(OUT)/libs/%.library,$(LIBS)) $(patsubst %,$(OUT)/libs/%.gfxdriver,$(GFXDRIVERS)) $(patsubst %,$(OUT)/devs/%.device,$(DEVS)) $(OUT)/l/con-handler $(EXEC900_OUT)/Boot/exec900.sys
 $(OUT)/%.bin: $(OUT)/progs/% $(BINDEPS)
-	$(MKDISK) --kboot=$(KBOOT) --root=$(OUT)/progs/$* $(call DISK,$*) $@ $(EXEC900_OUT)/exec900.sys
+	$(MKDISK) --kboot=$(KBOOT) --root=$(OUT)/progs/$* $(call DISK,$*) $@ $(EXEC900_OUT)/Boot/exec900.sys
 
 # The Workbench 1.x style: DEVS:system-configuration holds the 1.0
 # colours and OLD_LOOK, which intuition reads when it is first opened.
@@ -447,10 +459,44 @@ $(OUT)/devs/system-configuration: $(TOP)/tools/sysconfig1x.py
 	python3 $< $@
 $(OUT)/%-1x.bin: $(OUT)/progs/% $(BINDEPS) $(OUT)/devs/system-configuration
 	$(MKDISK) --kboot=$(KBOOT) --root=$(OUT)/progs/$* $(call DISK,$*) \
-	  --put=Devs/system-configuration=$(OUT)/devs/system-configuration $@ $(EXEC900_OUT)/exec900.sys
+	  --put=Devs/system-configuration=$(OUT)/devs/system-configuration $@ $(EXEC900_OUT)/Boot/exec900.sys
 
 # make test [T=name]: run each test, or one.
 test: $(patsubst %,$(OUT)/%.bin,$(or $(T),$(TESTS)))
 	@fail=0; for t in $(or $(T),$(TESTS)); do \
 		$(RUNTEST) $$t $(OUT)/$$t.bin $(OUT)/$$t.log $(TOP)/tests/$$t.c || fail=1; \
 	done; [ $$fail = 0 ]
+
+# make dist [V=0.1.0]: the release packages, in $(OUT)/dist, laid out
+# as installed: Boot/ is the boot partition, System/ SYS:
+V	?= $(patsubst v%,%,$(shell git -C $(TOP) describe --tags --always))
+PACK	= sh $(TOP)/tools/pack.sh $(OUT)/dist
+LICS	= licenses/AROS-APL=$(TOP)/aros/LICENSE licenses/MIT=$(TOP)/LICENSE-MIT \
+	  licenses/Exec900-MIT=$(EXEC900)/licenses/LICENSE-MIT
+tree	= $(foreach f,$(shell cd $(TOP) && find $(1) -type f),$(f)=$(TOP)/$(f))
+dist: $(patsubst %,$(OUT)/libs/%.library,$(LIBS)) $(patsubst %,$(OUT)/libs/%.gfxdriver,$(GFXDRIVERS)) \
+	  $(patsubst %,$(OUT)/devs/%.device,$(DEVS)) $(OUT)/l/con-handler $(OUT)/util/LoadWB \
+	  $(FONTDEPS) $(UTILDEPS) $(PREFSDEPS) $(OUT)/devs/system-configuration $(OUT)/wb/hello \
+	  $(patsubst %,$(OUT)/cx/%,$(CXTOOLS)) $(patsubst %,$(OUT)/wb/%,$(notdir $(WBDISK)))
+	$(PACK) wb900 $(V) $(LICS) \
+	  $(foreach l,$(LIBS),System/Libs/$(l).library=$(OUT)/libs/$(l).library) \
+	  $(foreach g,$(GFXDRIVERS),System/Libs/$(g).gfxdriver=$(OUT)/libs/$(g).gfxdriver) \
+	  $(foreach d,$(DEVS),System/Devs/$(d).device=$(OUT)/devs/$(d).device) \
+	  Boot/con-handler=$(OUT)/l/con-handler System/C/LoadWB=$(OUT)/util/LoadWB \
+	  $(patsubst --put=%,System/%,$(FONTPUT)) \
+	  System/Disk.info=$(OUT)/wb/Disk.info System/Trashcan.info=$(OUT)/wb/Trashcan.info System/Trashcan/ \
+	  System/S/Startup-Sequence=$(TOP)/wb/Startup-Sequence
+	$(PACK) wb900-utilities $(V) $(LICS) licenses/Edit-GPL2=$(TOP)/wb/edit/COPYING \
+	  $(patsubst --put=%,System/%,$(UTILPUT)) System/Utilities.info=$(OUT)/wb/Utilities.info
+	$(PACK) wb900-commodities $(V) $(LICS) $(patsubst --put=%,System/%,$(CXPUT)) \
+	  $(foreach t,$(CXTOOLS),System/Tools/Commodities/$(t).info=$(OUT)/wb/$(t).info) \
+	  System/Tools.info=$(OUT)/wb/Tools.info System/Tools/Commodities.info=$(OUT)/wb/Commodities.info
+	$(PACK) wb900-prefs $(V) $(LICS) System/Prefs/ScreenMode=$(OUT)/util/ScreenMode \
+	  System/Prefs/ScreenMode.info=$(OUT)/wb/ScreenMode.info System/Prefs/Env-Archive/Sys/ \
+	  System/Prefs.info=$(OUT)/wb/Prefs.info System/Devs/system-configuration.1x=$(OUT)/devs/system-configuration
+	$(PACK) wb900-demos $(V) $(LICS) System/Demos/Hello=$(OUT)/wb/hello System/Demos/Notes=$(TOP)/wb/Notes \
+	  System/Demos/ReadMe=$(TOP)/wb/ReadMe System/Demos.info=$(OUT)/wb/Demos.info \
+	  $(foreach i,Hello Notes ReadMe,System/Demos/$(i).info=$(OUT)/wb/$(i).info)
+	$(PACK) wb900-headers $(V) $(LICS) $(call tree,include lib) \
+	  $(foreach h,$(wildcard $(OUT)/include/lvo/*.h),include/lvo/$(notdir $(h))=$(h)) \
+	  $(foreach f,$(wildcard $(TOP)/libs/*/*.fd),fd/$(notdir $(f))=$(f))
